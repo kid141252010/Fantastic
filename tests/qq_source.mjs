@@ -324,6 +324,54 @@ test('QQ clients only request local adapter paths and pass cancellation signals'
   } finally { globalThis.fetch = original; }
 });
 
+test('QQ album, artist and search mappers resolve every artwork template to 500x500', async () => {
+  const original = globalThis.fetch;
+  const fixed = 'https://y.qq.com/music/photo_new/T002R500x500M000003DFRzD192KKD_5.jpg';
+  const avatar = 'https://y.gtimg.cn/music/photo_new/T001R{w}x{h}M0000025NhlN2yWrP4.jpg';
+  const fixedAvatar = 'https://y.gtimg.cn/music/photo_new/T001R500x500M0000025NhlN2yWrP4.jpg';
+  const albumDto = { mid: 'album', name: '叶惠美', cover: dto.cover, artwork: { url: dto.cover, bgColor: 'ffffff' } };
+  const artistDto = { mid: 'artist', name: '周杰伦', avatar, cover: avatar, artwork: { url: avatar } };
+  const fixtures = {
+    '/qq/search?q=test&limit=30&offset=0': { songs: [dto], albums: [albumDto], artists: [artistDto], total: 1 },
+    '/qq/album/album': { album: albumDto, songs: [dto] },
+    '/qq/artist/artist': { artist: artistDto, albums: [albumDto], songs: [dto], totalSongs: 12 },
+  };
+  const snapshot = structuredClone(fixtures);
+  const controller = new AbortController();
+  const paths = [];
+  globalThis.fetch = async (path, options) => {
+    assert.equal(options.signal, controller.signal);
+    assert.ok(Object.hasOwn(fixtures, path), path);
+    paths.push(path);
+    return { ok: true, json: async () => fixtures[path] };
+  };
+  try {
+    const search = await qq.searchSongs('test', { signal: controller.signal });
+    const album = await qq.album('album', controller.signal);
+    const artist = await qq.artist('artist', controller.signal);
+    for (const [artworks, expected] of [
+      [[search.songs[0].artwork, search.albums[0].cover, search.albums[0].artwork,
+        album.album.cover, album.album.artwork, album.songs[0].cover,
+        artist.albums[0].cover, artist.albums[0].artwork, artist.songs[0].cover], fixed],
+      [[search.artists[0].avatar, search.artists[0].cover, search.artists[0].artwork,
+        artist.artist.avatar, artist.artist.cover, artist.artist.artwork], fixedAvatar],
+    ]) {
+      for (const artwork of artworks) {
+        const url = typeof artwork === 'string' ? artwork : artwork.url;
+        assert.equal(url, expected);
+        assert.doesNotMatch(url, /\{[wh]\}/);
+        for (const size of [80, 360, 600, 1000]) assert.equal(artUrl(artwork, size), expected);
+      }
+    }
+    assert.equal(album.album.name, albumDto.name);
+    assert.equal(album.album.artwork.bgColor, 'ffffff');
+    assert.equal(artist.artist.name, artistDto.name);
+    assert.equal(artist.totalSongs, 12);
+    assert.deepEqual(paths, Object.keys(fixtures));
+    assert.deepEqual(fixtures, snapshot, 'normalization leaves request DTOs intact');
+  } finally { globalThis.fetch = original; }
+});
+
 // Small transport harness, using the real queue/source/start/tryMode methods.
 function playerHarness() {
   if (globalThis.fetch === nativeFetch) globalThis.fetch = async () => { throw new Error('offline'); };

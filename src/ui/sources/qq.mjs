@@ -130,6 +130,19 @@ export function artworkUrl(artwork, albumMid) {
   const url = typeof artwork === 'string' ? artwork : artwork?.url;
   return typeof url === 'string' ? url.replaceAll('{w}', '500').replaceAll('{h}', '500') : '';
 }
+// Album/artist DTOs must use the same fixed size as song artwork before
+// consumers request arbitrary display sizes (for example, 360px cards).
+function normalizeArtwork(value) {
+  if (!value || typeof value !== 'object') return value;
+  const normalized = { ...value };
+  for (const field of ['cover', 'avatar', 'artwork']) {
+    if (!Object.hasOwn(normalized, field)) continue;
+    const artwork = normalized[field];
+    normalized[field] = artwork && typeof artwork === 'object'
+      ? { ...artwork, url: artworkUrl(artwork) } : artworkUrl(artwork);
+  }
+  return normalized;
+}
 export function toTrack(dto) {
   const id = mid(dto.id);
   const albumMid = MID.test(dto.albumMid || '') ? dto.albumMid : '';
@@ -186,11 +199,27 @@ async function request(path, signal) {
 }
 export async function searchSongs(q, { limit = 30, offset = 0, signal } = {}) {
   const data = await request(`/qq/search?${new URLSearchParams({ q, limit, offset })}`, signal);
-  return { songs: (data.songs || []).map(toTrack), total: data.total || 0 };
+  return { songs: (data.songs || []).map(toTrack), total: data.total || 0,
+    ...(Array.isArray(data.albums) ? { albums: data.albums.map(normalizeArtwork) } : {}),
+    ...(Array.isArray(data.artists) ? { artists: data.artists.map(normalizeArtwork) } : {}),
+  };
 }
 export async function song(id, signal) { return toTrack(await request(`/qq/song/${mid(id)}`, signal)); }
-export async function album(id, signal) { return request(`/qq/album/${mid(id)}`, signal); }
-export async function artist(id, signal) { return request(`/qq/artist/${mid(id)}`, signal); }
+export async function album(id, signal) {
+  const data = await request(`/qq/album/${mid(id)}`, signal);
+  return { ...data,
+    album: normalizeArtwork(data?.album),
+    ...(Array.isArray(data?.songs) ? { songs: data.songs.map(normalizeArtwork) } : {}),
+  };
+}
+export async function artist(id, signal) {
+  const data = await request(`/qq/artist/${mid(id)}`, signal);
+  return { ...data,
+    artist: normalizeArtwork(data?.artist),
+    ...(Array.isArray(data?.songs) ? { songs: data.songs.map(normalizeArtwork) } : {}),
+    ...(Array.isArray(data?.albums) ? { albums: data.albums.map(normalizeArtwork) } : {}),
+  };
+}
 export function qualityRows(data, id, detect, environment = globalThis) {
   const rows = Array.isArray(data?.qualities) ? data.qualities : [];
   detect ||= globalThis.window?.AmHook?.detectQqModes;
