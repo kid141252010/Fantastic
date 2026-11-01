@@ -1,0 +1,22 @@
+{"enabled":true,"qualities":[
+  {"quality":"MP3128","defaultCodec":"mp3","contentType":"audio/mpeg","playbackClass":"native","sizeField":"size_128mp3","displayName":"MP3 128 kbps"},
+  {"quality":"AAC48","defaultCodec":"aac","contentType":"audio/mp4; codecs=\"mp4a.40.2\"","playbackClass":"native","sizeField":"size_48aac","displayName":"AAC 48 kbps"},
+  {"quality":"WEB","defaultCodec":"aac","contentType":"audio/mp4; codecs=\"mp4a.40.2\"","playbackClass":"native","sizeField":"size_96aac","displayName":"AAC 96 kbps"},
+  {"quality":"AAC192","defaultCodec":"aac","contentType":"audio/mp4; codecs=\"mp4a.40.2\"","playbackClass":"native","sizeField":"size_192aac","displayName":"AAC 192 kbps"},
+  {"quality":"OGG96","defaultCodec":"vorbis","contentType":"audio/ogg; codecs=\"vorbis\"","playbackClass":"native","sizeField":"size_96ogg","displayName":"Ogg 96 kbps"},
+  {"quality":"OGG192","defaultCodec":"vorbis","contentType":"audio/ogg; codecs=\"vorbis\"","playbackClass":"native","sizeField":"size_192ogg","displayName":"Ogg 192 kbps"},
+  {"quality":"HQ","defaultCodec":"mp3","contentType":"audio/mpeg","playbackClass":"native","sizeField":"size_320mp3","displayName":"MP3 320 kbps"},
+  {"quality":"NAC","defaultCodec":"nac","contentType":"audio/x-nac","playbackClass":"download","sizeField":null,"displayName":"AICodec"},
+  {"quality":"SQ","defaultCodec":"flac","contentType":"audio/flac","playbackClass":"native","sizeField":"size_flac","displayName":"FLAC"},
+  {"quality":"RS","defaultCodec":"flac","contentType":"audio/flac","playbackClass":"native","sizeField":"size_hires","displayName":"FLAC Hi-Res"},
+  {"quality":"QAI","defaultCodec":"flac","contentType":"audio/flac","playbackClass":"native","sizeField":null,"displayName":"FLAC"},
+  {"quality":"Q360V1","defaultCodec":"flac","contentType":"audio/flac","playbackClass":"native","sizeField":null,"displayName":"FLAC"},
+  {"quality":"Q360V2","defaultCodec":"flac","contentType":"audio/flac","playbackClass":"native","sizeField":null,"displayName":"FLAC"},
+  {"quality":"RA360","defaultCodec":"unknown","contentType":"application/octet-stream","playbackClass":"download","sizeField":"size_360ra","displayName":"360 Reality Audio"},
+  {"quality":"DTS","defaultCodec":"dts","contentType":"audio/vnd.dts","playbackClass":"download","sizeField":"size_dts","displayName":"DTS"},
+  {"quality":"DTSX","defaultCodec":"dtsx","contentType":"audio/vnd.dts.hd; codecs=\"dtsx\"","playbackClass":"download","sizeField":null,"displayName":"DTS:X"},
+  {"quality":"DA","defaultCodec":"ac-4","contentType":"audio/mp4; codecs=\"ac-4\"","playbackClass":"ac-4-probe","sizeField":"size_dolby","displayName":"AC-4 Dolby Atmos"},
+  {"quality":"DAEAC3","defaultCodec":"ec-3","contentType":"audio/mp4; codecs=\"ec-3\"","playbackClass":"joc","sizeField":"size_dolby","displayName":"E-AC-3 JOC"},
+  {"quality":"DA448","defaultCodec":"ac-4","contentType":"audio/mp4; codecs=\"ac-4\"","playbackClass":"ac-4-probe","sizeField":null,"displayName":"AC-4 A-JOC 448 kbps"},
+  {"quality":"DA1500","defaultCodec":"ac-4","contentType":"audio/mp4; codecs=\"ac-4\"","playbackClass":"ac-4-probe","sizeField":null,"displayName":"AC-4 A-JOC 1500 kbps"}
+]}

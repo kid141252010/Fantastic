@@ -1,0 +1,16 @@
+.qq-song-page .qq-quality { grid-template-columns: minmax(0, 1fr) auto; padding: 14px 16px; background: color-mix(in srgb, var(--text) 4%, transparent); }
+.qq-quality-tip { margin-top: 4px; color: var(--muted); font-size: 13px; }
+.qq-quality-actions { display: flex; gap: 8px; align-items: center; }
+.qq-quality-download { text-decoration: none; }
+.qq-lyrics-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 14px; }
+.qq-lyrics-download { text-decoration: none; }
+.qq-lyric-lines { margin-top: 18px; }
+.qq-lyric-line { margin: 0 0 18px; font-size: 18px; line-height: 1.6; overflow-wrap: anywhere; }
+.qq-lyric-line > span { display: block; white-space: pre-wrap; }
+.qq-lyric-translation { color: var(--muted); font-size: 14px; }
+@media (max-width: 483px) {
+  .qq-song-page .qq-quality { grid-template-columns: minmax(0, 1fr) auto; gap: 12px; }
+  .qq-quality .variant-main { grid-column: 1 / -1; }
+  .qq-quality-actions { grid-column: 1 / -1; }
+  .qq-quality-actions > .song-reparse { justify-content: center; }
+}

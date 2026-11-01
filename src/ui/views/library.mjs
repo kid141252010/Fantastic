@@ -1,3 +1,4 @@
+import { trackKey } from '../sources/track.mjs';
 // 资料库页（与 music.apple.com 的 /library/... 相同），由 app.mjs 挂载：
 //   /library/recently-added  最近添加（专辑、歌单、MV，按添加时间）    /library/artists[/<名称>]  艺人（左侧列表，右侧该艺人的专辑与歌曲）
 //   /library/albums          专辑（含只添加了部分歌曲的专辑）          /library/songs             歌曲
@@ -488,7 +489,7 @@ export function mount({ root, url, signal, player, navigate, toast, onLangChange
   /* ---------- 播放 ---------- */
   function playSong(songs, index) {
     const track = songs[index];
-    if (player.current && player.current.track === track.id) { player.toggle(); return; }
+    if (player.current && trackKey(player.current) === trackKey({ id: track.id })) { player.toggle(); return; }
     player.playQueue(songs.map(library.entryOf), index);
   }
 

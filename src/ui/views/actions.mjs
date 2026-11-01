@@ -13,6 +13,7 @@
 import * as library from '/assets/library.mjs';
 import { LIB_ICON, playlistMenuItems, moveMenuItems } from './library-ui.mjs';
 import { downloads } from '../downloads.mjs';
+import * as qq from '../sources/qq.mjs';
 
 const { AmI18n } = window;
 const { t } = AmI18n;
@@ -172,6 +173,7 @@ export function targetOf(resource, country, extra = {}) {
 export function songEntry(track, country, context = {}) {
   const a = track.attributes;
   return {
+    source: 'apple', key: `apple:${track.id}`,
     track: track.id,
     country,
     name: a.name,
@@ -192,6 +194,8 @@ export function songEntry(track, country, context = {}) {
  * 先用播放队列里的信息拼出曲目快照（封面地址还原为 {w}x{h} 模板），之后可用 songTarget() 换成完整资源
  */
 export function nowPlayingTarget(current) {
+  if (current?.source === 'qq') return { kind: 'song', name: current.title || current.name, noPlay: true,
+    track: { ...current, id: current.track, name: current.title || current.name, duration: (current.duration || 0) * 1000 } };
   if (!current || !current.track) return null;
   const href = current.href || '';
   const albumHref = current.albumHref || '';
@@ -220,6 +224,7 @@ export function snapshotOf(track, country, album) {
   const albumHref = album ? pagePath(album, country) : albumPathOf(track);
   const artwork = a.artwork || (album && album.attributes && album.attributes.artwork) || {};
   return {
+    source: 'apple', key: `apple:${track.id}`,
     kind: KINDS[track.type],
     id: track.id,
     country,
@@ -301,6 +306,7 @@ function collectionSnapshots(c) {
 
 /** 条目在资料库中的 kind 与 id；不能加入资料库的条目为 null */
 function libraryKey(target) {
+  if (target.track?.source === 'qq') return null;
   if (!['song', 'music-video', 'album', 'playlist'].includes(target.kind)) return null;
   if (target.track) return { kind: target.track.kind, id: target.track.id };
   if (target.resource) return { kind: target.kind, id: target.resource.id };
@@ -312,6 +318,7 @@ function libraryKey(target) {
  * 喜爱用的键：本地歌单为 { local: true, id }，艺人为 { kind: 'artist', id }，其余与 libraryKey 相同；不能喜爱时为 null
  */
 function favoriteKey(target) {
+  if (target.track?.source === 'qq') return { qq: true, id: target.track.id };
   if (target.kind === 'library-playlist') return target.playlistId ? { local: true, id: target.playlistId } : null;
   if (target.kind === 'artist') {
     const id = target.resource ? target.resource.id : ((target.href || '').match(/\/(\d+)$/) || [])[1];
@@ -501,7 +508,7 @@ export function createActions({ signal, player, navigate, toast }) {
   async function play(target, button, shuffle = false) {
     if (target.kind === 'music-video') { navigate(target.href); return; }
     if (target.onPlay) { target.onPlay(); return; }
-    if (target.kind === 'song') { player.playQueue([target.resource ? songEntry(target.resource, target.country) : library.entryOf(target.track)], 0); return; }
+    if (target.kind === 'song') { player.playQueue([target.resource ? songEntry(target.resource, target.country) : (target.track?.source === 'qq' ? qq.entryOf(target.track) : library.entryOf(target.track))], 0); return; }
     if (button) button.classList.add('busy');
     try {
       // 离开页面后取回的曲目照样播放：播放条常驻
@@ -539,14 +546,16 @@ export function createActions({ signal, player, navigate, toast }) {
     }
   }
 
-  const favoriteOf = (key) => !!key && (key.local ? !!(library.playlist(key.id) || {}).favorite : library.isFavorite(key.kind, key.id));
+  const favoriteOf = (key) => !!key && (key.qq ? qq.isFavorite({ source: 'qq', id: key.id }) : key.local ? !!(library.playlist(key.id) || {}).favorite : library.isFavorite(key.kind, key.id));
 
   /** 喜爱 / 取消喜爱（与 Apple Music 相同，喜爱时同时加入资料库）；busy 为请求曲目期间显示忙碌的按钮 */
   async function toggleFavorite(target, busy) {
     const key = favoriteKey(target);
     if (!key) return;
     const on = !favoriteOf(key);
-    if (key.local) {
+    if (key.qq) {
+      try { qq.toggleFavorite(target.track); } catch { toast(t('qq.storageFailed')); return; }
+    } else if (key.local) {
       library.setPlaylistFavorite(key.id, on);
     } else {
       if (busy) busy.classList.add('busy');
@@ -605,6 +614,12 @@ export function createActions({ signal, player, navigate, toast }) {
   }
 
   function menuItems(target, button) {
+    if (target.track?.source === 'qq') return [
+      ...(!target.noPlay ? [{ icon: ICON.play, label: t('action.play'), onSelect: () => play(target, button) }] : []),
+      { icon: ICON.download, label: t('qq.download'), onSelect: () => qq.download(target.track) },
+      { icon: qq.isFavorite(target.track) ? LIB_ICON.star : LIB_ICON.starFilled,
+        label: t(qq.isFavorite(target.track) ? 'library.unfavorite' : 'library.favorite'), onSelect: () => toggleFavorite(target, button) },
+    ];
     const items = [];
     if (target.kind === 'music-video') items.push({ icon: ICON.video, label: t('action.playMv'), onSelect: () => navigate(target.href) });
     else if (playable(target) && !target.noPlay) items.push({ icon: ICON.play, label: t('action.play'), onSelect: () => play(target, button) });
@@ -738,6 +753,7 @@ export function createActions({ signal, player, navigate, toast }) {
       if (target) toggleFavorite(target, button);
     });
     signal.addEventListener('abort', library.onChange(refresh), { once: true });
+    signal.addEventListener('abort', qq.onFavoritesChange(refresh), { once: true });
     refresh();
     return { button, refresh };
   }

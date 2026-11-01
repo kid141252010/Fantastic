@@ -40,7 +40,7 @@ const SITE_PAGE_RE = new RegExp(
     + `|^https:/{1,2}music\\.apple\\.com/[a-z]{2}/(?:new(?:/top-charts(?:/(?:${CHART_KINDS}))?)?|radio)/?$`,
 );
 const LOCAL_PAGE_RE = new RegExp(
-  `^(?:settings|radio|new(?:/top-charts(?:/(?:${CHART_KINDS}))?)?`
+  `^(?:settings|radio|qq-song/[0-9A-Za-z]{1,32}|new(?:/top-charts(?:/(?:${CHART_KINDS}))?)?`
     + '|library(?:/(?:recently-added|albums|songs|music-videos|all-playlists|favorite-songs|artists(?:/[^/]+)?'
     + '|playlist/p\\.[0-9A-Za-z_-]+|playlist-folder/f\\.[0-9A-Za-z_-]+))?)/?$',
 );

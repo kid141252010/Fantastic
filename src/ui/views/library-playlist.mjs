@@ -1,3 +1,4 @@
+import { trackKey } from '../sources/track.mjs';
 // 本地歌单页（与 music.apple.com 的 /library/playlist/p.… 相同），由 app.mjs 挂载。
 // 歌单保存在浏览器中（/assets/library.mjs）：可以编辑名称与描述、喜爱、拖动排序、从歌单中删除曲目、移到文件夹、复制、导出与删除。
 // /library/favorite-songs 为「喜爱的歌曲」：由喜爱的歌曲自动组成（最近喜爱的在前），不能编辑与排序，取消喜爱即移出。
@@ -169,7 +170,7 @@ export function mount({ root, url, signal, player, navigate, toast, onLangChange
   /* ---------- 播放 ---------- */
   function playFrom(index) {
     const list = songs();
-    if (player.current && player.current.track === list[index].id) { player.toggle(); return; }
+    if (player.current && trackKey(player.current) === trackKey({ id: list[index].id })) { player.toggle(); return; }
     player.playQueue(list.map(library.entryOf), index);
   }
 

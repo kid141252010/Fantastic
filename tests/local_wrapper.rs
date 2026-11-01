@@ -18,6 +18,7 @@ fn config(wrapper_url: String, relay: bool) -> Config {
     Config {
         wrapper_url,
         amll_api: "https://api.amll.dev".into(),
+        qq_api: None,
         amp_keepalive: Duration::ZERO,
         amp_cache_mb: 0,
         wrapper_rate: 5,

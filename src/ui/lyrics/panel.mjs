@@ -22,6 +22,7 @@
  * 待播清单打开时占据歌词的位置。
  */
 import { parseTTML, duetSides } from './ttml.mjs';
+import { lyrics as qqLyrics } from '../sources/qq.mjs';
 import { DomLyricPlayer, BackgroundRender, MeshGradientRenderer } from './amll-core.mjs';
 import { ArtworkBackdrop } from './backdrop.mjs';
 import { BeatPulse } from './pulse.mjs';
@@ -244,8 +245,9 @@ const safeName = (name) => name.replace(/[\\/:*?"<>|\u0000-\u001f]+/g, '_').trim
  * root：#lyrics-overlay；toggle：播放条上的歌词按钮（打开歌词；界面里切换是否显示歌词）；bar：播放条，
  * 点击其中非控件区域（封面、标题、空白处）展开界面（没有歌词时也能展开）；界面打开时并入 .lyrics-controls，
  * 歌词按钮与待播清单按钮移到 .lyrics-toggles，关闭时放回原处。
- * getMeta() 返回正在播放的歌曲的 { title, artist, artists, artwork, country? }（artists: [{ name, href }]，用于艺人链接；
+ * getMeta() 返回正在播放的歌曲的 { title, artist, artists, artwork, artworkFetchUrl?, country? }（artists: [{ name, href }]，用于艺人链接；
  * 有 country 时优先作为请求歌词的地区）；t 为界面文案函数；notify 显示提示。
+ * artworkFetchUrl 为 blob/画布取图地址，省略时使用 artwork；封面 <img> 始终使用 artwork。
  * navigate(href)：前端路由，点击艺人链接时关闭界面并由它打开页面（播放不中断）；省略时按普通链接跳转。
  * onShow()：界面展开或展开期间切歌时调用（如更新标题旁的喜爱与「更多」按钮）。
  * 返回 { setTrack(id, country), close() }：setTrack 在切歌时调用，界面跟随正在播放的歌曲；close 收起界面。
@@ -707,6 +709,7 @@ export function mountLyrics({ root, toggle, bar, player, getMeta, t, notify, onL
 
   /** 选定的来源没有这首歌的歌词、改用另一来源时的说明 */
   function sourceNote() {
+    if (trackSource === 'qq') return lyricsSource ? t('qq.lyricsSource', { source: lyricsSource.toUpperCase() }) : t('qq.lyricsPriority');
     if (!lyricsSource || lyricsSource === prefs.source) return '';
     if (prefs.source === 'apple') return t('lyrics.appleMissing');
     return t(amllStatus === 'failed' ? 'lyrics.amllFailed' : 'lyrics.amllMissing');
@@ -726,11 +729,12 @@ export function mountLyrics({ root, toggle, bar, player, getMeta, t, notify, onL
     setTimeout(() => URL.revokeObjectURL(url), 60000);
   }
 
-  /** 背景使用页面已有的封面；取不到封面或背景不可用时保留纯色背景 */
+  /** QQ 背景经同源代理取 blob，避免 photo_new 缺少 CORS；<img> 封面仍用直链。 */
   function loadArtwork() {
     const target = backdrop;
     if (!target) return;
-    const source = getMeta().artwork || '';
+    const meta = getMeta();
+    const source = meta.artworkFetchUrl || meta.artwork || '';
     if (source === artworkSource) { if (!covered) target.resume(); return; }
     artworkSource = source;
     if (artworkController) artworkController.abort();
@@ -968,7 +972,7 @@ export function mountLyrics({ root, toggle, bar, player, getMeta, t, notify, onL
         ['weightLighter', weight > 0], ['weightBolder', weight < FONT_WEIGHTS.length - 1])),
       separator(),
       menuItem(menuNode('span', '', t('lyrics.source')), 'presentation', 'lyrics-menu-heading'),
-      ...['apple', 'amll'].map((source) => menuItem(menuButton({
+      ...(trackSource === 'qq' ? [] : ['apple', 'amll']).map((source) => menuItem(menuButton({
         label: t(source === 'apple' ? 'lyrics.sourceApple' : 'lyrics.sourceAmll'),
         icon: prefs.source === source ? 'check' : '', action: 'source', value: source, checked: prefs.source === source,
       }))),
@@ -1056,6 +1060,7 @@ export function mountLyrics({ root, toggle, bar, player, getMeta, t, notify, onL
    * 选了 AMLL 歌词库时先查它，未收录、请求失败或解析不了时记下原因，改用 Apple Music 歌词。
    */
   async function loadLyrics(id) {
+    if (trackSource === 'qq') return qqLyrics(id, parseTTML);
     // 这首歌各来源的结果记在 sources 里，来回切换来源时不重复请求；AMLL 歌词库未收录时不记，下次选择时重新查
     const cache = sources;
     const remember = (source, fetcher) => (cache[source] ??= fetcher().then((result) => {
@@ -1136,9 +1141,11 @@ export function mountLyrics({ root, toggle, bar, player, getMeta, t, notify, onL
   }
 
   /** 切换歌曲（id 为空表示没有歌曲）：歌词界面打开时取回新歌词原地刷新，没有歌词时只显示封面与播放控件 */
-  function setTrack(id, cc) {
+  let trackSource = 'apple';
+  function setTrack(id, cc, source = 'apple') {
     id = id || null;
-    if (id === adamId) return;
+    if (id === adamId && source === trackSource) return;
+    trackSource = source;
     adamId = id;
     country = cc || null;
     song = null;

@@ -2,6 +2,15 @@
 <div class="page">
   <main class="home">
     <section class="home-hero">
+      <div class="source-switch" id="source-switch" hidden>
+        <label><span data-i18n="source.label"></span>
+          <select id="source-select" data-i18n-attr="aria-label=source.label">
+            <option value="apple" data-i18n="source.apple"></option>
+            <option value="qq" data-i18n="source.qq"></option>
+          </select>
+        </label>
+        <a id="qq-favorites" href="/?source=qq&amp;qq=favorites" data-i18n="qq.favorites" hidden></a>
+      </div>
       <form class="search" id="form" novalidate>
         <label class="search-field">
           <span class="sr-only" data-i18n="home.inputLabel"></span>

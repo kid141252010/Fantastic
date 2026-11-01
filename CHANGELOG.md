@@ -1,5 +1,10 @@
 # 更新日志
 
+## Unreleased
+
+### 新增
+- ✨ 可选 QQ 音源配置（`--qq-api` / `AM_HOOK_QQ_API`、`--qq-proxy` / `AM_HOOK_QQ_PROXY`）、静态音质 capabilities 与歌词降级链。
+
 ## v0.6.5 (2026-10-30)
 
 ### 新功能

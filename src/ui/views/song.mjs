@@ -1,3 +1,4 @@
+import { trackKey } from '../sources/track.mjs';
 // 歌曲页（/https://music.apple.com/{cc}/song/{slug}/{id}），由 app.mjs 挂载。
 // 布局照官网歌曲页（song-header-page 与 credits_detail）：头部、制作人员，最后是音乐视频与艺人的更多作品；
 // 头部之下是本站的音质列表：wrapper-lite 给出的 master m3u8 中的全部音频变体，按格式分组，可在线播放、下载解密文件；
@@ -6,6 +7,8 @@ import { createActions, openMenu, copyText, targetOf, pagePath, artistLinks, alb
 import { compareAlac, pickAlac } from '../alac-check.mjs';
 import { createDetailHeader } from './detail-header.mjs';
 import { downloads } from '../downloads.mjs';
+import { prefs } from '../prefs.mjs';
+import { pickAppleVariant } from '../playback-quality.mjs';
 
 const { detectMode, qualityBadge, qualityIcon, formatTime } = window.AmHook;
 const { AmDecrypt, AmI18n, AmWrapper } = window;
@@ -233,10 +236,10 @@ export function mount({ root, url, signal, player, navigate, onLangChange, toast
     else player.play(playItem(v));
   }
 
-  /** 头部「播放」：正在播放这首歌时暂停 / 继续，否则播放浏览器能播放的最高音质 */
+  /** 头部「播放」：正在播放这首歌时暂停 / 继续，否则按在线播放偏好选初始档 */
   function playBest() {
-    if (player.current && player.current.track === adamId) { player.toggle(); return; }
-    const best = variants.find((v) => v.mode);
+    if (player.current && trackKey(player.current) === trackKey({ id: adamId })) { player.toggle(); return; }
+    const best = pickAppleVariant(variants.filter((v) => v.mode), prefs.get('playback').quality);
     if (best) player.play(playItem(best));
   }
 
@@ -362,7 +365,7 @@ export function mount({ root, url, signal, player, navigate, onLangChange, toast
       row.classList.toggle('paused', active && !playing);
       if (v.mode) playBtn.innerHTML = active && playing ? ICON.pause : ICON.play;
     }
-    const mine = !!current && current.track === adamId && playing;
+    const mine = !!current && trackKey(current) === trackKey({ id: adamId }) && playing;
     const btn = $('play-best');
     btn.innerHTML = mine ? ICON.pause : ICON.play;
     btn.append(el('span', { textContent: t(mine ? 'song.pause' : 'song.play') }));

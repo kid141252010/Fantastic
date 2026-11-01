@@ -703,12 +703,14 @@ export async function importData(parsed, { replace = false } = {}) {
 /* ---------- 页面用的小工具 ---------- */
 /** 图片模板 → 指定尺寸的地址 */
 export function artUrl(template, w, h = w) {
-  return template ? template.replace('{w}', w).replace('{h}', h).replace('{c}', 'bb').replace('{f}', 'jpg') : '';
+  const url = typeof template === 'string' ? template : template?.url;
+  return typeof url === 'string' ? url.replaceAll('{w}', w).replaceAll('{h}', h).replaceAll('{c}', 'bb').replaceAll('{f}', 'jpg') : '';
 }
 
 /** 曲目快照 → 播放队列条目（见 AmPlayer.playQueue） */
 export function entryOf(track) {
   return {
+    source: 'apple', key: `apple:${track.id}`,
     track: track.id,
     country: track.country,
     name: track.name,

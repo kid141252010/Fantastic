@@ -1,0 +1,14 @@
+{
+  "mid": "001ATFiY3pb3y6",
+  "data": {
+    "qrc": {
+      "lyric": "<?xml version=\"1.0\" encoding=\"utf-8\"?><QrcInfos><LyricInfo LyricCount=\"1\"><Lyric_1 LyricType=\"1\" LyricContent=\"[1000,600]오늘 (1000,300)밤(1300,300)&#10;[2000,500]WET(2000,500)&#10;[3000,700]빛(3000,700)&#10;[4500,500]함께(4500,500)\"/></LyricInfo></QrcInfos>"
+    },
+    "qrctrans": "[offset:100]\n[00:04.600]一起\n[00:01.100]今晚\n[00:01.900] // \n[00:03.100]光 & <你>\n[00:00.901]unmatched millisecond\n[00:05.900]unmatched translation\n[00:06.900]   \n\n",
+    "qrcroma": "<?xml version=\"1.0\" encoding=\"utf-8\"?><QrcInfos><LyricInfo LyricCount=\"1\"><Lyric_1 LyricType=\"1\" LyricContent=\"[4500,500]ham(4500,200)kke(4700,300)&#13;&#10;[3000,700]bit &amp; &lt;neo&gt;(3050,650)&#13;&#10;[2000,500] // (2000,500)&#13;&#10;[1000,600]oneul (1000,300)bam(1300,300)&#13;&#10;[9999,500]unmatched roman(9999,500)\"/></LyricInfo></QrcInfos>",
+    "lrc": "[00:01.00][00:03.00]오늘 밤",
+    "lrctrans": {
+      "lyric": "[offset:100]\n[00:01.10][00:03.10]LRC 翻译\n[00:00.901]unmatched LRC\n[00:04.00] // \n[00:05.00]   "
+    }
+  }
+}

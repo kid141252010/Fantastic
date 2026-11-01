@@ -1,3 +1,4 @@
+import { trackKey } from '../sources/track.mjs';
 // 电台页（/https://music.apple.com/{cc}/station/{slug}/ra.{id}），由 app.mjs 挂载。官网点电台是直接播放，这里给每个电台一个页面：
 //   个人 / 编辑电台（playParams.format = tracks）：与歌单页相同的头部与曲目列表，内容是电台「接下来的几首」，
 //     可以换一批、加载更多，播放到队尾时自动续上（AmPlayer.playQueue 的 more）；
@@ -307,7 +308,7 @@ function mountTracks({ signal, player, navigate, toast }, $) {
   }
 
   function playTrack(track) {
-    if (player.current && player.current.track === track.id) { player.toggle(); return; }
+    if (player.current && trackKey(player.current) === trackKey({ id: track.id })) { player.toggle(); return; }
     const list = songs();
     player.playQueue(list.map(entryOf), Math.max(0, list.indexOf(track)), { more });
   }
@@ -318,10 +319,10 @@ function mountTracks({ signal, player, navigate, toast }, $) {
 
   function syncRows(current, playing) {
     for (const [trackId, { row, playBtn }] of rows) {
-      const active = !!current && current.track === trackId;
+      const active = !!current && trackKey(current) === trackKey({ id: trackId });
       row.classList.toggle('playing', active);
       row.classList.toggle('paused', active && !playing);
-      row.classList.toggle('loading', player.pendingTrack === trackId);
+      row.classList.toggle('loading', player.pendingKey === trackKey({ id: trackId }));
       if (playBtn) playBtn.innerHTML = active && playing ? ICON.pause : ICON.play;
     }
   }

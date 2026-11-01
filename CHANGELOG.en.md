@@ -1,5 +1,10 @@
 # CHANGELOG
 
+## Unreleased
+
+### Added
+- ✨ Optional QQ music source configuration (`--qq-api` / `AM_HOOK_QQ_API` and `--qq-proxy` / `AM_HOOK_QQ_PROXY`), static quality capabilities and lyrics fallbacks.
+
 ## v0.6.5 (2026-10-30)
 
 ### New

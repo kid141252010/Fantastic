@@ -1,4 +1,4 @@
-// 设置中心（/settings，views/settings.mjs）的存储：下载设置（download）与 JOC 对象渲染（joc）等。
+// 设置中心（/settings，views/settings.mjs）的存储：在线播放（playback）、下载（download）与 JOC 对象渲染（joc）。
 // 保存在 localStorage（不会过期），同一浏览器的其他标签页修改后自动同步。
 //
 //   prefs.get(section)          该分组的当前设置（已合并默认值、校验过的副本）
@@ -7,6 +7,8 @@
 //   prefs.onChange(fn)          设置变化后回调 fn(section, value)，返回取消订阅的函数
 //   DEFAULTS / OPTIONS          默认值与各选项的可选值（设置页据此渲染）
 //   pickVariant(variants, o)    按首选音质与降级顺序（fallbackChain）选歌曲的变体，classify 为变体的种类
+
+import { PLAYBACK_QUALITIES } from './playback-quality.mjs';
 
 const STORAGE_KEY = 'am-hook:settings';
 
@@ -87,6 +89,7 @@ export function pickVariant(variants, options) {
 }
 
 export const OPTIONS = {
+  playback: { quality: PLAYBACK_QUALITIES },
   download: {
     // 首选音质；没有时按 fallback 降级
     codec: CODEC_GROUPS.flatMap(([, list]) => list),
@@ -108,6 +111,7 @@ export const OPTIONS = {
 };
 
 export const DEFAULTS = {
+  playback: { quality: 'hires' },
   download: {
     codec: 'alac',
     alacMax: 192000,
@@ -197,6 +201,7 @@ function cleanOrder(raw) {
 function clean(section, raw) {
   const d = DEFAULTS[section];
   const r = raw && typeof raw === 'object' ? raw : {};
+  if (section === 'playback') return { quality: oneOf(r.quality, OPTIONS.playback.quality, d.quality) };
   if (section === 'joc') {
     return {
       mode: oneOf(r.mode, OPTIONS.joc.mode, d.mode),
@@ -295,7 +300,7 @@ export const prefs = {
 };
 
 // 其他标签页修改后同步
-addEventListener('storage', (event) => {
+if (typeof addEventListener === 'function') addEventListener('storage', (event) => {
   if (event.key !== STORAGE_KEY) return;
   const before = JSON.stringify(state);
   state = load();

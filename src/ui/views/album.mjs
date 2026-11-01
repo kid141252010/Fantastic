@@ -1,3 +1,4 @@
+import { trackKey } from '../sources/track.mjs';
 // 专辑页（/https://music.apple.com/{cc}/album/{slug}/{id}），由 app.mjs 挂载
 import { createActions, ICON as ACTION_ICON, openAlacCheck, playable, targetOf } from './actions.mjs';
 import { createDetailHeader } from './detail-header.mjs';
@@ -368,7 +369,7 @@ export function mount({ root, url, signal, player, navigate, onLangChange, toast
   }
 
   function playTrack(track) {
-    if (player.current && player.current.track === track.id) { player.toggle(); return; }
+    if (player.current && trackKey(player.current) === trackKey({ id: track.id })) { player.toggle(); return; }
     const list = songs();
     playOrder(list.map((_, i) => i), list.indexOf(track));
   }
@@ -381,10 +382,10 @@ export function mount({ root, url, signal, player, navigate, onLangChange, toast
 
   function syncRows(current, playing) {
     for (const [id, { row, playBtn }] of rows) {
-      const active = !!current && current.track === id;
+      const active = !!current && trackKey(current) === trackKey({ id: id });
       row.classList.toggle('playing', active);
       row.classList.toggle('paused', active && !playing);
-      row.classList.toggle('loading', player.pendingTrack === id);
+      row.classList.toggle('loading', player.pendingKey === trackKey({ id: id }));
       if (playBtn) playBtn.innerHTML = active && playing ? ICON.pause : ICON.play;
     }
   }

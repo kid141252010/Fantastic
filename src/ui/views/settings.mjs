@@ -1,6 +1,6 @@
 // 设置中心（/settings），由 app.mjs 挂载。通用设置（主地区、曲库语言、界面语言、wrapper-lite）沿用导航底部的选择面板；
-// JOC 对象渲染（Dolby Atmos 的播放方式）与下载设置（音质、MV、保存方式、文件名、标签、封面、歌词）保存在 prefs.mjs，
-// 修改立即生效（正在播放的曲目随之切换，见 player.js 的 jocChanged；进行中的下载沿用开始时的设置）。
+// 在线播放默认音质、JOC 对象渲染与下载设置保存在 prefs.mjs；默认音质只影响每首曲的初始选档，
+// JOC 修改会切换正在播放的曲目（player.js 的 jocChanged）；进行中的下载沿用开始时的设置。
 import { prefs, OPTIONS, CODEC_GROUPS, TAG_FIELDS, TAG_NAME, DEFAULTS, DEFAULT_FALLBACK } from '../prefs.mjs';
 import { formatPath, fitFolder, fitFile, templateIssues, TEMPLATE_VAR_GROUPS, TEMPLATE_SCOPES } from '../naming.mjs';
 import { downloads } from '../downloads.mjs';
@@ -234,12 +234,19 @@ export function mount({ root, signal, onLangChange, toast }) {
     return el('section', { className: 'set-group', id }, el('h2', { className: 'set-group-title', textContent: t(titleKey) }), el('div', { className: 'set-card' }, ...rows));
   }
 
-  /* ---------- JOC 对象渲染：prefs 的 joc 分组，正在播放的 E-AC-3 曲目随之切换（app.mjs） ---------- */
+  /* ---------- 在线播放默认音质与 JOC 对象渲染 ---------- */
   const playback = root.querySelector('#playback');
   const jocControls = [];
   const setJoc = (patch) => prefs.set('joc', patch);
+  let qualitySelect;
 
-  function renderJoc() {
+  function renderPlayback() {
+    qualitySelect = el('select', { className: 'set-select' }, ...OPTIONS.playback.quality.map((value) =>
+      el('option', { value, textContent: t(`set.playbackQuality.${value}`) })));
+    qualitySelect.setAttribute('aria-label', t('set.playbackQuality'));
+    qualitySelect.addEventListener('change', () => prefs.set('playback', { quality: qualitySelect.value }));
+    const qualitySection = section('online-quality', 'set.playback',
+      row(t('set.playbackQuality'), t('set.playbackQualityDesc'), qualitySelect));
     jocControls.length = 0;
     const mode = el('div', { className: 'set-segmented', role: 'radiogroup' });
     mode.setAttribute('aria-label', t('set.jocMode'));
@@ -275,9 +282,14 @@ export function mount({ root, signal, onLangChange, toast }) {
       gainRow.hidden = v.mode === 'off';
     });
 
-    playback.replaceChildren(section('joc', 'set.joc',
+    playback.replaceChildren(qualitySection, section('joc', 'set.joc',
       row(t('set.jocMode'), t('set.jocModeDesc'), mode, { wide: true }), datasetRow, gainRow));
+    syncPlayback();
     syncJoc();
+  }
+
+  function syncPlayback() {
+    qualitySelect.value = prefs.get('playback').quality;
   }
 
   function syncJoc() {
@@ -421,7 +433,7 @@ export function mount({ root, signal, onLangChange, toast }) {
       quality, mv, performance, save, naming, tags, cover, lyrics, footer);
 
     // 目录
-    const groups = [['general', 'set.general'], ['joc', 'set.joc'], ['quality', 'set.quality'], ['mv', 'set.mvSection'], ['save', 'set.save'], ['naming', 'set.naming'], ['tags', 'set.tags'], ['cover', 'set.cover'], ['lyrics', 'set.lyrics']];
+    const groups = [['general', 'set.general'], ['online-quality', 'set.playback'], ['joc', 'set.joc'], ['quality', 'set.quality'], ['mv', 'set.mvSection'], ['save', 'set.save'], ['naming', 'set.naming'], ['tags', 'set.tags'], ['cover', 'set.cover'], ['lyrics', 'set.lyrics']];
     root.querySelector('#toc').replaceChildren(...groups.map(([id, key]) => {
       const a = el('a', { href: `#${id}`, className: 'set-toc-link', textContent: t(key) });
       a.addEventListener('click', (e) => { e.preventDefault(); root.querySelector(`#${id}`).scrollIntoView({ behavior: 'smooth', block: 'start' }); });
@@ -437,6 +449,7 @@ export function mount({ root, signal, onLangChange, toast }) {
 
   const off = prefs.onChange((section) => {
     if (section === 'download') sync();
+    if (section === 'playback') syncPlayback();
     if (section === 'joc') syncJoc();
   });
   signal.addEventListener('abort', off, { once: true });
@@ -445,7 +458,7 @@ export function mount({ root, signal, onLangChange, toast }) {
     if (center) center.hidden = !downloads.jobs.length;
   });
   signal.addEventListener('abort', offDl, { once: true });
-  onLangChange(() => { document.title = `${t('set.title')} · am-hook`; renderJoc(); render(); });
-  renderJoc();
+  onLangChange(() => { document.title = `${t('set.title')} · am-hook`; renderPlayback(); render(); });
+  renderPlayback();
   render();
 }

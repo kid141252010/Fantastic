@@ -45,6 +45,8 @@ pub static ASSETS: &[Asset] = &[
     asset!("/assets/settings.mjs", JS, "settings.mjs"),
     asset!("/assets/library.mjs", JS, "library.mjs"),
     asset!("/assets/player.js", JS, "player.js"),
+    asset!("/assets/sources/qq.mjs", JS, "sources/qq.mjs"),
+    asset!("/assets/sources/track.mjs", JS, "sources/track.mjs"),
     asset!("/assets/i18n.js", JS, "i18n.js"),
     // 专辑动态封面播放（editorialVideo 的 HLS，MSE 播放）
     asset!("/assets/motion-art.mjs", JS, "motion-art.mjs"),
@@ -63,6 +65,7 @@ pub static ASSETS: &[Asset] = &[
     asset!("/assets/download-center.mjs", JS, "download-center.mjs"),
     asset!("/assets/downloads.css", CSS, "downloads.css"),
     asset!("/assets/prefs.mjs", JS, "prefs.mjs"),
+    asset!("/assets/playback-quality.mjs", JS, "playback-quality.mjs"),
     asset!("/assets/mp4-tags.mjs", JS, "mp4-tags.mjs"),
     asset!("/assets/zip.mjs", JS, "zip.mjs"),
     asset!("/assets/naming.mjs", JS, "naming.mjs"),
@@ -79,6 +82,7 @@ pub static ASSETS: &[Asset] = &[
     // JOC 对象渲染（E-AC-3 Dolby Atmos -> Speaker 2.0 / 双耳）：Worker 与渲染器（crates/joc-wasm 编译产物），
     // 以及双耳用的 HRTF 场（约克大学 SADIE II 数据库，Apache-2.0，见 JOC-NOTICE.md）
     asset!("/assets/joc-decode-worker.js", JS, "joc-decode-worker.js"),
+    asset!("/assets/qq-joc-input.mjs", JS, "qq-joc-input.mjs"),
     asset!("/assets/joc.wasm", WASM, "joc.wasm"),
     asset!("/assets/joc-hrtf-D1.jochrtf", BIN, "joc-hrtf-D1.jochrtf"),
     asset!("/assets/joc-hrtf-D2.jochrtf", BIN, "joc-hrtf-D2.jochrtf"),
@@ -127,6 +131,9 @@ pub static ASSETS: &[Asset] = &[
     asset!("/assets/views/song.html", HTML, "views/song.html"),
     asset!("/assets/views/song.mjs", JS, "views/song.mjs"),
     asset!("/assets/views/song.css", CSS, "views/song.css"),
+    asset!("/assets/views/qq-song.html", HTML, "views/qq-song.html"),
+    asset!("/assets/views/qq-song.mjs", JS, "views/qq-song.mjs"),
+    asset!("/assets/views/qq-song.css", CSS, "views/qq-song.css"),
     asset!("/assets/views/mv.html", HTML, "views/mv.html"),
     asset!("/assets/views/mv.mjs", JS, "views/mv.mjs"),
     asset!("/assets/views/album.html", HTML, "views/album.html"),

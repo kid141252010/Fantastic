@@ -29,6 +29,7 @@
 - [部署](#部署)
   - [Serverless 部署（Vercel / Cloudflare）](#serverless-部署vercel--cloudflare)
   - [使用本地 wrapper-lite](#使用本地-wrapper-lite)
+  - [QQ 音源](#qq-音源可选)
 - [使用指南](#使用指南)
   - [界面与导航](#界面与导航)
   - [播放器](#播放器)
@@ -158,6 +159,12 @@ am-hook --listen 0.0.0.0:8888 --wrapper-url http://127.0.0.1:12340
 - **本地**：浏览器直接请求你自己的 wrapper-lite（`/status`、`/m3u8`、`/key`、`/lyrics`、`/webplayback`、`/license`），在面板中填写地址、每秒请求数上限、同时请求数上限与 `Authorization`（规则与 `--wrapper-auth` 相同）。限制只作用于当前页面。地址可以带用户信息（如 `https://<token>@host`），与 `--wrapper-url` 相同，转为 `Authorization: Basic …` 发送；单独填写的 `Authorization` 优先。
   - 请求是跨源的：wrapper-lite 需允许跨源请求（返回 `Access-Control-Allow-Origin`，填了 `Authorization` 时还需在预检中允许该请求头），或在浏览器中安装解除跨域限制的插件。
   - MV 的 master 播放列表仍由 am-hook 以 `User-Agent: AM` 获取，其余 MV 请求（`/webplayback`、`/license`）直连本地 wrapper-lite。
+
+### QQ 音源（可选）
+
+在 Rust 服务端设置 `--qq-api https://example.invalid/api/web` 或 `AM_HOOK_QQ_API`。代理行为、请求路径、播放跳转和歌词格式见 [QQ 音源规格](docs/qq-source-validation.md)。Apple 与 QQ 使用独立的播放队列。
+
+QQ 不设置客户端限流；激进流量由上游服务自行处理。
 
 ## 使用指南
 
@@ -368,6 +375,8 @@ box 处理：FairPlay 元数据 box（`sinf`、`senc`、`saiz`、`saio`、`pssh`
 | `-l, --listen <ADDR>` | `0.0.0.0:8888` | 监听地址 |
 | `-p, --port <PORT>` | 可选 | 设置时覆盖 `--listen` 中的端口 |
 | `-w, --wrapper-url <URL>` | `http://127.0.0.1:12340` | wrapper-lite 密钥服务地址 |
+| `--qq-api <URL>` | 未设置 | 只在服务端使用的 QQ API 地址；也可用 `AM_HOOK_QQ_API` |
+| `--qq-proxy <URL>` | 未设置 | 只在服务端使用的 QQ API、AMLL、封面和媒体代理；也可用 `AM_HOOK_QQ_PROXY` |
 | `--wrapper-rate <N>` | `24` | 每秒发往 wrapper-lite 的最大请求数（任意 1 秒内，超出的请求按顺序排队）。0 不限 |
 | `--wrapper-concurrency <N>` | `24` | 同时进行的 wrapper-lite 请求上限。0 不限。wrapper-lite 运行在 QEMU 中、负载高时请求超时的话可调低（如 `8`） |
 | `--wrapper-auth <VALUE>` | 不发送 | wrapper-lite 请求的 `Authorization` 头。只填 token 时自动加 `Bearer ` 前缀；已带认证方案（`Bearer …`、`Basic …`）则原样发送。也可用环境变量 `AM_HOOK_WRAPPER_AUTH` 设置（不会出现在进程列表中）。以上三项只作用于服务端转发；页面切换为本地 wrapper-lite 时在页面中另行设置 |
@@ -396,6 +405,7 @@ box 处理：FairPlay 元数据 box（`sinf`、`senc`、`saiz`、`saio`、`pssh`
 | `GET /amp/v1/catalog/<path>?<query>` | 代理 Apple Music 目录接口（`amp-api-edge.music.apple.com/v1/catalog/...`，首页搜索使用），自动附带 music.apple.com 网页版 developer token，查询参数原样转发。使用启动时预热的专用 HTTP/2 连接，缓存成功响应，合并相同的并发请求，并通过 `Server-Timing` 标明缓存命中（`cache;desc=hit/miss/shared`）与上游耗时 |
 | `GET /amp/v1/editorial/<path>?<query>` | 代理编辑内容接口（`amp-api-edge.music.apple.com/v1/editorial/...`：groupings、rooms、multirooms，新发现与编辑页使用），方式与 `/amp/v1/catalog` 相同，共用连接与缓存 |
 | `GET /amp/v1/storefronts` | amp-api 全部地区信息（查询参数原样转发，以便跟随分页 `next`）；页面只拉取一次并保存在 localStorage（超过 30 天后在后台刷新），用于主地区列表与曲库语言的可选项（各地区的 `supportedLanguageTags`）（地区不支持的 `l` 会被静默回退到默认语言，如 `cn` 只支持 `zh-Hans-CN` / `en-GB`） |
+| `GET /qq/capabilities`、`/qq/search`、`/qq/song/<mid>/*` | 可选 QQ 音源：静态音质 capabilities、搜索、歌曲信息、302 播放、歌词、音质、封面代理与下载。搜索、音质和下载不设置客户端限流。 |
 | `GET /mv/webplayback/<adamId>`、`POST /mv/license` | 转发到 wrapper-lite `/webplayback` 与 `/license`：MV（PlayReady，`drm-type: pr`）与没有 master m3u8 的歌曲（AAC-LC 的 media m3u8，Widevine，不带 `drm-type`） |
 | `POST /station/next-tracks/ra.<id>`、`GET /station/assets?<playParams>`、`GET /station/catalog/<path>`、`GET /station/recent`、`GET /station/storefront` | 电台接口：带上页面经 `X-Media-User-Token` 传来的 media-user-token 与 developer token 请求 `amp-api.music.apple.com`（`/v1/me/stations/next-tracks`、`/v1/play/assets`、`/v1/catalog`、`/v1/me/recent/radio-stations`、`/v1/me/storefront`），原样返回、不缓存；没有 token 时返回 401 |
 | `POST /station/license` | `{ url, body, renewal }`：把 `body` 连同两个 token POST 给电台的 license 服务器（`url` 须为 Apple 的 HTTPS 地址，且是 MusicKit 认识的 license 路径），原样返回响应 |
@@ -491,9 +501,9 @@ src/
   cli.rs               命令行参数解析
   main.rs              服务启动
   lib.rs               路由构建
+  limit.rs             按客户端 IP 限制转发 wrapper-lite 的请求频率与并发
   assets.rs            内嵌前端资源：一张表（`ASSETS`）同时决定路由与 MIME，新增浏览器文件只需加一行
   amp.rs               amp-api 目录接口代理（自动获取并刷新 music.apple.com 网页版 developer token）与电台接口（转发 media-user-token 与 license 请求）
-  limit.rs             按客户端 IP 限制转发 wrapper-lite 的请求频率与并发
   log.rs               请求日志
   links.rs             Apple Music 链接解析与页面路径判定（共用的正则片段，log.rs 也复用它给请求归类）
   state.rs             配置与共享客户端

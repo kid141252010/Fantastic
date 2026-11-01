@@ -29,6 +29,7 @@ By default **decryption happens entirely in the browser**. The server only talks
 - [Deployment](#deployment)
   - [Serverless Deployment (Vercel / Cloudflare)](#serverless-deployment-vercel--cloudflare)
   - [Using a local wrapper-lite](#using-a-local-wrapper-lite)
+  - [QQ music source](#qq-music-source-optional)
 - [User Guide](#user-guide)
   - [Interface and Navigation](#interface-and-navigation)
   - [Player](#player)
@@ -158,6 +159,12 @@ The "wrapper-lite" setting at the bottom of the navigation switches between two 
 - **Local**: the browser requests your own wrapper-lite directly (`/status`, `/m3u8`, `/key`, `/lyrics`, `/webplayback`, `/license`). The panel sets its URL, max requests per second, max concurrent requests and `Authorization` (same rules as `--wrapper-auth`). The limits apply to the current page only. The URL may carry credentials (such as `https://<token>@host`); as with `--wrapper-url`, they are sent as `Authorization: Basic …`, and a separately set `Authorization` takes precedence.
   - The requests are cross-origin: the wrapper-lite must allow CORS (send `Access-Control-Allow-Origin`, and allow the `Authorization` header in preflights if one is set), or install a browser extension that lifts CORS restrictions.
   - MV master playlists are still fetched by am-hook with `User-Agent: AM`; the other MV requests (`/webplayback`, `/license`) go to the local wrapper-lite.
+
+### QQ music source (optional)
+
+Configure `--qq-api https://example.invalid/api/web` or `AM_HOOK_QQ_API` on the Rust server. See [QQ source validation](docs/qq-source-validation.md) for proxy behavior, request paths, playback redirects and lyric formats. Apple and QQ use separate playback queues.
+
+QQ has no client-side rate or concurrency limit; upstream services remain responsible for handling aggressive traffic.
 
 ## User Guide
 
@@ -368,6 +375,8 @@ Some songs (for example `1569279827`) have no master m3u8: wrapper-lite `/m3u8` 
 | `-l, --listen <ADDR>` | `0.0.0.0:8888` | Listen address |
 | `-p, --port <PORT>` | optional | Overrides the port in `--listen` when set |
 | `-w, --wrapper-url <URL>` | `http://127.0.0.1:12340` | wrapper-lite key server base URL |
+| `--qq-api <URL>` | unset | Server-only QQ API base URL; also `AM_HOOK_QQ_API` |
+| `--qq-proxy <URL>` | unset | Server-only HTTP/SOCKS proxy for QQ API, AMLL, covers and media; also `AM_HOOK_QQ_PROXY` |
 | `--wrapper-rate <N>` | `24` | Max requests per second to wrapper-lite (any 1-second window; extra requests wait in order). 0 = unlimited |
 | `--wrapper-concurrency <N>` | `24` | Max concurrent requests to wrapper-lite. 0 = unlimited. Lower it (e.g. `8`) if wrapper-lite runs in QEMU and requests time out under load |
 | `--wrapper-auth <VALUE>` | not sent | `Authorization` header for wrapper-lite requests. A bare token is sent as `Bearer <token>`; a value with a scheme (`Bearer …`, `Basic …`) is sent as is. Also read from `AM_HOOK_WRAPPER_AUTH` (keeps it out of the process list). These three apply to server relaying only; a page switched to a local wrapper-lite sets its own |
@@ -396,6 +405,7 @@ Page URLs (see [Pages](#pages)) all return the single-page app `app.html`. The A
 | `GET /amp/v1/catalog/<path>?<query>` | Proxies Apple Music catalog API (`amp-api-edge.music.apple.com/v1/catalog/...`, used by home page search) with the music.apple.com web developer token; query passed through unchanged. Uses a dedicated HTTP/2 connection warmed at startup, caches successful responses, merges identical concurrent requests, and reports `Server-Timing` (`cache;desc=hit/miss/shared`, upstream time) |
 | `GET /amp/v1/editorial/<path>?<query>` | Proxies the editorial API (`amp-api-edge.music.apple.com/v1/editorial/...`: groupings, rooms, multirooms; used by New and the editorial pages) like `/amp/v1/catalog`, sharing its connection and cache |
 | `GET /amp/v1/storefronts` | All storefronts from amp-api (query passed through to follow `next` paging); pages fetch it once and keep it in localStorage (refreshed in the background after 30 days); it supplies the storefront picker and the catalog language choices (each storefront's `supportedLanguageTags`) (an unsupported `l` silently falls back to the storefront default, e.g. `cn` only supports `zh-Hans-CN` / `en-GB`) |
+| `GET /qq/capabilities`, `/qq/search`, `/qq/song/<mid>/*` | Optional QQ source: static quality capabilities, search, song metadata, 302 playback, lyrics, qualities, cover proxy and download. Search, qualities and download have no client-side rate or concurrency limit. |
 | `GET /mv/webplayback/<adamId>`, `POST /mv/license` | Relays to wrapper-lite `/webplayback` and `/license`: MVs (PlayReady, `drm-type: pr`) and songs without a master m3u8 (AAC-LC media m3u8, Widevine without `drm-type`) |
 | `POST /station/next-tracks/ra.<id>`, `GET /station/assets?<playParams>`, `GET /station/catalog/<path>`, `GET /station/recent`, `GET /station/storefront` | Station endpoints: call `amp-api.music.apple.com` (`/v1/me/stations/next-tracks`, `/v1/play/assets`, `/v1/catalog`, `/v1/me/recent/radio-stations`, `/v1/me/storefront`) with the developer token and the media-user-token the page sends in `X-Media-User-Token`; responses are relayed as is and never cached; 401 without a token |
 | `POST /station/license` | `{ url, body, renewal }`: POSTs `body` with both tokens to the station's license server (`url` must be an Apple HTTPS URL on a license path MusicKit knows) and relays the response |
@@ -491,9 +501,9 @@ src/
   cli.rs               CLI argument parsing
   main.rs              Server startup
   lib.rs               Router construction
+  limit.rs             Per-client-IP rate and concurrency limits for relayed wrapper-lite requests
   assets.rs            Embedded front-end assets: one table (`ASSETS`) drives both the routes and the MIME types; add a browser file by adding one line
   amp.rs               amp-api catalog proxy (fetches and refreshes the music.apple.com web developer token) and station endpoints (media-user-token and license relays)
-  limit.rs             Per-client-IP rate and concurrency limits for relayed wrapper-lite requests
   log.rs               Request log
   links.rs             Apple Music link parsing and page-path matching (shared regex fragments; log.rs reuses them to classify requests)
   state.rs             Configuration and shared clients

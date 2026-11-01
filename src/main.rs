@@ -20,7 +20,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let listen_addr = cli.resolve_listen_addr()?;
     let config = cli.config()?;
-    let state = Arc::new(AppState::with_config(config.clone()));
+    let state = Arc::new(AppState::with_qq_proxy(
+        config.clone(),
+        cli.qq_proxy.as_deref(),
+    )?);
     // 启动即获取 developer token 并建立 amp-api 连接，页面的首个目录 / 搜索请求无需等待
     tokio::spawn(amp::run_warmer(state.amp.clone(), config.amp_keepalive));
 

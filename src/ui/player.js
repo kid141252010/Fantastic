@@ -60,6 +60,11 @@
   function useJocSettings(store) { jocStore = store; }
   function jocSettings() { return jocStore ? jocStore.get() : JOC_OFF; }
 
+  // Initial quality only, following the existing per-track variant lifecycle.
+  let playbackStore = null;
+  function usePlaybackSettings(store) { playbackStore = store; }
+  function playbackQuality() { return playbackStore?.get().quality || 'hires'; }
+
   function isEc3(codecs) { return /^(ec-3|ec3)$/i.test(String(codecs)); }
   /** JOC 的两种输出：joc2 = Speaker 2.0，jocbin = 双耳 */
   function isJocMode(mode) { return mode === 'joc2' || mode === 'jocbin'; }
@@ -90,6 +95,43 @@
         MS.isTypeSupported(mimeFor('flac')) && global.Worker && decrypt) modes.push('flac');
     return modes;
   }
+
+  /** QQ files are unencrypted: JOC only needs the renderer, native files use HTMLAudio capabilities. */
+  function detectQqModes(item, audio) {
+    if (item.playback === 'download') return [];
+    const mime = item.contentType || (item.playback === 'joc' ? 'audio/mp4; codecs="ec-3"' : 'audio/mpeg');
+    // Uncached probe; qq.mjs's cached supportsMime must not be reused here because
+    // mode planning has to reflect the browser's current answer. The JOC branch
+    // follows the AM ec-3 MediaSource policy and avoids canPlayType's "maybe"
+    // false positives.
+    const MS = global.ManagedMediaSource || global.MediaSource;
+    const msNative = !!(MS && typeof MS.isTypeSupported === 'function' && MS.isTypeSupported(mime));
+    if (item.playback === 'joc') {
+      const pcm = global.Worker && global.WebAssembly && (global.AudioContext || global.webkitAudioContext);
+      const mode = jocSettings().mode;
+      const modes = [];
+      if (pcm && mode === 'binaural') modes.push('jocbin');
+      if (pcm && mode !== 'off') modes.push('joc2');
+      if (msNative) modes.push('native');
+      // Keep the existing renderer as the last-resort path when native E-AC-3
+      // playback is rejected, including when JOC is set to Off.
+      if (pcm && !modes.includes('joc2')) modes.push('joc2');
+      return modes;
+    }
+    let native = msNative;
+    if (!native) {
+      audio ||= global.document?.createElement('audio');
+      native = typeof audio?.canPlayType === 'function' && audio.canPlayType(mime) !== '';
+    }
+    return native ? ['native'] : [];
+  }
+
+  const loadQq = () => typeof module !== 'undefined' && module.exports
+    ? import('./sources/qq.mjs') : import('/assets/sources/qq.mjs');
+  const loadQqJocInput = () => typeof module !== 'undefined' && module.exports
+    ? import('./qq-joc-input.mjs') : import('/assets/qq-joc-input.mjs');
+  const loadPlaybackQuality = () => typeof module !== 'undefined' && module.exports
+    ? import('./playback-quality.mjs') : import('/assets/playback-quality.mjs');
 
   function detectMode(codecs) {
     return detectModes(codecs)[0] || null;
@@ -123,7 +165,16 @@
     return g.includes('he-') ? 3 : 2;
   }
 
+  const qqQualityLabel = (quality) => {
+    const key = `qq.quality.${quality}.label`;
+    const localized = t(key);
+    return `QQ · ${localized && localized !== key ? localized : quality}`;
+  };
+
   function variantLabel(v) {
+    if (v.source === 'qq') {
+      return qqQualityLabel(v.quality);
+    }
     const g = v.group_id.toLowerCase();
     if (g.includes('alac')) {
       const spec = [v.bit_depth && `${v.bit_depth}-bit`, v.sample_rate && `${(v.sample_rate / 1000).toFixed(1).replace(/\.0$/, '')} kHz`].filter(Boolean).join(' / ');
@@ -195,6 +246,11 @@
    * 其双耳渲染版本为 Spatial Audio；AAC、HE-AAC 与全景声的立体声缩混为 AAC
    */
   function qualityBadge(v) {
+    if (v?.source === 'qq') {
+      if (v.playback === 'joc' || v.codec === 'ac-4') return 'atmos';
+      if (v.codec === 'flac') return v.quality === 'RS' ? 'hires' : 'lossless';
+      return v.codec === 'aac' ? 'lossy' : '';
+    }
     const g = ((v && v.group_id) || '').toLowerCase();
     if (!g) return '';
     if (g.includes('alac')) return v.sample_rate > 48000 ? 'hires' : 'lossless';
@@ -329,12 +385,45 @@
     };
   }
 
+  const sourceOf = (item) => item && item.source === 'qq' ? 'qq' : 'apple';
+  const trackKey = (item) => `${sourceOf(item)}:${String(item?.track ?? item?.id ?? '')}`;
+  const withIdentity = (item) => ({ ...item, source: sourceOf(item), key: trackKey(item) });
+
   async function resolveEntry(entry) {
+    const preference = playbackQuality();
+    if (entry.source === 'qq') {
+      if (!/^[0-9A-Za-z]{1,32}$/.test(entry.track)) throw new Error('Invalid QQ ID');
+      const qq = await loadQq();
+      let quality = entry.quality;
+      let row = entry;
+      if (quality === undefined) {
+        // No explicit tier: resolve the shared default-quality setting against
+        // the info-backed rows only. This keeps queue startup free of URL
+        // probes; the full qualities request remains for the detail panel.
+        let rows;
+        try {
+          rows = await qq.qualities(entry.track, undefined, { basic: true });
+        } catch (error) {
+          // Any failure (including 429) retains the historical HQ fallback.
+        }
+        if (rows) {
+          row = qq.pickDefaultQuality(rows, preference);
+          if (!row) throw Object.assign(new Error(t('album.noPlayable', { name: entry.name })), { noPlayable: true });
+          quality = row.quality;
+        } else {
+          quality = 'HQ';
+        }
+      }
+      return { ...entry, ...qq.variantItem(entry.track, qq.qualityVariant(quality, row)), source: 'qq', key: trackKey(entry),
+        href: `/qq-song/${entry.track}`, title: entry.name };
+    }
     const { variants } = await global.AmWrapper.songMaster(entry.track);
-    const best = sortVariants(variants).find((v) => detectMode(v.codecs));
+    const { pickAppleVariant } = await loadPlaybackQuality();
+    const best = pickAppleVariant(sortVariants(variants).filter((v) => detectMode(v.codecs)), preference);
     if (!best) throw Object.assign(new Error(t('album.noPlayable', { name: entry.name })), { noPlayable: true });
     return {
       ...variantItem(entry.track, best),
+      source: 'apple', key: trackKey(entry),
       // 这首歌的全部音质，全屏播放界面的音质详情里可切换
       variants,
       track: entry.track,
@@ -760,12 +849,12 @@
       this.clipped = false;
     }
 
-    async load(url) {
+    async load(url, openTrack = (path, signal) => global.AmDecrypt.openTrack(path, signal)) {
       const gen = this.generation;
       await this.started;
       if (gen !== this.generation) throw new DOMException('stale', 'AbortError');
       this.controller = new AbortController();
-      this.playlist = await global.AmDecrypt.openTrack(url, this.controller.signal);
+      this.playlist = await openTrack(url, this.controller.signal);
       if (gen !== this.generation) throw new DOMException('stale', 'AbortError');
       this.duration = this.playlist.duration;
       this.decoder = new JocDecoder();
@@ -1738,17 +1827,19 @@
       // 音质详情（全屏播放界面里点音质标志弹出，见 renderQualityPanel）；app.html 把它放在全屏播放界面里
       this.qualityPanel = root.ownerDocument.getElementById('quality-panel')
         || root.appendChild(Object.assign(root.ownerDocument.createElement('div'), { className: 'quality-panel', hidden: true }));
-      /** 各歌曲的全部音质（track → Promise<variants>），条目里没带 variants 时（如歌曲页播放）打开详情才取 */
+      /** 各来源歌曲的音质状态（source:track → { loading, variants, error }），打开详情才取 */
       this.variantCache = new Map();
       this.$('.player-sub').classList.add('marquee', 'marquee--secondary');
       this.subMarquee = new Marquee(this.$('.player-sub'));
       this.listeners = new Set();
       this.unsupportedListeners = new Set();
       this.playToken = 0;
-      /** 播放队列：{ entries, pos }，entries 见 resolveEntry；pendingTrack 为正在解析的曲目 */
+      /** 播放队列：{ entries, pos }，entries 见 resolveEntry */
       this.queue = null;
+      this.source = 'apple';
+      this.sourceContexts = new Map();
       this.queueSerial = 0;
-      this.pendingTrack = null;
+      this.pendingKey = null;
       /** 随机播放（true / false）与重复播放（off / all / one），与 Apple Music 相同，下次打开时保留 */
       this.shuffle = false;
       this.repeat = 'off';
@@ -1813,8 +1904,9 @@
       if (!this.current) return;
       const c = this.current;
       const badge = this.$('.player-mode');
+      badge.disabled = false;
       const doc = this.root.ownerDocument;
-      const icon = qualityIcon(c.badge, doc);
+      const icon = c.source === 'qq' ? null : qualityIcon(c.badge, doc);
       if (icon) icon.removeAttribute('title');
       const label = icon ? icon.getAttribute('aria-label') : this.modeText();
       // JOC 渲染时图标后面注明，否则看不出没有走浏览器自己的解码
@@ -1829,6 +1921,10 @@
     /** 播放方式：MSE · ALAC（浏览器直接解码）、ALAC → FLAC（转码）、E-AC-3 → 5.1 PCM（解码为多声道 PCM）、E-AC-3 → JOC（对象渲染） */
     modeText() {
       const c = this.current;
+      if (c.source === 'qq') {
+        const quality = c.quality || 'HQ';
+        return qqQualityLabel(quality);
+      }
       if (c.mode === 'joc2') return `E-AC-3 → ${t('player.jocSpeaker')}`;
       if (c.mode === 'jocbin') return `E-AC-3 → ${t('player.jocBinaural', { dataset: this.pcm ? this.pcm.dataset : jocSettings().dataset })}`;
       if (c.mode === 'flac') return 'ALAC → FLAC';
@@ -1849,6 +1945,7 @@
       if (panel.hidden || !c) return;
       const doc = this.root.ownerDocument;
       const v = c.variant || {};
+      const qq = c.source === 'qq';
       const joc = isJocMode(c.mode);
       const rows = [
         [t('player.mode'), this.modeText()],
@@ -1857,10 +1954,10 @@
         [t('player.jocGain'), joc ? `${jocSettings().gain} dB` : ''],
       ].filter(([, value]) => value);
       const note = joc ? [t('player.jocNotice'), c.mode === 'joc2' && this.jocFallback && t('player.jocHrtfMissing')].filter(Boolean).join(' ')
-        : t(c.mode === 'ec3' ? 'player.pcmNotice' : c.mode === 'flac' ? 'player.flacNotice' : 'player.mseNotice');
+        : t(qq ? 'player.nativeNotice' : c.mode === 'ec3' ? 'player.pcmNotice' : c.mode === 'flac' ? 'player.flacNotice' : 'player.mseNotice');
       const list = el(doc, 'div', 'quality-panel-list');
       panel.replaceChildren(
-        el(doc, 'div', 'quality-panel-head', qualityIcon(c.badge, doc), el(doc, 'span', 'quality-panel-label', c.label || codecName(c.codecs))),
+        el(doc, 'div', 'quality-panel-head', qualityIcon(qq ? qualityBadge(v) : c.badge, doc), el(doc, 'span', 'quality-panel-label', c.label || codecName(c.codecs))),
         el(doc, 'dl', 'quality-panel-specs', ...rows.flatMap(([key, value]) => [el(doc, 'dt', '', key), el(doc, 'dd', '', value)])),
         el(doc, 'p', 'quality-panel-note', note),
         ...(isEc3(c.codecs) && jocStore ? this.jocSwitch(doc) : []),
@@ -1870,9 +1967,10 @@
       if (state.loading) list.append(el(doc, 'p', 'quality-panel-status', t('player.qualitiesLoading')));
       else if (state.error) list.append(el(doc, 'p', 'quality-panel-status', t('player.qualitiesFailed', { msg: state.error })));
       for (const variant of sortVariants(state.variants || [])) {
-        const id = `${c.track}:${variant.group_id}`;
-        const playable = detectModes(variant.codecs).length > 0;
-        const spec = [codecName(variant.codecs), formatRate(variant.bandwidth), ...variantTags(variant), !playable && t('row.downloadOnly')];
+        const id = qq ? `qq:${c.track}:${variant.quality}` : `${c.track}:${variant.group_id}`;
+        const playable = (qq ? detectQqModes(variant, this.audio) : detectModes(variant.codecs)).length > 0;
+        const spec = qq ? [variant.format || codecName(variant.codecs)]
+          : [codecName(variant.codecs), formatRate(variant.bandwidth), ...variantTags(variant), !playable && t('row.downloadOnly')];
         const button = el(doc, 'button', 'quality-option',
           qualityIcon(qualityBadge(variant), doc),
           el(doc, 'span', 'quality-option-text',
@@ -1893,20 +1991,29 @@
 
     /**
      * 歌曲的全部音质：{ variants } / { loading } / { error }。条目带着 variants（队列播放）时直接用，
-     * 否则（如歌曲页播放）向 wrapper-lite 取一次 master，按歌曲缓存，取回后重绘详情
+     * 否则向 wrapper-lite 取 master / QQ 取 qualities，按来源与歌曲缓存，取回后重绘详情
      */
     variantsOf(item) {
-      if (item.variants) return { variants: item.variants };
-      const cached = this.variantCache.get(item.track);
+      const qq = item.source === 'qq';
+      if (item.variants && (!qq || item.variants.length)) return { variants: item.variants };
+      const cached = this.variantCache.get(trackKey(item));
       if (cached) return cached;
       const state = { loading: true };
-      this.variantCache.set(item.track, state);
+      this.variantCache.set(trackKey(item), state);
       if (this.variantCache.size > 20) this.variantCache.delete(this.variantCache.keys().next().value);
-      global.AmWrapper.songMaster(item.track)
-        .then(({ variants }) => { state.variants = variants; }, (err) => { state.error = err.message || String(err); })
+      const request = qq ? loadQq().then(async (source) => ({ variants: source.qualityVariants(await source.qualities(item.track)) }))
+        : global.AmWrapper.songMaster(item.track);
+      request
+        .then(({ variants }) => {
+          state.variants = variants;
+          if (qq) {
+            item.variants = variants;
+            if (this.current && trackKey(this.current) === trackKey(item)) this.current.variants = variants;
+          }
+        }, (err) => { state.error = err.message || String(err); })
         .finally(() => {
           state.loading = false;
-          if (this.current && this.current.track === item.track) this.renderQualityPanel();
+          if (this.current && trackKey(this.current) === trackKey(item)) this.renderQualityPanel();
         });
       return state;
     }
@@ -1982,7 +2089,7 @@
         if (pcm && joc.gain !== pcm.gainDb) pcm.setGain(joc.gain);
         // 还在选择播放方式（加载中）时，方式或 HRTF 变了就按新设置重新开始
         if (this.attempting && (joc.mode !== previous || reconfigure)) { this.replay(); return; }
-        if (pcm && joc.mode !== 'off') {
+        if (pcm && (joc.mode !== 'off' || c.source === 'qq')) {
           if (reconfigure) {
             this.jocFallback = false;
             this.pcm.clipped = false;
@@ -2005,17 +2112,24 @@
     }
 
     /** 换成同一首歌的另一种音质 */
-    switchVariant(variant) {
+    async switchVariant(variant) {
       const c = this.current;
+      if (c?.source === 'qq') {
+        const qq = await loadQq();
+        if (this.current !== c || c.quality === variant.quality || variant.source !== 'qq'
+            || !detectQqModes(variant, this.audio).length) return;
+        const { mode, duration, ...item } = c;
+        return this.play({ ...item, ...qq.variantItem(c.track, variant) });
+      }
       if (!c || c.id === `${c.track}:${variant.group_id}`) return;
       const { mode, duration, ...item } = c;
-      this.play({ ...item, ...variantItem(c.track, variant) });
+      return this.play({ ...item, ...variantItem(c.track, variant) });
     }
 
     openQualityPanel() {
       if (!this.current) return;
-      const state = this.variantCache.get(this.current.track);
-      if (state && state.error) this.variantCache.delete(this.current.track); // 上次没取到：重新取
+      const state = this.variantCache.get(trackKey(this.current));
+      if (state && state.error) this.variantCache.delete(trackKey(this.current)); // 上次没取到：重新取
       this.qualityPanel.hidden = false;
       this.$('.player-mode').setAttribute('aria-expanded', 'true');
       this.renderQualityPanel();
@@ -2153,12 +2267,7 @@
       ['timeupdate', 'progress', 'durationchange', 'loadedmetadata'].forEach((ev) => a.addEventListener(ev, () => this.renderProgress()));
       ['play', 'pause', 'playing', 'waiting', 'ended'].forEach((ev) => a.addEventListener(ev, () => { this.renderToggle(); this.emit(); }));
       a.addEventListener('ended', () => this.ended());
-      a.addEventListener('error', () => {
-        // 尝试阶段的错误由 play() 统一处理（会自动换下一种播放方式）
-        if (!this.attempting && this.current && this.current.mode !== 'mse' && this.audio.getAttribute('src')) {
-          this.showError(() => t('player.errorGeneric', { hint: fallbackHint() }));
-        }
-      });
+      a.addEventListener('error', () => this.handleAudioError());
 
       if ('mediaSession' in navigator) {
         const ms = navigator.mediaSession;
@@ -2171,6 +2280,26 @@
           ms.setActionHandler('nexttrack', () => this.next());
           ms.setActionHandler('previoustrack', () => this.previous());
         } catch {}
+      }
+    }
+
+    handleAudioError() {
+      const error = new Error(t('player.errorGeneric', { hint: fallbackHint() }));
+      const code = this.audio.error?.code;
+      const unsupported = code === 3 || code === 4;
+      // Some Safari versions report an unsupported EC-3 source through the
+      // media element error event even when play() did not reject. Feed that
+      // event into the same mode loop used by promise failures.
+      if (unsupported && this.nativeAttempt && this.nativeAttempt.token === this.playToken && this.current?.mode === 'native') {
+        this.nativeAttempt.reject(error);
+        return;
+      }
+      if (unsupported && this.nativeFallback && this.current?.source === 'qq' && this.current.mode === 'native') {
+        this.nativeFallback(error);
+        return;
+      }
+      if (!this.attempting && this.current && this.current.mode !== 'mse' && this.audio.getAttribute('src')) {
+        this.showError(() => t('player.errorGeneric', { hint: fallbackHint() }));
       }
     }
 
@@ -2251,13 +2380,20 @@
       list.addEventListener('click', (e) => {
         const row = rowOf(e.target);
         if (!row || !this.queue || this.queueDrag) return;
+        const entry = this.queue.entries[indexOf(row)];
         if (e.target.closest('.queue-remove')) this.removeQueueEntry(indexOf(row));
+        else if (e.target.closest('.queue-play')) this.playAt(indexOf(row));
+        else if (entry?.source === 'qq') {
+          if (e.target.closest('a')) return;
+          row.querySelector('.queue-name').click();
+        }
         else if (pointerType === 'mouse') this.selectQueueRow(row);
         else this.playAt(indexOf(row));
       });
       list.addEventListener('dblclick', (e) => {
         const row = rowOf(e.target);
-        if (row && this.queue && !e.target.closest('.queue-remove')) this.playAt(indexOf(row));
+        if (row && this.queue && this.queue.entries[indexOf(row)]?.source !== 'qq'
+          && !e.target.closest('.queue-remove')) this.playAt(indexOf(row));
       });
       list.addEventListener('keydown', (e) => {
         const row = rowOf(e.target);
@@ -2265,7 +2401,12 @@
         const index = indexOf(row);
         const rows = [...list.querySelectorAll('.queue-item')];
         const at = rows.indexOf(row);
-        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); this.playAt(index); return; }
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          if (this.queue.entries[index]?.source === 'qq' && e.key === 'Enter') row.querySelector('.queue-name').click();
+          else this.playAt(index);
+          return;
+        }
         if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); this.removeQueueEntry(index); return; }
         if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
         e.preventDefault();
@@ -2287,7 +2428,7 @@
       list.addEventListener('pointerdown', (e) => {
         pointerType = e.pointerType || 'mouse';
         const row = rowOf(e.target);
-        if (!row || !this.queue || e.button !== 0 || e.target.closest('.queue-remove')) return;
+        if (!row || !this.queue || e.button !== 0 || e.target.closest('button, a')) return;
         const entry = this.queue.entries[indexOf(row)];
         const grip = e.target.closest('.queue-grip');
         if (!entry || (!grip && pointerType !== 'mouse')) return;
@@ -2440,7 +2581,7 @@
       if (!this.queuePanel || this.queuePanel.hidden || (this.queueDrag && !force)) return;
       const q = this.queue;
       const upcoming = q ? q.entries.slice(q.pos + 1) : [];
-      const key = q ? `${q.pos}|${q.entries.map((e) => e.track).join(',')}` : '';
+      const key = q ? `${q.pos}|${q.entries.map(trackKey).join(',')}` : '';
       if (!force && key === this.queueKey) return;
       this.queueKey = key;
       this.queuePanel.querySelector('.queue-empty').hidden = upcoming.length > 0;
@@ -2461,6 +2602,21 @@
           + `<span class="queue-time"></span><span class="queue-grip" aria-hidden="true">${ICON_GRIP}</span>`;
         const art = li.querySelector('.queue-art');
         if (entry.artwork) art.src = entry.artwork; else art.removeAttribute('src');
+        const name = li.querySelector('.queue-name');
+        if (entry.source === 'qq') {
+          li.title = t('qq.openSong');
+          const link = doc.createElement('a');
+          link.className = 'queue-name';
+          link.href = `/qq-song/${entry.track}`;
+          name.replaceWith(link);
+          const play = doc.createElement('button');
+          play.type = 'button';
+          play.className = 'queue-play';
+          play.textContent = '▶';
+          play.title = t('album.playTrack', { name: entry.name || '' });
+          play.setAttribute('aria-label', play.title);
+          li.querySelector('.queue-art-wrap').append(play);
+        }
         li.querySelector('.queue-name').textContent = entry.name || t('player.unknownTitle');
         li.querySelector('.queue-artist').textContent = entry.artist || '';
         li.querySelector('.queue-time').textContent = entry.duration ? formatTime(entry.duration / 1000) : '';
@@ -2594,12 +2750,15 @@
       };
       return {
         get current() { return player.current; },
-        get pendingTrack() { return player.pendingTrack; },
+        get pendingKey() { return player.pendingKey; },
+        get source() { return player.source || 'apple'; },
+        switchSource: (source) => player.switchSource(source),
         get audio() { return player.audio; },
         transport: () => player.transport(),
         barTop: () => player.barTop(),
         play: (item) => player.play(item),
         playQueue: (entries, pos, options) => player.playQueue(entries, pos, options),
+        appendQueue: (entry) => player.appendQueue(entry),
         toggle: () => player.toggle(),
         pause: () => player.pause(),
         onChange: scoped(this.listeners),
@@ -2619,9 +2778,52 @@
      * （音质详情里切换用，省略时打开详情再取）；以上均可省略
      * m3u8Url 为 CDN 原始地址（浏览器解密）
      */
+    switchSource(source, restore = true) {
+      source = source === 'qq' ? 'qq' : 'apple';
+      const previous = this.source || 'apple';
+      if (source === previous) return;
+      this.sourceContexts ||= new Map();
+      this.sourceContexts.set(previous, { queue: this.queue, current: this.current, time: this.transport().currentTime });
+      this.playToken++;
+      this.queueSerial++;
+      this.nextSerial++;
+      clearTimeout(this.nextRetry);
+      this.nextEntry = null;
+      this.pendingKey = null;
+      this.teardown();
+      this.source = source;
+      try { localStorage.setItem('am-hook:source', source); } catch {}
+      const saved = this.sourceContexts.get(source);
+      this.queue = saved?.queue || null;
+      this.current = null;
+      this.updateMediaSession();
+      this.closeQualityPanel();
+      this.setLoading(false);
+      this.showError('');
+      this.renderQueue(true);
+      if (restore && saved?.current) {
+        // Restored queues keep their position. Resume only when the user presses play.
+        this.start(saved.current, { force: true, resumeAt: saved.time, paused: true });
+      } else if (restore && this.queue?.entries.length) {
+        this.loadQueuedPaused(this.queue);
+      } else {
+        this.root.hidden = true;
+        this.layout();
+        this.emit();
+      }
+    }
+
     async play(item) {
+      item = withIdentity(item);
+      this.switchSource(item.source, false);
+      // A manual selection wins even if this track's default is still loading.
+      // Use the existing queue resolution guard so it cannot replace/toggle it.
+      if (this.pendingKey === trackKey(item)) {
+        this.queueSerial++;
+        this.pendingKey = null;
+      }
       // 单独播放另一首歌时结束队列；同一首歌切换音质时保留
-      if (this.queue && item.track !== this.queue.entries[this.queue.pos].track) this.clearQueue();
+      if (this.queue && trackKey(item) !== trackKey(this.queue.entries[this.queue.pos])) this.clearQueue();
       return this.start(item);
     }
 
@@ -2632,6 +2834,13 @@
      * options.more：电台这类没有尽头的队列，async () => 下一批条目，剩下不到 2 首时取来接在队尾（见 extendQueue）。
      */
     playQueue(entries, pos = 0, options = {}) {
+      if (!entries.length || !entries[pos]) return;
+      const source = sourceOf(entries[pos]);
+      const selected = entries[pos];
+      const onlySource = entries.filter((entry) => sourceOf(entry) === source);
+      pos = onlySource.indexOf(selected);
+      entries = onlySource.map(withIdentity);
+      this.switchSource(source, false);
       if (typeof options.shuffle === 'boolean' && options.shuffle !== this.shuffle) {
         this.shuffle = options.shuffle;
         try { localStorage.setItem('am-hook:shuffle', this.shuffle ? '1' : '0'); } catch {}
@@ -2646,6 +2855,43 @@
       return this.playAt(this.queue.pos);
     }
 
+    /** Add to this source's queue without starting playback or changing sources. */
+    appendQueue(entry) {
+      entry = withIdentity(entry);
+      const source = sourceOf(entry);
+      this.sourceContexts ||= new Map();
+      const active = source === (this.source || 'apple');
+      const context = active ? { queue: this.queue, current: this.current } : (this.sourceContexts.get(source) || {});
+      if (!context.queue) {
+        const current = context.current;
+        context.queue = { entries: current ? [withIdentity({ ...current, track: current.track, name: current.title || current.name })] : [],
+          pos: current ? 0 : -1, ordered: null, more: null, extending: false };
+      }
+      context.queue.entries.push(entry);
+      if (context.queue.ordered) context.queue.ordered.push(entry);
+      if (active) {
+        this.queue = context.queue;
+        this.renderQueue(true);
+        this.renderModes();
+        this.prepareNext();
+        if (!this.current) this.loadQueuedPaused(this.queue);
+      } else {
+        this.sourceContexts.set(source, context);
+      }
+    }
+
+    /** Make a previously unplayed queue accessible, waiting for an explicit play action. */
+    loadQueuedPaused(queue) {
+      const token = this.playToken;
+      if (queue.pos < 0) queue.pos = 0;
+      resolveEntry(queue.entries[queue.pos]).then((item) => {
+        if (token !== this.playToken || this.queue !== queue || this.current) return;
+        return this.start(item, { paused: true });
+      }).catch((error) => {
+        if (token === this.playToken && this.queue === queue) this.showError(error.message || String(error));
+      });
+    }
+
     /** 有 more 的队列（电台）：当前曲目之后不到 2 首时取下一批接在队尾；同时只取一次，取不到时下次换曲再试 */
     extendQueue() {
       const q = this.queue;
@@ -2655,6 +2901,7 @@
         .then(() => q.more())
         .then((entries) => {
           if (this.queue !== q || !entries || !entries.length) return;
+          entries = entries.filter((entry) => sourceOf(entry) === (this.source || 'apple')).map(withIdentity);
           q.entries.push(...entries);
           if (q.ordered) q.ordered.push(...entries);
           this.renderQueue(true);
@@ -2668,7 +2915,7 @@
     clearQueue() {
       this.queue = null;
       this.queueSerial++;
-      this.pendingTrack = null;
+      this.pendingKey = null;
       this.prepareNext();
     }
 
@@ -2726,7 +2973,7 @@
       if (pos >= 0) q.pos = pos;
       this.nextEntry = null;
       this.queueSerial++;
-      this.pendingTrack = null;
+      this.pendingKey = null;
       this.current = { ...item, duration: this.mse.playlist.duration };
       this.showError('');
       this.renderTrackText();
@@ -2745,36 +2992,52 @@
       this.queue.pos = pos;
       this.extendQueue();
       const serial = ++this.queueSerial;
-      this.pendingTrack = entry.track;
+      this.pendingKey = trackKey(entry);
       this.emit();
       try {
         const item = await resolveEntry(entry);
         if (serial !== this.queueSerial) return;
-        this.pendingTrack = null;
+        this.pendingKey = null;
         await this.start(item);
       } catch (err) {
         if (serial !== this.queueSerial) return;
-        this.pendingTrack = null;
+        this.pendingKey = null;
         this.showError(() => (err.noPlayable ? err.message : t('album.trackFailed', { name: entry.name, msg: err.message })));
       }
       this.emit();
     }
 
     /** options.force：同一首同一音质也重新开始（JOC 设置变化后换播放方式，见 replay） */
-    async start(item, { force = false } = {}) {
-      if (!force && this.current && this.current.id === item.id) { this.toggle(); return; }
+    async start(item, { force = false, resumeAt: savedTime, paused = false, modes: requestedModes } = {}) {
+      item = withIdentity(item);
+      if (!force && this.current && trackKey(this.current) === trackKey(item) && this.current.id === item.id) { this.toggle(); return; }
+      this.nativeFallback = null;
       this.jocMode = jocSettings().mode;
       this.jocStale = false;
       this.jocFallback = false;
-      const modes = detectModes(item.codecs);
+      const modes = requestedModes || (item.source === 'qq' ? detectQqModes(item, this.audio) : detectModes(item.codecs));
       if (!modes.length) {
         this.showError(() => t('player.errorCodec', { codecs: item.codecs, hint: fallbackHint() }));
         return;
       }
       const token = ++this.playToken;
+      if (item.source === 'qq') {
+        const qq = await loadQq();
+        if (token !== this.playToken) return;
+        // Rebuild for older saved/source contexts too; <img> keeps item.artwork.
+        // A song mid is never a substitute for a missing album mid.
+        const albumMid = item.qq?.albumMid || '';
+        item.artworkFetchUrl = albumMid ? qq.coverUrl(albumMid) : '';
+      }
       // 同一首歌切换音质时从当前位置继续；专辑页换曲（track 不同）从头播放
-      const resumeAt = this.current && this.current.track === item.track ? this.transport().currentTime : 0;
+      const resumeAt = savedTime ?? (this.current && trackKey(this.current) === trackKey(item) ? this.transport().currentTime : 0);
       this.current = { ...item, mode: modes[0], duration: 0 };
+      const entry = this.queue?.entries[this.queue.pos];
+      if (item.source === 'qq' && entry && trackKey(entry) === trackKey(item)) {
+        // Repeat and source restoration keep the selected payload, including API format overrides.
+        Object.assign(entry, { quality: item.quality, playback: item.playback, codec: item.codec,
+          codecs: item.codecs, contentType: item.contentType, format: item.variant?.format });
+      }
       this.show();
       this.showError('');
       this.renderTrackText();
@@ -2791,9 +3054,34 @@
         this.current.duration = 0;
         this.renderMode();
         this.attempting = true;
+        const nativeAttempt = mode === 'native'
+          ? { token, reject: null }
+          : null;
+        const nativeFailure = nativeAttempt
+          ? new Promise((_, reject) => { nativeAttempt.reject = reject; })
+          : null;
         try {
-          await this.tryMode(mode, item, resumeAt, token);
+          await (nativeFailure ? Promise.race([this.tryMode(mode, item, resumeAt, token, paused,
+            () => { this.nativeAttempt = nativeAttempt; }), nativeFailure])
+            : this.tryMode(mode, item, resumeAt, token, paused));
+          if (nativeAttempt && this.nativeAttempt === nativeAttempt) this.nativeAttempt = null;
+          if (mode === 'native' && item.source === 'qq') {
+            const nextMode = modes.indexOf(mode) + 1;
+            if (nextMode < modes.length) {
+              const fallback = () => {
+                if (this.nativeFallback !== fallback || token !== this.playToken || this.current?.mode !== 'native') return;
+                this.nativeFallback = null;
+                const transport = this.transport();
+                void this.start(item, { force: true, resumeAt: transport.currentTime,
+                  paused: transport.paused, modes: modes.slice(nextMode) });
+              };
+              this.nativeFallback = fallback;
+            }
+          }
           this.attempting = false;
+          this.setLoading(false);
+          this.showError('');
+          if (paused && token === this.playToken) this.audio.pause();
           this.renderProgress();
           if (token === this.playToken) {
             this.nextEntry = null; // 新的 MediaSource 上还没有接任何曲目
@@ -2801,6 +3089,7 @@
           }
           return;
         } catch (err) {
+          if (nativeAttempt && this.nativeAttempt === nativeAttempt) this.nativeAttempt = null;
           this.attempting = false;
           if (token !== this.playToken) return;
           if (err && err.name === 'NotAllowedError') {
@@ -2816,7 +3105,7 @@
       }
 
       this.teardown();
-      failedCodecs.add(item.codecs);
+      if (item.source !== 'qq') failedCodecs.add(item.codecs);
       this.unsupportedListeners.forEach((fn) => fn(item.codecs));
       const detail = lastError && lastError.message ? ` (${lastError.message})` : '';
       this.showError(() => t('player.errorFailed', { label: item.label || item.codecs, codecs: item.codecs, hint: fallbackHint() }) + detail);
@@ -2831,8 +3120,27 @@
       this.audio.load();
     }
 
-    async tryMode(mode, item, resumeAt, token) {
+    async tryMode(mode, item, resumeAt, token, paused = false, onNativeReady) {
+      if (item.source === 'qq' && isPcmMode(mode) && item.playback !== 'joc') {
+        throw new Error('QQ JOC requires playback=joc');
+      }
       this.teardown();
+      if (mode === 'native') {
+        onNativeReady?.();
+        this.audio.src = item.streamUrl;
+        if (paused) {
+          this.audio.addEventListener('loadedmetadata', () => {
+            if (token === this.playToken && resumeAt > 0) this.audio.currentTime = resumeAt;
+          }, { once: true });
+          this.audio.load();
+          return;
+        }
+        await this.audio.play();
+        if (token !== this.playToken) return;
+        if (resumeAt > 0) this.audio.currentTime = resumeAt;
+        this.current.duration = Number.isFinite(this.audio.duration) ? this.audio.duration : 0;
+        return;
+      }
       if (isPcmMode(mode)) {
         const onError = (err) => this.showError(err.message || String(err));
         if (mode === 'ec3') this.pcm = new PcmEngine(() => this.updatePcm(), onError, () => this.ended());
@@ -2850,12 +3158,24 @@
             onClip: () => this.showError(() => t('player.jocClip')),
           });
         }
-        this.pcm.gain.gain.value = this.audio.volume;
-        await this.pcm.load(item.m3u8Url);
+        const pcm = this.pcm;
+        pcm.gain.gain.value = this.audio.volume;
+        const openTrack = item.source === 'qq' ? async (url, signal) => {
+          const { openQqJocTrack } = await loadQqJocInput();
+          return openQqJocTrack(url, signal, (progress) => {
+            if (typeof this.$ !== 'function' || typeof this.renderError !== 'function') return;
+            const downloaded = progress.downloaded.toLocaleString();
+            const percent = progress.percent == null ? '—' : `${progress.percent}%`;
+            this.errorMsg = () => t('player.qqDownloading', { downloaded, percent });
+            this.renderError();
+          });
+        } : undefined;
+        await pcm.load(item.source === 'qq' ? item.downloadUrl : item.m3u8Url, openTrack);
         if (token !== this.playToken) return;
-        this.current.duration = this.pcm.duration;
-        if (resumeAt > 0) await this.pcm.seek(resumeAt);
-        await this.pcm.play();
+        this.current.duration = pcm.duration;
+        if (resumeAt > 0) await pcm.seek(resumeAt);
+        if (token !== this.playToken) return;
+        if (!paused) await pcm.play();
         return;
       }
       this.mse.onRecover = () => this.showError('');
@@ -2864,7 +3184,7 @@
       if (token !== this.playToken) return;
       this.current.duration = this.mse.playlist ? this.mse.playlist.duration : 0;
       if (resumeAt > 0) this.audio.currentTime = resumeAt;
-      await this.audio.play();
+      if (!paused) await this.audio.play();
     }
 
     /** 某编码经实际尝试确认无法播放时回调 */
@@ -2900,7 +3220,7 @@
 
     renderToggle() {
       const a = this.transport();
-      const waiting = this.loading && a.paused || (!a.paused && !isPcmMode(this.current.mode) && a.readyState < 3);
+      const waiting = this.loading && a.paused || (!a.paused && !isPcmMode(this.current?.mode) && a.readyState < 3);
       if (!a.paused) this.loading = false;
       const btn = this.$('.player-toggle');
       btn.innerHTML = waiting ? ICON_LOADING : (a.paused ? ICON_PLAY : ICON_PAUSE);
@@ -2941,7 +3261,7 @@
 
     updateMediaSession() {
       if (!('mediaSession' in navigator) || !global.MediaMetadata) return;
-      const source = this.current.artwork || '';
+      const source = (this.current?.source === 'qq' ? this.current.artworkFetchUrl : this.current?.artwork) || '';
       if (source !== this.mediaArtSource) {
         if (this.mediaArtController) this.mediaArtController.abort();
         if (this.mediaArtUrl) URL.revokeObjectURL(this.mediaArtUrl);
@@ -2965,11 +3285,18 @@
             .catch(() => {}); // The player bar still displays the original image.
         }
       }
+      if (!this.current) {
+        this.mediaMetadataState = null;
+        navigator.mediaSession.metadata = null;
+        navigator.mediaSession.playbackState = 'none';
+        return;
+      }
       this.writeMediaMetadata();
     }
 
     writeMediaMetadata() {
       const c = this.current;
+      if (!c) return;
       const state = {
         title: c.title || '',
         artist: c.artist || '',
@@ -3032,7 +3359,8 @@
     }
   }
 
-  const api = { AmPlayer, Marquee, artistNodes, qualityBadge, qualityIcon, segmentAt, formatTime, detectMode, detectModes, mimeFor, useJocSettings };
+  const api = { AmPlayer, Marquee, artistNodes, qualityBadge, qualityIcon, segmentAt, formatTime, variantLabel,
+    detectMode, detectModes, detectQqModes, mimeFor, useJocSettings, usePlaybackSettings, trackKey, sourceOf };
   if (typeof module !== 'undefined' && module.exports) module.exports = { ...api, MseEngine, JocEngine, JocLiveEngine, sortVariants };
   else global.AmHook = api;
 })(typeof window !== 'undefined' ? window : globalThis);

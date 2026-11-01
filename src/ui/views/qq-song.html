@@ -1,0 +1,42 @@
+<div class="page">
+  <main>
+    <section class="song-header" id="hero">
+      <div class="detail-art song-art">
+        <div class="detail-radiosity" id="radiosity" aria-hidden="true"></div>
+        <div class="album-art" id="art"></div>
+      </div>
+      <div class="song-details">
+        <h1 class="song-title" id="title" data-i18n="qq.songTitle"></h1>
+        <p class="song-artist" id="subtitle"></p>
+        <p class="song-album" id="meta"></p>
+        <div class="song-badges" id="badges"></div>
+        <div class="song-buttons">
+          <button class="detail-play-btn" id="play-best" type="button" disabled data-i18n="song.play"></button>
+          <button class="song-reparse" id="favorite" type="button" disabled data-i18n="library.favorite"></button>
+          <button class="song-reparse" id="enqueue" type="button" disabled data-i18n="qq.addQueue"></button>
+        </div>
+      </div>
+    </section>
+    <div class="alert error" id="alert" hidden aria-live="polite"></div>
+    <section class="song-section" aria-labelledby="variants-title">
+      <div class="song-section-head">
+        <div class="song-section-heading">
+          <h2 class="song-section-title" id="variants-title" data-i18n="song.variants"></h2>
+          <p class="song-section-sub" id="quality-status" aria-live="polite" data-i18n="qq.qualitiesLoading"></p>
+        </div>
+      </div>
+      <div class="quality-list" id="variant-list"></div>
+    </section>
+    <section class="song-section" id="lyrics" hidden aria-labelledby="lyrics-title">
+      <h2 class="song-section-title" id="lyrics-title" data-i18n="lyrics.title"></h2>
+      <p class="song-section-sub" id="lyrics-source"></p>
+      <div class="qq-lyrics-actions" id="lyrics-actions">
+        <button class="song-reparse" id="lyrics-preview" type="button" aria-controls="lyrics-lines" data-i18n="qq.lyricsPreview"></button>
+        <a class="song-reparse qq-lyrics-download" id="lyrics-qrc" hidden data-i18n="qq.downloadQrc"></a>
+        <a class="song-reparse qq-lyrics-download" id="lyrics-trans" hidden data-i18n="qq.downloadQrcTrans"></a>
+        <a class="song-reparse qq-lyrics-download" id="lyrics-roma" hidden data-i18n="qq.downloadQrcRoma"></a>
+      </div>
+      <div class="qq-lyric-lines" id="lyrics-lines"></div>
+    </section>
+  </main>
+</div>

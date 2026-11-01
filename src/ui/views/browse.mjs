@@ -1,3 +1,4 @@
+import { trackKey } from '../sources/track.mjs';
 // 编辑页（与 music.apple.com 相同的 amp-api 调用与区块排版），由 app.mjs 挂载：
 //   /new 与 /https://music.apple.com/{cc}/new                新发现（groupings?name=music；/new 跟随主地区）
 //   /radio 与 /https://music.apple.com/{cc}/radio            广播（groupings?name=radio；/radio 跟随主地区）。填过 media-user-token 时
@@ -917,18 +918,18 @@ export function mount({ root, url, signal, player, navigate, onLangChange, toast
 
   /* ---------- 播放：曲目货架按区块顺序排队（见 AmPlayer.playQueue），离开页面后继续 ---------- */
   function playTrack(track, queue) {
-    if (player.current && player.current.track === track.id) { player.toggle(); return; }
+    if (player.current && trackKey(player.current) === trackKey({ id: track.id })) { player.toggle(); return; }
     const list = queue.filter(playable);
     player.playQueue(list.map((song) => songEntry(song, country)), Math.max(0, list.indexOf(track)));
   }
 
   function syncRows(current, playing) {
     for (const [id, list] of rows) {
-      const active = !!current && current.track === id;
+      const active = !!current && trackKey(current) === trackKey({ id: id });
       for (const { row, playBtn } of list) {
         row.classList.toggle('playing', active);
         row.classList.toggle('paused', active && !playing);
-        row.classList.toggle('loading', player.pendingTrack === id);
+        row.classList.toggle('loading', player.pendingKey === trackKey({ id: id }));
         if (playBtn) playBtn.innerHTML = active && playing ? ICON.pause : ICON.play;
       }
     }

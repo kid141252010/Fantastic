@@ -13,7 +13,7 @@ import { openMenu, createActions, nowPlayingTarget, songTarget } from '/assets/v
 import { mountDownloadCenter } from '/assets/download-center.mjs';
 import { prefs } from '/assets/prefs.mjs';
 
-const { AmPlayer, useJocSettings } = window.AmHook;
+const { AmPlayer, useJocSettings, usePlaybackSettings } = window.AmHook;
 const { AmI18n, AmWrapper } = window;
 const { t } = AmI18n;
 AmI18n.apply();
@@ -50,6 +50,7 @@ const VIEW_FILES = { new: 'browse', charts: 'browse', editorial: 'browse', radio
 const VIEWS = {
   home: ['/assets/views/home.html', () => import('/assets/views/home.mjs')],
   song: ['/assets/views/song.html', () => import('/assets/views/song.mjs')],
+  'qq-song': ['/assets/views/qq-song.html', () => import('/assets/views/qq-song.mjs')],
   mv: ['/assets/views/mv.html', () => import('/assets/views/mv.mjs')],
   album: ['/assets/views/album.html', () => import('/assets/views/album.mjs')],
   playlist: ['/assets/views/playlist.html', () => import('/assets/views/playlist.mjs')],
@@ -71,6 +72,7 @@ const LIBRARY_PLAYLIST_PATH = /^\/library\/(?:playlist\/p\.[0-9A-Za-z_-]+|favori
 function route(url) {
   if (url.origin !== location.origin) return null;
   if (url.pathname === '/') return 'home';
+  if (/^\/qq-song\/[0-9A-Za-z]{1,32}\/?$/.test(url.pathname)) return 'qq-song';
   // 「新发现」（跟随主地区）
   if (url.pathname === '/new') return 'new';
   // 广播（跟随主地区，与 src/links.rs 的 is_radio_path 相同）
@@ -97,6 +99,7 @@ function toast(message) {
 
 // JOC 对象渲染的设置（设置中心与音质详情共用 prefs.mjs 的 'joc' 分组）：先接上再创建播放器，改动（含其他标签页）立即生效
 useJocSettings({ get: () => prefs.get('joc'), set: (patch) => prefs.set('joc', patch) });
+usePlaybackSettings({ get: () => prefs.get('playback') });
 const player = new AmPlayer($('player'));
 prefs.onChange((section) => { if (section === 'joc') player.jocChanged(); });
 // 供调试与测试使用
@@ -110,7 +113,9 @@ import('/assets/lyrics/panel.mjs')
       toggle: $('player').querySelector('.player-lyrics'),
       bar: $('player'),
       player, t, notify: toast,
-      getMeta: () => ({ title: player.current?.title, artist: player.current?.artist, artists: player.current?.artists, artwork: player.current?.artwork }),
+      getMeta: () => ({ title: player.current?.title, artist: player.current?.artist, artists: player.current?.artists,
+        artwork: player.current?.artwork,
+        artworkFetchUrl: player.current?.source === 'qq' ? player.current.artworkFetchUrl : undefined }),
       navigate: (href) => navigate(href),
       onLangChange: AmI18n.onChange,
       onShow: resolveTarget,
@@ -133,7 +138,7 @@ import('/assets/lyrics/panel.mjs')
     const more = actions.moreButton(() => target, 'lyrics-action lyrics-more');
     $('lyrics-overlay').querySelector('.lyrics-actions').append(favorite.button, more);
     function syncTarget() {
-      const id = (player.current && player.current.track) || null;
+      const id = player.current ? window.AmHook.trackKey(player.current) : null;
       if (id === targetId) return;
       targetId = id;
       target = nowPlayingTarget(player.current);
@@ -143,9 +148,9 @@ import('/assets/lyrics/panel.mjs')
     function resolveTarget() {
       syncTarget();
       const id = targetId;
-      if (!id || resolved === id) return;
+      if (!id || resolved === id || player.current?.source === 'qq') return;
       resolved = id;
-      songTarget(id, player.current.country || 'us')
+      songTarget(player.current.track, player.current.country || 'us')
         .then((full) => { if (id === targetId) { target = full; favorite.refresh(); } })
         .catch(() => { if (id === targetId) resolved = null; }); // 取不到时沿用播放队列里的信息，下次展开再试
     }
@@ -157,7 +162,7 @@ import('/assets/lyrics/panel.mjs')
 
     const follow = (current) => {
       syncTarget();
-      lyrics.setTrack(current && current.track, current && current.country);
+      lyrics.setTrack(current && current.track, current && current.country, current?.source);
     };
     follow(player.current);
     player.onChange(follow);
