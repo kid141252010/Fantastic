@@ -140,7 +140,7 @@ test('QQ panel retries a failed qualities request when reopened and caches empty
   assert.equal(requests, 2);
 });
 
-test('QQ default quality surfaces a 429 immediately without retrying or starting HQ', async () => {
+test('QQ default quality treats a 429 like other failures and falls back to HQ', async () => {
   const player = playerHarness();
   let requests = 0;
   globalThis.fetch = async () => {
@@ -149,9 +149,8 @@ test('QQ default quality surfaces a 429 immediately without retrying or starting
   };
   await player.playQueue([qq.entryOf(track())]);
   assert.equal(requests, 1);
-  assert.equal(player.current, null);
-  assert.equal(player.audio.src, undefined);
-  assert.equal(typeof player.error, 'function');
+  assert.equal(player.current?.quality, 'HQ');
+  assert.equal(player.audio.paused, false);
 });
 
 test('panel selection resumes native QQ at the same time and retains queue order, repeat payload and selection', async () => {

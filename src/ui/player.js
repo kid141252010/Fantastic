@@ -404,8 +404,7 @@
         try {
           rows = await qq.qualities(entry.track, undefined, { basic: true });
         } catch (error) {
-          if (error?.status === 429) throw error;
-          // Non-rate-limit failures retain the historical HQ fallback.
+          // Any failure (including 429) retains the historical HQ fallback.
         }
         if (rows) {
           row = qq.pickDefaultQuality(rows, preference);
