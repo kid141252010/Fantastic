@@ -1,5 +1,5 @@
 // QQ containers, the real JOC Worker's packet contract, and player input injection; offline.
-import test from 'node:test';
+import test, { afterEach, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
@@ -11,6 +11,11 @@ const fixture = new Uint8Array(fs.readFileSync(new URL('../crates/joc-core/tests
 const worker = fs.readFileSync(new URL('../src/ui/joc-decode-worker.js', import.meta.url), 'utf8');
 // Run the production packet extractor, so changes to the Worker contract are covered.
 const samplesFromFragment = vm.runInNewContext(`${worker.slice(worker.indexOf('function boxes('), worker.indexOf('async function loadEc3('))}\nsamplesFromFragment`, { Uint8Array, DataView });
+const originalFetch = Object.getOwnPropertyDescriptor(globalThis, 'fetch');
+beforeEach(() => {});
+afterEach(() => {
+  if (originalFetch) Object.defineProperty(globalThis, 'fetch', originalFetch); else delete globalThis.fetch;
+});
 const concat = (...parts) => { const out = new Uint8Array(parts.reduce((n, part) => n + part.length, 0)); let at = 0; for (const part of parts) { out.set(part, at); at += part.length; } return out; };
 const words = (...values) => { const out = new Uint8Array(values.length * 4); const view = new DataView(out.buffer); values.forEach((value, i) => view.setUint32(i * 4, value)); return out; };
 const box = (name, ...parts) => concat(words(8 + parts.reduce((n, part) => n + part.length, 0)), Uint8Array.from(name, (c) => c.charCodeAt(0)), ...parts);

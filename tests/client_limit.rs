@@ -141,3 +141,26 @@ async fn without_ip_header_the_peer_address_is_used() {
         assert_eq!(response.status(), expected, "{ip}");
     }
 }
+
+#[tokio::test]
+async fn qq_routes_bypass_wrapper_limits_and_local_wrapper_only() {
+    let calls = Arc::new(AtomicUsize::new(0));
+    let mut settings = config(fake_wrapper(calls.clone()).await, Some("x-real-ip"));
+    settings.qq_api = Some("https://example.invalid/api/web".into());
+    let app = serve_app(AppState::with_config(settings.clone())).await;
+    let client = reqwest::Client::new();
+    for _ in 0..5 {
+        let response = client.get(format!("{app}/qq/capabilities")).send().await.unwrap();
+        assert_eq!(response.status(), 200);
+    }
+    for _ in 0..2 {
+        let response = client.get(format!("{app}/parse/song/1440833098")).send().await.unwrap();
+        assert_eq!(response.status(), 200);
+    }
+    assert_eq!(client.get(format!("{app}/parse/song/1440833098")).send().await.unwrap().status(), 429);
+
+    settings.wrapper_relay = false;
+    let local_only = serve_app(AppState::with_config(settings)).await;
+    assert_eq!(client.get(format!("{local_only}/qq/capabilities")).send().await.unwrap().status(), 200);
+    assert_eq!(client.get(format!("{local_only}/parse/song/1440833098")).send().await.unwrap().status(), 501);
+}

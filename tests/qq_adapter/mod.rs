@@ -1,5 +1,6 @@
 //! QQ adapter unit tests, including local axum upstream contract checks.
 use super::*;
+use std::sync::{atomic::{AtomicUsize, Ordering}, Arc};
 use axum::{body::to_bytes, http::Request, routing::any, Router};
 use tokio::net::TcpListener;
 use tower::ServiceExt;
@@ -41,6 +42,9 @@ fn proxy_environment_is_parsed_and_cli_takes_precedence() {
         .env(CHILD, "1")
         .env("AM_HOOK_QQ_PROXY", PROXY)
         .env_remove("AM_HOOK_QQ_API")
+        .env_remove("AM_HOOK_WRAPPER_AUTH")
+        .env_remove("AM_HOOK_WRAPPER_HINT")
+        .env_remove("AM_HOOK_AMLL_API")
         .output()
         .unwrap();
     assert!(
@@ -69,6 +73,7 @@ fn proxy_cli_parameter_reaches_all_qq_clients_without_changing_other_clients() {
         for client in [&qq.api, &qq.media, &qq.cover] {
             assert!(format!("{client:?}").contains("127.0.0.1:11080"));
         }
+        // reqwest 0.12's Debug output is the only stable observable for proxy wiring here.
         assert_eq!(
             format!("{:?}", state.http_client),
             format!("{:?}", default.http_client)
@@ -321,7 +326,12 @@ fn song_info_preserves_existing_response_shapes() {
 #[test]
 fn caches_expire_and_are_bounded() {
     let cache = Cache::new(2, 60);
+    let before = Instant::now();
     cache.put("a".into(), 1);
+    assert_eq!(cache.get("a"), Some(1));
+    let expires = cache.entries.lock().unwrap().peek("a").unwrap().0;
+    assert!(expires >= before + Duration::from_secs(59));
+    assert!(expires <= Instant::now() + Duration::from_secs(60));
     cache.put("b".into(), 2);
     cache.put("c".into(), 3);
     assert_eq!(cache.get("a"), None);
@@ -332,7 +342,6 @@ fn caches_expire_and_are_bounded() {
     assert_eq!(cache.get("expired"), None);
     assert_eq!(qq().searches.ttl, Duration::from_secs(600));
     assert_eq!(qq().songs.ttl, Duration::from_secs(86400));
-    assert_eq!(qq().lyrics.ttl, Duration::from_secs(604800));
 }
 #[test]
 fn ttml_keeps_timing_translation_and_agents_but_removes_credits_and_urls() {
@@ -367,6 +376,7 @@ fn ttml_keeps_timing_translation_and_agents_but_removes_credits_and_urls() {
             .unwrap();
     assert!(root_lang.contains("<tt xml:lang=\"en\""));
     assert!(clean_ttml("not XML").is_none());
+    assert!(clean_ttml("<!ENTITY secret SYSTEM \"file:///etc/passwd\"><tt><body><p begin=\"0\">x</p></body></tt>").is_none());
 }
 #[test]
 fn lrc_fallback_handles_headers_offsets_repeated_stamps_and_xml_escaping() {
@@ -457,6 +467,16 @@ fn qrc_background_rows_attach_with_nested_roles_or_stand_alone() {
     assert_eq!(standalone.matches("<p ").count(), 1);
     assert!(!standalone.contains("ttm:role=\"x-bg\""));
     assert!(standalone.contains("<p begin=\"1.000\" end=\"1.500\">"));
+
+    let fullwidth = qrc_ttml_filtered(
+        "[2000,1000]（bg(2000,500)）（2500,500）",
+        Some("[00:02.000]translation"),
+        Some("[2000,100]roman(2000,100)"),
+        None,
+    )
+    .unwrap();
+    assert!(fullwidth.contains("x-translation"));
+    assert!(fullwidth.contains("x-roman"));
 }
 
 #[test]
@@ -661,11 +681,7 @@ fn auxiliary_roles_each_attach_to_the_nearest_available_line() {
         None,
     )
     .unwrap();
-    let rows: Vec<_> = Regex::new(r"<p .*?</p>")
-        .unwrap()
-        .find_iter(&text)
-        .map(|row| row.as_str())
-        .collect();
+    let rows = lyric_rows(&text);
     assert_eq!(rows.len(), 3);
     assert!(rows[0].starts_with("<p begin=\"1.090\""));
     assert!(!rows[0].contains("ttm:role="));
@@ -679,7 +695,6 @@ fn auxiliary_roles_each_attach_to_the_nearest_available_line() {
 #[test]
 fn synthetic_wet_lyric_new_aligns_translation_and_romanization_in_amll_inline_format() {
     let raw = synthetic_wet_lyrics();
-    let row_pattern = Regex::new(r"<p .*?</p>").unwrap();
     for raw in [&raw, &raw["data"]] {
         let candidates = converted_lyrics_with_context(raw, None);
         assert_eq!(candidates.len(), 2);
@@ -688,10 +703,7 @@ fn synthetic_wet_lyric_new_aligns_translation_and_romanization_in_amll_inline_fo
         let text = &candidates[0].text;
         assert!(text.contains("xmlns:ttm=\"http://www.w3.org/ns/ttml#metadata\""));
         assert!(text.contains("itunes:timing=\"Word\""));
-        let rows: Vec<_> = row_pattern
-            .find_iter(text)
-            .map(|row| row.as_str())
-            .collect();
+        let rows = lyric_rows(text);
         assert_eq!(rows.len(), 4, "auxiliary rows must not create lyric lines");
         // These roles must be direct <p> children, after the timed main spans,
         // per src/ui/lyrics/ttml.mjs readVoice/inline (also tests/lyrics_ui.cjs).
@@ -740,11 +752,7 @@ fn real_wet_lyric_new_preserves_lines_and_auxiliary_spans_after_unescaped_quotes
         .find(|lyric| lyric.source == "qrc")
         .unwrap()
         .text;
-    let rows: Vec<_> = Regex::new(r"<p .*?</p>")
-        .unwrap()
-        .find_iter(text)
-        .map(|row| row.as_str())
-        .collect();
+    let rows = lyric_rows(text);
     // The real response fields were clipped at 2600 characters, without closing
     // the XML envelopes. Three leading production rows are filtered; the title
     // remains because this test deliberately omits song metadata context.
@@ -786,11 +794,7 @@ fn full_wet_lyric_new_aligns_available_auxiliary_text_without_changing_lrc() {
     assert_eq!(candidates[0].source, "qrc");
     assert_eq!(candidates[1].source, "lrc");
     let text = &candidates[0].text;
-    let rows: Vec<_> = Regex::new(r"<p .*?</p>")
-        .unwrap()
-        .find_iter(text)
-        .map(|row| row.as_str())
-        .collect();
+    let rows = lyric_rows(text);
     // The original QRC has 59 main rows. Ht removes the title head and ln
     // removes the three 词/曲/编曲 rows; the 54 translated rows remain because
     // those four production rows carry only // placeholders.
@@ -1015,13 +1019,14 @@ fn state(enabled: bool) -> Arc<AppState> {
 }
 
 async fn serve_local(app: Router) -> Option<(String, tokio::task::JoinHandle<()>)> {
-    // Some managed test sandboxes deny loopback binds. CI runs the same tests
-    // with sockets enabled; a denied bind is reported and skipped locally.
     let listener = match TcpListener::bind("127.0.0.1:0").await {
         Ok(listener) => listener,
         Err(error) => {
-            eprintln!("skipping loopback QQ mock: {error}");
-            return None;
+            if std::env::var("AM_HOOK_TEST_SKIP_LOOPBACK").as_deref() == Ok("1") {
+                eprintln!("skipping loopback QQ mock: {error}");
+                return None;
+            }
+            panic!("loopback QQ mock bind failed: {error}; set AM_HOOK_TEST_SKIP_LOOPBACK=1 to skip");
         }
     };
     let url = format!("http://{}", listener.local_addr().unwrap());
@@ -1033,6 +1038,14 @@ async fn get(state: Arc<AppState>, uri: &str) -> Response {
         .oneshot(Request::builder().uri(uri).body(Body::empty()).unwrap())
         .await
         .unwrap()
+}
+
+async fn json_body(response: Response) -> Value {
+    serde_json::from_slice(&to_bytes(response.into_body(), 100_000).await.unwrap()).unwrap()
+}
+
+fn lyric_rows(text: &str) -> Vec<&str> {
+    Regex::new(r"<p .*?</p>").unwrap().find_iter(text).map(|row| row.as_str()).collect()
 }
 
 #[tokio::test]
@@ -1056,6 +1069,8 @@ async fn proxy_is_not_exposed_in_capabilities_or_host_config() {
         if path == "/qq/capabilities" {
             let value: Value = serde_json::from_str(&body).unwrap();
             assert_eq!(value["enabled"], true);
+            let fixture: Value = serde_json::from_str(include_str!("../fixtures/qq_capabilities.json")).unwrap();
+            assert_eq!(value, fixture, "Rust capabilities must match the shared fixture");
             let qualities = value["qualities"].as_array().unwrap();
             assert_eq!(qualities.len(), 20);
             assert_eq!(qualities[0]["quality"], "MP3128");
@@ -1086,6 +1101,7 @@ async fn unconfigured_routes_are_404_even_with_missing_or_invalid_parameters() {
         "/qq/song/a/play",
         "/qq/song/a/download",
         "/qq/song/a/lyrics",
+        "/qq/song/a/lyrics/raw",
         "/qq/song/a/qualities",
         "/qq/cover/003DFRzD192KKD",
         "/qq/cover/a%21",
@@ -1131,6 +1147,7 @@ async fn configured_routes_validate_mid_and_serve_only_cached_dtos() {
         "/qq/song/a%21/play",
         "/qq/song/a%21/download",
         "/qq/song/a%21/lyrics",
+        "/qq/song/a%21/lyrics/raw",
         "/qq/song/a%21/qualities",
     ] {
         assert_eq!(
@@ -1157,7 +1174,7 @@ async fn configured_routes_validate_mid_and_serve_only_cached_dtos() {
             }],
             raw_qrc: false,
             raw_trans: false,
-            raw_roma: true,
+            raw_roma: false,
             raw: RawLyrics::default(),
         },
     );
@@ -1194,7 +1211,7 @@ async fn raw_lyric_route_validates_kind_reports_missing_data_and_uses_utf8_filen
             raw: RawLyrics {
                 qrc: Some("<LyricContent>qrc raw</LyricContent>".into()),
                 trans: Some("[00:01.00]translation raw".into()),
-                roma: Some("[00:01.00]roman raw".into()),
+                roma: None,
             },
         },
     );
@@ -1203,7 +1220,6 @@ async fn raw_lyric_route_validates_kind_reports_missing_data_and_uses_utf8_filen
     for (kind, file, suffix, body) in [
         ("qrc", "download.qrc", "%2E%71%72%63", "<LyricContent>qrc raw</LyricContent>"),
         ("qrctrans", "download.lrc", "%2E%74%72%61%6E%73%2E%6C%72%63", "[00:01.00]translation raw"),
-        ("qrcroma", "download.qrc", "%2E%72%6F%6D%61%2E%71%72%63", "[00:01.00]roman raw"),
     ] {
         let response = get(state.clone(), &format!("/qq/song/{mid}/lyrics/raw?kind={kind}")).await;
         assert_eq!(response.status(), StatusCode::OK, "{kind}");
@@ -1215,11 +1231,31 @@ async fn raw_lyric_route_validates_kind_reports_missing_data_and_uses_utf8_filen
         let bytes = to_bytes(response.into_body(), 100_000).await.unwrap();
         assert_eq!(String::from_utf8(bytes.to_vec()).unwrap(), body, "{kind}");
     }
+    let response = get(state.clone(), &format!("/qq/song/{mid}/lyrics/raw?kind=qrcroma")).await;
+    assert_eq!(response.status(), StatusCode::NOT_FOUND, "qrcroma without raw data");
     // Unknown and missing kinds are rejected before serving any data.
     for query in ["", "?kind=bad", "?kind=qrc%2F"] {
         let path = format!("/qq/song/{mid}/lyrics/raw{query}");
         assert_eq!(get(state.clone(), &path).await.status(), StatusCode::BAD_REQUEST, "{query}");
     }
+}
+
+#[tokio::test]
+async fn raw_lyric_bad_kind_rejects_before_cold_upstream_fetch() {
+    let hits = Arc::new(AtomicUsize::new(0));
+    let seen = hits.clone();
+    let upstream = Router::new().fallback(any(move || {
+        seen.fetch_add(1, Ordering::SeqCst);
+        async { StatusCode::NOT_FOUND }
+    }));
+    let Some((base, task)) = serve_local(upstream).await else { return; };
+    let mut config = AppState::new("http://127.0.0.1:1".into()).config;
+    config.qq_api = Some(base);
+    let state = Arc::new(AppState::with_config(config));
+    let response = get(state, "/qq/song/cold/lyrics/raw?kind=bad").await;
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(hits.load(Ordering::SeqCst), 0);
+    task.abort();
 }
 
 #[tokio::test]
@@ -1238,7 +1274,12 @@ async fn playback_redirect_has_no_audio_or_json_body() {
 
 #[tokio::test]
 async fn download_upstream_non_2xx_returns_502() {
-    let upstream = Router::new().fallback(any(|| async { StatusCode::BAD_GATEWAY }));
+    let hits = Arc::new(AtomicUsize::new(0));
+    let seen = hits.clone();
+    let upstream = Router::new().fallback(any(move || {
+        seen.fetch_add(1, Ordering::SeqCst);
+        async { StatusCode::FORBIDDEN }
+    }));
     let Some((base, task)) = serve_local(upstream).await else {
         return;
     };
@@ -1269,6 +1310,62 @@ async fn download_upstream_non_2xx_returns_502() {
     );
     let response = get(state, &format!("/qq/song/{mid}/download?quality=HQ")).await;
     assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
+    assert_eq!(hits.load(Ordering::SeqCst), 1);
+    task.abort();
+}
+
+#[tokio::test]
+async fn download_success_transfers_headers_and_body() {
+    let upstream = Router::new().fallback(any(|| async {
+        Response::builder()
+            .status(StatusCode::OK)
+            .header(header::CONTENT_TYPE, "audio/mpeg")
+            .header(header::CONTENT_LENGTH, "4")
+            .body(Body::from("data"))
+            .unwrap()
+    }));
+    let Some((base, task)) = serve_local(upstream).await else { return; };
+    let state = state(true);
+    let qq = state.qq.as_ref().unwrap();
+    let mid = "downloadok";
+    qq.songs.put(mid.into(), Song {
+        id: mid.into(), name: "Song".into(), artists: vec!["Artist".into()], album: "Album".into(),
+        album_mid: "album".into(), duration_ms: 1000, cover: String::new(), vip: false, ttml: false,
+    });
+    qq.audio.put(Quality::Hq.cache_key(mid), Audio {
+        url: reqwest::Url::parse(&format!("{base}/track.mp3")).unwrap(), size_bytes: Some(4), codec_hint: None,
+    });
+    let response = get(state, &format!("/qq/song/{mid}/download?quality=HQ")).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(response.headers()[header::CONTENT_TYPE], "audio/mpeg");
+    assert_eq!(response.headers()[header::CONTENT_DISPOSITION], "attachment; filename=\"download.mp3\"; filename*=UTF-8''%41%72%74%69%73%74%20%2D%20%53%6F%6E%67%2E%6D%70%33");
+    assert_eq!(response.headers()[header::CONTENT_LENGTH], "4");
+    assert_eq!(response.headers()[header::CACHE_CONTROL], "no-store");
+    assert_eq!(to_bytes(response.into_body(), 100).await.unwrap().as_ref(), b"data");
+    task.abort();
+}
+
+#[tokio::test]
+async fn download_redirect_from_upstream_is_hidden_as_502() {
+    let upstream = Router::new().fallback(any(|| async {
+        Response::builder()
+            .status(StatusCode::FOUND)
+            .header(header::LOCATION, "https://evil.example.invalid/audio.mp3")
+            .body(Body::empty())
+            .unwrap()
+    }));
+    let Some((base, task)) = serve_local(upstream).await else { return; };
+    let state = state(true);
+    let qq = state.qq.as_ref().unwrap();
+    let mid = "downloadredirect";
+    qq.songs.put(mid.into(), Song {
+        id: mid.into(), name: "Song".into(), artists: vec!["Artist".into()], album: "Album".into(),
+        album_mid: "album".into(), duration_ms: 1000, cover: String::new(), vip: false, ttml: false,
+    });
+    qq.audio.put(Quality::Hq.cache_key(mid), Audio {
+        url: reqwest::Url::parse(&format!("{base}/track.mp3")).unwrap(), size_bytes: Some(4), codec_hint: None,
+    });
+    assert_eq!(get(state, &format!("/qq/song/{mid}/download?quality=HQ")).await.status(), StatusCode::BAD_GATEWAY);
     task.abort();
 }
 
@@ -1509,7 +1606,11 @@ fn dolby_tiers_follow_verified_wet_sample_entries() {
             assert_eq!(row.playback, playback, "{quality:?}");
             assert_eq!(row.codec, codec.name());
             assert_eq!(row.format, format);
-            assert_eq!(row.content_type, codec.content_type());
+            assert_eq!(row.content_type, match codec {
+                Codec::Ac4 => "audio/mp4; codecs=\"ac-4\"",
+                Codec::Ec3 => "audio/mp4; codecs=\"ec-3\"",
+                _ => unreachable!("dolby fixture codec"),
+            });
             assert_eq!(row.size_bytes, Some(size));
         }
     }
@@ -1729,8 +1830,7 @@ async fn qualities_endpoint_returns_all_tiers_and_uses_shared_cached_probes() {
     assert!(qq.audio.get(&Quality::Da.cache_key("abc")).is_none());
     let response = get(state.clone(), "/qq/song/abc/qualities").await;
     assert_eq!(response.status(), StatusCode::OK);
-    let bytes = to_bytes(response.into_body(), 100_000).await.unwrap();
-    let body: Value = serde_json::from_slice(&bytes).unwrap();
+    let body = json_body(response).await;
     let rows = body["qualities"].as_array().unwrap();
     assert_eq!(rows.len(), 20);
     assert_eq!(
@@ -1744,35 +1844,35 @@ async fn qualities_endpoint_returns_all_tiers_and_uses_shared_cached_probes() {
     );
     #[rustfmt::skip]
     let cases = [
-        ("MP3128", true, Some(4317292), "MP3 128 kbps", "native", "mp3"),
-        ("AAC48", true, Some(1600000), "AAC 48 kbps", "native", "aac"),
-        ("WEB", true, Some(3259882), "AAC 96 kbps", "native", "aac"),
-        ("AAC192", true, Some(6519764), "AAC 192 kbps", "native", "aac"),
-        ("OGG96", true, Some(3200000), "Ogg 96 kbps", "native", "vorbis"),
-        ("OGG192", true, Some(6400000), "Ogg 192 kbps", "native", "vorbis"),
-        ("HQ", true, Some(10792943), "MP3 320 kbps", "native", "mp3"),
-        ("NAC", false, None, "AICodec", "download", "nac"),
-        ("SQ", true, Some(55397039), "FLAC", "native", "flac"),
-        ("RS", false, None, "FLAC Hi-Res", "native", "flac"),
-        ("QAI", true, Some(186980254), "FLAC", "native", "flac"),
-        ("Q360V1", true, Some(58805051), "FLAC", "native", "flac"),
-        ("Q360V2", true, Some(80437198), "FLAC", "native", "flac"),
-        ("RA360", false, None, "360 Reality Audio", "download", "unknown"),
-        ("DTS", false, None, "DTS", "download", "dts"),
-        ("DTSX", false, None, "DTS:X", "download", "dtsx"),
-        ("DA", true, Some(5112212), "AC-4 Dolby Atmos", "native", "ac-4"),
-        ("DAEAC3", true, Some(5112212), "E-AC-3 JOC", "joc", "ec-3"),
-        ("DA448", true, Some(8936764), "AC-4 A-JOC 448 kbps", "native", "ac-4"),
-        ("DA1500", true, Some(29870162), "AC-4 A-JOC 1500 kbps", "native", "ac-4"),
+        ("MP3128", true, Some(4317292), "MP3 128 kbps", "native", "mp3", "audio/mpeg"),
+        ("AAC48", true, Some(1600000), "AAC 48 kbps", "native", "aac", "audio/mp4; codecs=\"mp4a.40.2\""),
+        ("WEB", true, Some(3259882), "AAC 96 kbps", "native", "aac", "audio/mp4; codecs=\"mp4a.40.2\""),
+        ("AAC192", true, Some(6519764), "AAC 192 kbps", "native", "aac", "audio/mp4; codecs=\"mp4a.40.2\""),
+        ("OGG96", true, Some(3200000), "Ogg 96 kbps", "native", "vorbis", "audio/ogg; codecs=\"vorbis\""),
+        ("OGG192", true, Some(6400000), "Ogg 192 kbps", "native", "vorbis", "audio/ogg; codecs=\"vorbis\""),
+        ("HQ", true, Some(10792943), "MP3 320 kbps", "native", "mp3", "audio/mpeg"),
+        ("NAC", false, None, "AICodec", "download", "nac", "audio/x-nac"),
+        ("SQ", true, Some(55397039), "FLAC", "native", "flac", "audio/flac"),
+        ("RS", false, None, "FLAC Hi-Res", "native", "flac", "audio/flac"),
+        ("QAI", true, Some(186980254), "FLAC", "native", "flac", "audio/flac"),
+        ("Q360V1", true, Some(58805051), "FLAC", "native", "flac", "audio/flac"),
+        ("Q360V2", true, Some(80437198), "FLAC", "native", "flac", "audio/flac"),
+        ("RA360", false, None, "360 Reality Audio", "download", "unknown", "application/octet-stream"),
+        ("DTS", false, None, "DTS", "download", "dts", "audio/vnd.dts"),
+        ("DTSX", false, None, "DTS:X", "download", "dtsx", "audio/vnd.dts.hd; codecs=\"dtsx\""),
+        ("DA", true, Some(5112212), "AC-4 Dolby Atmos", "native", "ac-4", "audio/mp4; codecs=\"ac-4\""),
+        ("DAEAC3", true, Some(5112212), "E-AC-3 JOC", "joc", "ec-3", "audio/mp4; codecs=\"ec-3\""),
+        ("DA448", true, Some(8936764), "AC-4 A-JOC 448 kbps", "native", "ac-4", "audio/mp4; codecs=\"ac-4\""),
+        ("DA1500", true, Some(29870162), "AC-4 A-JOC 1500 kbps", "native", "ac-4", "audio/mp4; codecs=\"ac-4\""),
     ];
-    for (quality, available, size, format, playback, codec) in cases {
+    for (quality, available, size, format, playback, codec, content_type) in cases {
         let row = rows.iter().find(|row| row["quality"] == quality).unwrap();
         assert_eq!(row["available"], available, "{quality}");
         assert_eq!(row["sizeBytes"], json!(size), "{quality}");
         assert_eq!(row["format"], format, "{quality}");
         assert_eq!(row["playback"], playback, "{quality}");
         assert_eq!(row["codec"], codec, "{quality}");
-        assert!(row["contentType"].as_str().unwrap().contains('/'));
+        assert_eq!(row["contentType"], content_type, "{quality}");
     }
     for private in ["vkey", "file_url", "qqmusic.qq.com", "example.invalid"] {
         assert!(!body.to_string().contains(private));
@@ -1786,8 +1886,7 @@ async fn qualities_endpoint_returns_all_tiers_and_uses_shared_cached_probes() {
         );
         let response = get(state.clone(), "/qq/song/abc/qualities").await;
         assert_eq!(response.status(), StatusCode::OK);
-        let bytes = to_bytes(response.into_body(), 100_000).await.unwrap();
-        let body: Value = serde_json::from_slice(&bytes).unwrap();
+        let body = json_body(response).await;
         let row = body["qualities"]
             .as_array()
             .unwrap()
@@ -1807,11 +1906,9 @@ async fn basic_qualities_use_only_info_fields_and_negative_probe_cache() {
         "abc".into(),
         json!({"mid":"abc","file":{"size_320mp3":123,"size_flac":456,"size_dolby":789}}),
     );
-    qq.audio_failures.put(Quality::Nac.cache_key("abc"), ());
     let response = get(state.clone(), "/qq/song/abc/qualities?basic=1").await;
     assert_eq!(response.status(), StatusCode::OK);
-    let body: Value =
-        serde_json::from_slice(&to_bytes(response.into_body(), 100_000).await.unwrap()).unwrap();
+    let body = json_body(response).await;
     let rows = body["qualities"].as_array().unwrap();
     assert_eq!(rows.len(), 13);
     assert!(rows.iter().all(|row| {
@@ -1822,7 +1919,170 @@ async fn basic_qualities_use_only_info_fields_and_negative_probe_cache() {
         .contains(&row["quality"].as_str().unwrap())
     }));
     assert!(!rows.iter().any(|row| row["quality"] == "NAC"));
-    assert!(qq.audio_url("abc", Quality::Nac).await.is_err());
+}
+
+#[tokio::test]
+async fn audio_url_ignores_negative_probe_cache_but_probe_uses_it() {
+    let hits = Arc::new(AtomicUsize::new(0));
+    let seen = hits.clone();
+    let upstream = Router::new().fallback(any(move |request: Request<Body>| {
+        let seen = seen.clone();
+        async move {
+            if request.uri().path() == "/extra/music/url" {
+                seen.fetch_add(1, Ordering::SeqCst);
+                return Json(json!([{"track_info": {
+                    "file_url": "https://isure.stream.qqmusic.qq.com/audio.mp3",
+                    "file_size": 123
+                }}])).into_response();
+            }
+            StatusCode::NOT_FOUND.into_response()
+        }
+    }));
+    let Some((base, task)) = serve_local(upstream).await else { return; };
+    let mut config = AppState::new("http://127.0.0.1:1".into()).config;
+    config.qq_api = Some(base);
+    let state = Arc::new(AppState::with_config(config));
+    let qq = state.qq.as_ref().unwrap();
+    qq.audio_failures.put(Quality::Nac.cache_key("abc"), ());
+    assert!(qq.audio_url("abc", Quality::Nac).await.is_ok());
+    assert_eq!(hits.load(Ordering::SeqCst), 1);
+    qq.audio_failures.put(Quality::Dtsx.cache_key("abc"), ());
+    assert!(qq.probe_audio_url("abc", Quality::Dtsx).await.is_err());
+    assert_eq!(hits.load(Ordering::SeqCst), 1);
+    task.abort();
+}
+
+#[tokio::test]
+async fn lyrics_sources_select_expected_ttl_and_all_failures_are_not_cached() {
+    for (mode, expected) in [
+        (0u8, Duration::from_secs(3600)),
+        (1, Duration::from_secs(604800)),
+        (2, Duration::from_secs(300)),
+        (3, Duration::from_secs(300)),
+    ] {
+        let upstream = Router::new().fallback(any(move |request: Request<Body>| async move {
+            let path = request.uri().path();
+            match (mode, path) {
+                (0, "/v1/lyrics/get") | (0, "/lyric/ttml") | (0, "/lyric/new") | (0, "/extra/music/info") => StatusCode::NOT_FOUND.into_response(),
+                (1, "/v1/lyrics/get") => Json(json!({"data":{"lyrics":"<tt><body><p begin=\"0\">amll</p></body></tt>"}})).into_response(),
+                (1, "/lyric/ttml") | (1, "/lyric/new") | (1, "/extra/music/info") => StatusCode::NOT_FOUND.into_response(),
+                (2, "/v1/lyrics/get") => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+                (2, "/lyric/ttml") | (2, "/lyric/new") | (2, "/extra/music/info") => StatusCode::NOT_FOUND.into_response(),
+                (3, "/v1/lyrics/get") | (3, "/lyric/ttml") => StatusCode::NOT_FOUND.into_response(),
+                (3, "/lyric/new") => Json(json!({"data":{"qrc":"[0,1000]candidate"}})).into_response(),
+                (3, "/extra/music/info") => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+                _ => StatusCode::NOT_FOUND.into_response(),
+            }
+        }));
+        let Some((base, task)) = serve_local(upstream).await else { return; };
+        let mut config = AppState::new("http://127.0.0.1:1".into()).config;
+        config.qq_api = Some(base.clone());
+        config.amll_api = base;
+        let state = Arc::new(AppState::with_config(config));
+        let result = fetch_lyrics(state.qq.as_ref().unwrap(), "ttl").await;
+        let (_, ttl) = match result { Ok(value) => value, Err(_) => panic!("lyrics mode {mode} unexpectedly failed") };
+        assert_eq!(ttl, expected, "mode {mode}");
+        task.abort();
+    }
+
+    let calls = Arc::new(AtomicUsize::new(0));
+    let seen = calls.clone();
+    let upstream = Router::new().fallback(any(move |request: Request<Body>| {
+        let seen = seen.clone();
+        async move {
+            if request.uri().path().starts_with("/v1/lyrics")
+                || request.uri().path().starts_with("/lyric/")
+                || request.uri().path() == "/extra/music/info"
+            {
+                seen.fetch_add(1, Ordering::SeqCst);
+            }
+            StatusCode::INTERNAL_SERVER_ERROR
+        }
+    }));
+    let Some((base, task)) = serve_local(upstream).await else { return; };
+    let mut config = AppState::new("http://127.0.0.1:1".into()).config;
+    config.qq_api = Some(base.clone());
+    config.amll_api = base;
+    let state = Arc::new(AppState::with_config(config));
+    for _ in 0..2 {
+        assert_eq!(get(state.clone(), "/qq/song/fail/lyrics").await.status(), StatusCode::BAD_GATEWAY);
+    }
+    assert!(calls.load(Ordering::SeqCst) >= 8, "failed lyrics are retried and not cached");
+    assert!(state.qq.as_ref().unwrap().lyrics.get("fail").is_none());
+    task.abort();
+}
+
+#[tokio::test]
+async fn quality_probes_are_bounded_and_cache_negative_results() {
+    let active = Arc::new(AtomicUsize::new(0));
+    let peak = Arc::new(AtomicUsize::new(0));
+    let requests = Arc::new(AtomicUsize::new(0));
+    let upstream = {
+        let active = active.clone();
+        let peak = peak.clone();
+        let requests = requests.clone();
+        Router::new().fallback(any(move |request: Request<Body>| {
+            let active = active.clone();
+            let peak = peak.clone();
+            let requests = requests.clone();
+            async move {
+                match request.uri().path() {
+                    "/extra/music/info" => {
+                        let mut track = raw_song();
+                        track["mid"] = json!("abc");
+                        track["file"] = json!({});
+                        Json(json!({"abc":{"track_info":track}})).into_response()
+                    }
+                    "/extra/music/url" => {
+                        requests.fetch_add(1, Ordering::SeqCst);
+                        peak.fetch_max(active.fetch_add(1, Ordering::SeqCst) + 1, Ordering::SeqCst);
+                        tokio::time::sleep(Duration::from_millis(100)).await;
+                        active.fetch_sub(1, Ordering::SeqCst);
+                        Json(json!([{"track_info":{"file_size":0}}])).into_response()
+                    }
+                    _ => StatusCode::NOT_FOUND.into_response(),
+                }
+            }
+        }))
+    };
+    let Some((base, task)) = serve_local(upstream).await else { return; };
+    let mut config = AppState::new("http://127.0.0.1:1".into()).config;
+    config.qq_api = Some(base);
+    let state = Arc::new(AppState::with_config(config));
+    let qq = state.qq.as_ref().unwrap();
+    assert!(qq.qualities("abc", false).await.is_ok(), "quality probe request failed");
+    assert_eq!(requests.load(Ordering::SeqCst), 7);
+    assert_eq!(peak.load(Ordering::SeqCst), 3);
+    for quality in [Quality::Nac, Quality::Qai, Quality::Q360v1, Quality::Q360v2, Quality::Dtsx, Quality::Da448, Quality::Da1500] {
+        assert!(qq.audio_failures.get(&quality.cache_key("abc")).is_some(), "{quality:?}");
+    }
+    task.abort();
+
+    let attempts = Arc::new(AtomicUsize::new(0));
+    let seen = attempts.clone();
+    let upstream = Router::new().fallback(any(move |request: Request<Body>| {
+        let seen = seen.clone();
+        async move {
+            if request.uri().path() != "/extra/music/url" {
+                return StatusCode::NOT_FOUND.into_response();
+            }
+            if seen.fetch_add(1, Ordering::SeqCst) == 0 {
+                StatusCode::SERVICE_UNAVAILABLE.into_response()
+            } else {
+                Json(json!([{"track_info":{"file_url":"https://isure.stream.qqmusic.qq.com/retry.mp3","file_size":123}}])).into_response()
+            }
+        }
+    }));
+    let Some((base, task)) = serve_local(upstream).await else { return; };
+    let mut config = AppState::new("http://127.0.0.1:1".into()).config;
+    config.qq_api = Some(base);
+    let state = Arc::new(AppState::with_config(config));
+    let qq = state.qq.as_ref().unwrap();
+    assert!(qq.probe_audio_url("retry", Quality::Nac).await.is_err());
+    assert!(qq.audio_failures.get(&Quality::Nac.cache_key("retry")).is_none());
+    assert!(qq.probe_audio_url("retry", Quality::Nac).await.is_ok());
+    assert_eq!(attempts.load(Ordering::SeqCst), 2);
+    task.abort();
 }
 
 #[tokio::test]
@@ -1851,8 +2111,7 @@ async fn cached_payload_overrides_verified_default_without_cross_tier_leakage() 
     );
     let response = get(state, "/qq/song/abc/qualities").await;
     assert_eq!(response.status(), StatusCode::OK);
-    let body: Value =
-        serde_json::from_slice(&to_bytes(response.into_body(), 100_000).await.unwrap()).unwrap();
+    let body = json_body(response).await;
     let rows = body["qualities"].as_array().unwrap();
     let row = |quality: &str| rows.iter().find(|row| row["quality"] == quality).unwrap();
     assert_eq!(row("WEB")["sizeBytes"], 1280);

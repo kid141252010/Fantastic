@@ -14,7 +14,7 @@ beforeEach(() => {
   globalThis.window = {};
   globalThis.document = { createElement: () => ({ canPlayType: () => 'probably' }) };
   globalThis.MediaSource = { isTypeSupported: () => true };
-  globalThis.fetch = async () => assert.fail('variants must be fetched lazily');
+  globalThis.fetch = async () => { throw new Error('offline'); };
 });
 afterEach(() => { Object.assign(globalThis, original); qq.clearMimeSupportCache(); useJocSettings(null); });
 
@@ -86,6 +86,8 @@ test('QQ player labels reuse localized quality names and fall back to the code',
   globalThis.AmI18n = { t: (key) => key === 'qq.quality.SQ.label' ? 'Localized lossless' : key };
   assert.equal(variantLabel({ source: 'qq', quality: 'SQ' }), 'QQ · Localized lossless');
   assert.equal(variantLabel({ source: 'qq', quality: 'DAEAC3' }), 'QQ · DAEAC3');
+  globalThis.AmI18n = { t: () => '' };
+  assert.equal(variantLabel({ source: 'qq', quality: 'HQ' }), 'QQ · HQ');
 });
 
 test('QQ badge opens the shared panel, fetches once and marks the current quality with its format', async () => {

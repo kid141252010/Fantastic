@@ -1,4 +1,5 @@
 // Offline QQ contract / fallback / queue regression tests: node --test tests/qq_source.mjs
+// Keep the production source import before the player CommonJS bridge so capability startup is exercised first.
 import test, { afterEach, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -7,7 +8,7 @@ import * as qq from '../src/ui/sources/qq.mjs';
 import { sourceOf, trackKey, withIdentity } from '../src/ui/sources/track.mjs';
 import { artUrl } from '../src/ui/library.mjs';
 const { AmPlayer, trackKey: playerKey, detectQqModes, useJocSettings, usePlaybackSettings } = createRequire(import.meta.url)('../src/ui/player.js');
-const browserGlobals = Object.fromEntries(['window', 'document', 'MediaSource']
+const browserGlobals = Object.fromEntries(['window', 'document', 'MediaSource', 'fetch']
   .map((key) => [key, Object.getOwnPropertyDescriptor(globalThis, key)]));
 const nativeFetch = globalThis.fetch;
 beforeEach(() => {
@@ -120,6 +121,9 @@ test('QQ quality rows list all tiers, retain formats and sizes, and omit unavail
 test('QQ consumes the complete capabilities table at module startup and keeps fallback on malformed data', async () => {
   const saved = { window: Object.getOwnPropertyDescriptor(globalThis, 'window'), fetch: Object.getOwnPropertyDescriptor(globalThis, 'fetch') };
   const base = qq.capabilities();
+  const fixture = JSON.parse(fs.readFileSync(new URL('./fixtures/qq_capabilities.json', import.meta.url), 'utf8'));
+  const withoutDisplayName = (rows) => rows.map(({ displayName, ...entry }) => entry);
+  assert.deepEqual(withoutDisplayName(base), withoutDisplayName(fixture.qualities));
   const custom = base.map((entry) => entry.quality === 'HQ'
     ? { ...entry, defaultCodec: 'vorbis', contentType: 'audio/ogg; codecs="vorbis"' } : entry);
   let requested = 0;
@@ -137,10 +141,36 @@ test('QQ consumes the complete capabilities table at module startup and keeps fa
     assert.equal(loaded.playbackInfo('HQ').codec, 'vorbis');
     assert.equal(loaded.playbackInfo('HQ').contentType, 'audio/ogg; codecs="vorbis"');
     assert.equal(loaded.capabilities().length, 20);
-    globalThis.fetch = async () => ({ ok: true, json: async () => ({ enabled: true, qualities: [] }) });
-    const malformed = await import(`../src/ui/sources/qq.mjs?capabilities-malformed-${Date.now()}`);
-    await malformed.capabilitiesReady;
-    assert.equal(malformed.playbackInfo('HQ').codec, 'mp3');
+    let malformedId = 0;
+    const malformed = [
+      { ok: true, json: async () => ({ enabled: true, qualities: [] }) },
+      { ok: true, json: async () => ({ enabled: true, qualities: base.slice(0, -1).concat(base[0]) }) },
+      { ok: true, json: async () => ({ enabled: true, qualities: base.map((row) => row.quality === 'HQ' ? { ...row, playbackClass: 'broken' } : row) }) },
+      { ok: true, json: async () => ({ enabled: false, qualities: base }) },
+      { ok: false, status: 503 },
+    ];
+    for (const response of malformed) {
+      globalThis.fetch = async () => response;
+      const fallback = await import(`../src/ui/sources/qq.mjs?capabilities-malformed-${Date.now()}-${malformedId++}`);
+      await fallback.capabilitiesReady;
+      assert.deepEqual(fallback.capabilities(), base);
+    }
+
+    let release;
+    let qualityCalls = 0;
+    const capabilityResponse = new Promise((resolve) => { release = resolve; });
+    globalThis.fetch = async (path) => {
+      if (path === '/qq/capabilities') return capabilityResponse;
+      qualityCalls++;
+      return { ok: true, json: async () => ({ qualities: [] }) };
+    };
+    const waiting = await import(`../src/ui/sources/qq.mjs?capabilities-wait-${Date.now()}`);
+    const pending = waiting.qualities('song');
+    await Promise.resolve();
+    assert.equal(qualityCalls, 0);
+    release({ ok: true, json: async () => ({ enabled: true, qualities: base }) });
+    await pending;
+    assert.equal(qualityCalls, 1);
   } finally {
     if (saved.window) Object.defineProperty(globalThis, 'window', saved.window); else delete globalThis.window;
     if (saved.fetch) Object.defineProperty(globalThis, 'fetch', saved.fetch); else delete globalThis.fetch;
@@ -272,7 +302,7 @@ test('QQ clients only request local adapter paths and pass cancellation signals'
   const controller = new AbortController();
   globalThis.fetch = async (path, options) => {
     calls.push({ path, options });
-    if (path.includes('/lyrics')) return { ok: true, json: async () => ({ candidates: [candidate('lrc')] }) };
+    if (path.includes('/lyrics')) return { ok: true, json: async () => ({ candidates: [candidate('lrc')], rawQrc: true, rawTrans: false, rawRoma: true }) };
     if (path.includes('/qualities')) return { ok: true, json: async () => ({ qualities: [{ quality: 'HQ', available: true, sizeBytes: 10792943, format: 'MP3 320 kbps' }] }) };
     return { ok: true, json: async () => path.includes('/search') ? { songs: [dto], total: 99 } : dto };
   };
@@ -284,7 +314,9 @@ test('QQ clients only request local adapter paths and pass cancellation signals'
     assert.equal(new URL(calls[0].path, 'https://example.invalid').searchParams.get('q'), '晴天 & 风');
     assert.equal(calls[0].options.signal, controller.signal);
     assert.equal((await qq.song(dto.id)).key, `qq:${dto.id}`);
-    assert.equal((await qq.lyrics(dto.id, parse)).source, 'lrc');
+    const lyric = await qq.lyrics(dto.id, parse);
+    assert.equal(lyric.source, 'lrc');
+    assert.deepEqual({ rawQrc: lyric.rawQrc, rawTrans: lyric.rawTrans, rawRoma: lyric.rawRoma }, { rawQrc: true, rawTrans: false, rawRoma: true });
     assert.equal((await qq.qualities(dto.id, controller.signal)).find((row) => row.quality === 'HQ').available, true);
     await qq.qualities(dto.id, controller.signal, { basic: true });
     assert.equal(calls.at(-1).path, `/qq/song/${dto.id}/qualities?basic=1`);
@@ -339,8 +371,8 @@ test('QQ native media error hands off with the live paused state and preserves t
   const attempted = [];
   const item = qq.qualityEntry(qq.toTrack(dto), 'DAEAC3');
   const next = qq.entryOf(qq.toTrack({ id: 'next' }));
-  player.tryMode = async (mode, _item, _resumeAt, _token, paused) => {
-    attempted.push({ mode, paused });
+  player.tryMode = async (mode, _item, resumeAt, _token, paused) => {
+    attempted.push({ mode, resumeAt, paused });
     if (mode === 'native') player.audio.paused = false;
   };
   await player.start(item, { modes: ['native', 'joc2'] });
@@ -350,15 +382,38 @@ test('QQ native media error hands off with the live paused state and preserves t
   player.audio.error = { code: 4 }; // MEDIA_ERR_SRC_NOT_SUPPORTED
   player.handleAudioError();
   await new Promise(setImmediate);
-  assert.deepEqual(attempted, [{ mode: 'native', paused: false }, { mode: 'joc2', paused: true }]);
+  assert.deepEqual(attempted, [{ mode: 'native', resumeAt: 0, paused: false }, { mode: 'joc2', resumeAt: 18, paused: true }]);
   assert.equal(player.current.mode, 'joc2');
   assert.equal(player.current.quality, 'DAEAC3');
   assert.deepEqual(player.queue.entries.map((entry) => entry.track), [dto.id, 'next']);
+});
 
+test('QQ native fallback does not react to a network error after native startup', async () => {
+  const player = playerHarness();
+  const attempted = [];
+  player.tryMode = async (mode) => { attempted.push(mode); };
+  await player.start(qq.qualityEntry(qq.toTrack(dto), 'DAEAC3'), { modes: ['native', 'joc2'] });
+  assert.deepEqual(attempted, ['native']);
   player.audio.error = { code: 2 }; // MEDIA_ERR_NETWORK must not restart another mode
   player.handleAudioError();
   await new Promise(setImmediate);
-  assert.equal(attempted.length, 2);
+  assert.deepEqual(attempted, ['native']);
+});
+
+test('QQ native startup hands off on a media error while play is pending', async () => {
+  const player = playerHarness();
+  const item = qq.qualityEntry(qq.toTrack(dto), 'DAEAC3');
+  const realTryMode = player.tryMode.bind(player);
+  player.audio.play = () => new Promise(() => {});
+  player.tryMode = (mode, ...args) => mode === 'native' ? realTryMode(mode, ...args) : Promise.resolve();
+  const pending = player.start(item, { modes: ['native', 'joc2'] });
+  await new Promise(setImmediate);
+  assert.equal(player.current.mode, 'native');
+  assert.equal(qq.playbackInfo('DAEAC3', { codec: 'ec-3' }).contentType, 'audio/mp4; codecs="ec-3"');
+  player.audio.error = { code: 4 };
+  player.handleAudioError();
+  await pending;
+  assert.equal(player.current.mode, 'joc2');
 });
 
 test('QQ lazily resolves defaults per track; changing the setting preserves current and manual quality', async () => {

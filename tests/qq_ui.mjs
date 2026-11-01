@@ -39,7 +39,8 @@ function detailPage(t, { qualities = defaultQualities, failQualities = false, na
   globalThis.MediaSource = { isTypeSupported: () => true };
   globalThis.fetch = async (path) => ({ ok: !failQualities || !path.endsWith('/qualities'), status: 503,
     json: async () => path.endsWith('/qualities') ? { qualities }
-      : path.endsWith('/lyrics') ? { candidates: [] } : { id: 'test', name: 'Test', albumMid: '003DFRzD192KKD', cover } });
+      : path.endsWith('/lyrics') ? { candidates: [], rawQrc: true, rawTrans: true, rawRoma: true }
+        : { id: 'test', name: 'Test', albumMid: '003DFRzD192KKD', cover } });
   mount({ root, url: new URL('https://am.test/qq-song/test'), signal: controller.signal,
     player, onLangChange: (fn) => { rerender = fn; }, toast() {} });
   return { root, local, played, queued, rerender: () => rerender() };
@@ -66,6 +67,12 @@ test('QQ detail header, radiosity, playback, favorites and queue use the fixed c
   const { root, local, played, queued } = detailPage(t);
   assert.equal(root.querySelector('#lyrics-preview').getAttribute('aria-controls'), 'lyrics-lines');
   await new Promise(setImmediate);
+  assert.equal(root.querySelector('#lyrics-qrc').href, '/qq/song/test/lyrics/raw?kind=qrc');
+  assert.equal(root.querySelector('#lyrics-trans').href, '/qq/song/test/lyrics/raw?kind=qrctrans');
+  assert.equal(root.querySelector('#lyrics-roma').href, '/qq/song/test/lyrics/raw?kind=qrcroma');
+  assert.equal(root.querySelector('#lyrics-qrc').hidden, false);
+  assert.equal(root.querySelector('#lyrics-trans').hidden, false);
+  assert.equal(root.querySelector('#lyrics-roma').hidden, false);
   assert.equal(root.querySelector('#art').querySelector('img').src, fixedCover);
   assert.equal(root.querySelector('#radiosity').querySelector('img').src, fixedCover);
   await root.querySelector('#enqueue').click();
