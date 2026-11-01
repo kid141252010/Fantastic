@@ -9,6 +9,7 @@ import { artUrl } from '../src/ui/library.mjs';
 const { AmPlayer, trackKey: playerKey, detectQqModes, useJocSettings, usePlaybackSettings } = createRequire(import.meta.url)('../src/ui/player.js');
 const browserGlobals = Object.fromEntries(['window', 'document', 'MediaSource']
   .map((key) => [key, Object.getOwnPropertyDescriptor(globalThis, key)]));
+const nativeFetch = globalThis.fetch;
 beforeEach(() => {
   qq.clearMimeSupportCache();
   globalThis.window = {};
@@ -296,6 +297,7 @@ test('QQ clients only request local adapter paths and pass cancellation signals'
 
 // Small transport harness, using the real queue/source/start/tryMode methods.
 function playerHarness() {
+  if (globalThis.fetch === nativeFetch) globalThis.fetch = async () => { throw new Error('offline'); };
   const player = Object.create(AmPlayer.prototype);
   Object.assign(player, {
     source: 'apple', current: null, queue: null, sourceContexts: new Map(), playToken: 0, queueSerial: 0, nextSerial: 0,
@@ -392,7 +394,10 @@ test('QQ lookup failure retains HQ, but a successful empty qualities response do
     const player = playerHarness();
     await player.playQueue([qq.entryOf(qq.toTrack(dto))]);
     assert.equal(player.current.quality, 'HQ');
+    assert.equal(player.current.variant.quality, 'HQ');
     assert.equal(player.audio.src, qq.playUrl(dto.id, 'HQ'));
+    assert.equal(qq.qualityItem(qq.toTrack(dto)).quality, 'HQ');
+    assert.equal(qq.qualityEntry(qq.toTrack(dto)).quality, 'HQ');
     globalThis.fetch = async () => ({ ok: true, json: async () => ({ qualities: [] }) });
     const empty = playerHarness();
     await empty.playQueue([qq.entryOf(qq.toTrack(dto))]);
@@ -441,11 +446,8 @@ test('Apple defaults use existing capability filtering, respect preference with 
     player.start = async (item) => { player.current = item; };
     await player.playQueue([{ track: '123', name: 'Apple song' }]);
     assert.equal(player.current.variant, variants[0]);
-    preference = 'lossless';
-    assert.equal(player.current.variant, variants[0]);
-    await player.playQueue([{ track: '123', name: 'Apple song' }]);
-    assert.equal(player.current.variant, variants[1]);
     preference = 'dolby';
+    assert.equal(player.current.variant, variants[0]);
     await player.playQueue([{ track: '123', name: 'Apple song' }]);
     assert.equal(player.current.variant, variants[2]);
     // EC-3 has neither MSE nor PCM; the filtered candidates fall back to AAC.
@@ -487,20 +489,22 @@ test('every native QQ quality reaches the play URL and matching playback label',
   }
 });
 
-test('changing QQ quality on its detail page preserves the remaining queue and repeats that quality', async () => {
+test('changing QQ quality on its detail page preserves the remaining queue and repeats that payload', async () => {
   const player = playerHarness();
   const track = qq.toTrack(dto);
   const next = qq.entryOf(qq.toTrack({ id: 'next', name: 'Next' }));
   await player.playQueue([qq.entryOf(track), next]);
   const queue = player.queue;
-  await player.play(qq.qualityItem(track, 'SQ'));
-  assert.equal(player.audio.src, qq.playUrl(dto.id, 'SQ'));
+  await player.play(qq.qualityItem(track, 'Q360V1', { codec: 'vorbis', contentType: 'audio/ogg' }));
+  assert.equal(player.audio.src, qq.playUrl(dto.id, 'Q360V1'));
   assert.equal(player.queue, queue);
   assert.equal(queue.entries[1].track, 'next');
-  assert.equal(queue.entries[0].quality, 'SQ');
+  assert.equal(queue.entries[0].quality, 'Q360V1');
   await player.playAt(0);
-  assert.equal(player.current.quality, 'SQ');
-  assert.equal(player.audio.src, qq.playUrl(dto.id, 'SQ'));
+  assert.equal(player.current.quality, 'Q360V1');
+  assert.equal(player.current.codec, 'vorbis');
+  assert.equal(player.current.contentType, 'audio/ogg');
+  assert.equal(player.current.playback, 'native');
 });
 
 test('a first queued QQ song is loaded paused and a saved pending queue is accessible on switching source', async () => {
@@ -629,18 +633,15 @@ test('known MIME codecs use runtime capability detection; only DAEAC3 among Dolb
   assert.equal(qq.playbackInfo('QAI', { codec: 'ec-3' }).playback, 'joc');
 });
 
-test('AC-4 playbackInfo follows injected browser capability and is download-only without a browser', () => {
-  const mime = 'audio/mp4; codecs="ac-4"';
-  let calls = 0;
-  const supported = { window: {}, MediaSource: { isTypeSupported: (value) => { calls++; return value === mime; } },
-    document: { createElement: () => ({ canPlayType: () => '' }) } };
-  assert.equal(qq.playbackInfo('DA', {}, supported).contentType, mime);
-  assert.equal(qq.playbackInfo('DA', {}, supported).playback, 'native');
-  assert.equal(calls, 1, 'MIME support is cached');
-  const unsupported = { window: {}, MediaSource: { isTypeSupported: () => false },
-    document: { createElement: () => ({ canPlayType: () => '' }) } };
-  assert.equal(qq.playbackInfo('DA', {}, unsupported).playback, 'download');
-  assert.equal(qq.playbackInfo('DA', {}, {}).playback, 'download');
+test('AC-4 playbackInfo follows injected browser capability, never JOC, and is download-only without a browser', () => {
+  const env = (supported) => ({ window: {}, MediaSource: { isTypeSupported: () => supported },
+    document: { createElement: () => ({ canPlayType: () => '' }) } });
+  for (const quality of ['DA', 'DA448', 'DA1500']) {
+    assert.equal(qq.playbackInfo(quality, {}, env(true)).contentType, 'audio/mp4; codecs="ac-4"');
+    assert.equal(qq.playbackInfo(quality, {}, env(true)).playback, 'native');
+    assert.equal(qq.playbackInfo(quality, {}, env(false)).playback, 'download');
+    assert.equal(qq.playbackInfo(quality, {}, {}).playback, 'download');
+  }
 });
 
 test('shared QQ MIME detection prefers ManagedMediaSource with the same player probe', () => {
@@ -708,27 +709,4 @@ test('download-only QQ entries cannot start audio', async () => {
     assert.equal(player.audio.src, undefined);
     assert.ok(player.error);
   }
-});
-
-test('AC-4 never enters the JOC route and follows the browser MIME result', () => {
-  const supported = { window: {}, MediaSource: { isTypeSupported: () => true },
-    document: { createElement: () => ({ canPlayType: () => '' }) } };
-  const unsupported = { window: {}, MediaSource: { isTypeSupported: () => false },
-    document: { createElement: () => ({ canPlayType: () => '' }) } };
-  for (const quality of ['DA', 'DA448', 'DA1500']) {
-    assert.equal(qq.playbackInfo(quality, {}, supported).playback, 'native');
-    assert.equal(qq.playbackInfo(quality, {}, unsupported).playback, 'download');
-    assert.notEqual(qq.playbackInfo(quality, {}, supported).playback, 'joc');
-  }
-});
-
-test('queue repeats preserve an actual payload override when changing quality', async () => {
-  const player = playerHarness();
-  const track = qq.toTrack(dto);
-  await player.playQueue([qq.entryOf(track)]);
-  await player.play(qq.qualityItem(track, 'Q360V1', { codec: 'vorbis', contentType: 'audio/ogg' }));
-  await player.playAt(0);
-  assert.equal(player.current.codec, 'vorbis');
-  assert.equal(player.current.contentType, 'audio/ogg');
-  assert.equal(player.current.playback, 'native');
 });

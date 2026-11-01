@@ -125,6 +125,25 @@ function contextStub() {
   return { sampleRate: 48000, currentTime: 0, destination: {}, createGain: gain, resume: async () => {}, suspend: async () => {}, close() {} };
 }
 
+async function withJocStubs(seek, body) {
+  const original = { AudioContext: globalThis.AudioContext, Worker: globalThis.Worker, fetch: globalThis.fetch };
+  const methods = Object.fromEntries(['openDecoder', 'pump', 'seek'].map((name) =>
+    [name, Object.getOwnPropertyDescriptor(JocLiveEngine.prototype, name)]));
+  const calls = [];
+  globalThis.AudioContext = function AudioContext() { return contextStub(); };
+  globalThis.Worker = WorkerStub;
+  globalThis.fetch = async (url) => { calls.push(url); return { ok: true, arrayBuffer: async () => mp4().buffer }; };
+  Object.assign(JocLiveEngine.prototype, { openDecoder: async () => {}, pump: async () => {}, seek });
+  const player = Object.create(AmPlayer.prototype);
+  try { await body(player, calls); } finally {
+    if (player.pcm && !player.pcm.controller?.signal.aborted) { if (player.pcm.decoder) player.pcm.decoder.broken = true; player.pcm.destroy(); }
+    for (const [name, descriptor] of Object.entries(methods)) {
+      if (descriptor) Object.defineProperty(JocLiveEngine.prototype, name, descriptor); else delete JocLiveEngine.prototype[name];
+    }
+    Object.assign(globalThis, original);
+  }
+}
+
 test('JocEngine.load injects QQ input into the existing renderer, and destruction aborts pending input', async () => {
   const oldWorker = globalThis.Worker;
   globalThis.Worker = WorkerStub;
@@ -160,20 +179,9 @@ test('JocEngine.load injects QQ input into the existing renderer, and destructio
 });
 
 test('AmPlayer.tryMode feeds the selected QQ download through JocLiveEngine and preserves paused seek', async () => {
-  const original = { AudioContext: globalThis.AudioContext, Worker: globalThis.Worker, fetch: globalThis.fetch,
-    open: JocLiveEngine.prototype.openDecoder, pump: JocLiveEngine.prototype.pump };
-  globalThis.AudioContext = function AudioContext() { return contextStub(); };
-  globalThis.Worker = WorkerStub;
-  const calls = [];
-  globalThis.fetch = async (url) => { calls.push(url); return { ok: true, arrayBuffer: async () => mp4().buffer }; };
   let seek;
-  JocLiveEngine.prototype.openDecoder = async () => {};
-  JocLiveEngine.prototype.pump = async () => {};
-  JocLiveEngine.prototype.seek = async (time) => { seek = time; };
-  // Keep the actual inherited load method, including the injected opener and cancellation controller.
-  const player = Object.create(AmPlayer.prototype);
-  Object.assign(player, { playToken: 7, current: {}, spatial: {}, audio: { volume: 0.4 }, teardown() {}, emitSpatial() {} });
-  try {
+  await withJocStubs(async (time) => { seek = time; }, async (player, calls) => {
+    Object.assign(player, { playToken: 7, current: {}, spatial: {}, audio: { volume: 0.4 }, teardown() {}, emitSpatial() {} });
     const item = qq.qualityItem(qq.toTrack({ id: 'WET' }), 'DAEAC3');
     await player.tryMode('joc2', item, 0.25, 7, true);
     assert.ok(player.pcm instanceof JocLiveEngine);
@@ -185,13 +193,7 @@ test('AmPlayer.tryMode feeds the selected QQ download through JocLiveEngine and 
     player.pcm.decoder.broken = true;
     player.pcm.destroy();
     assert.equal(player.pcm.controller.signal.aborted, true);
-  } finally {
-    if (player.pcm && !player.pcm.controller?.signal.aborted) { if (player.pcm.decoder) player.pcm.decoder.broken = true; player.pcm.destroy(); }
-    globalThis.AudioContext = original.AudioContext; globalThis.Worker = original.Worker; globalThis.fetch = original.fetch;
-    JocLiveEngine.prototype.openDecoder = original.open; JocLiveEngine.prototype.pump = original.pump;
-    // seek was inherited; remove the temporary override.
-    delete JocLiveEngine.prototype.seek;
-  }
+  });
 });
 
 test('QQ PCM entry rejects download and native classifications before opening input or creating JocLiveEngine', async () => {
@@ -207,34 +209,23 @@ test('QQ PCM entry rejects download and native classifications before opening in
 });
 
 test('QQ quality switching enters JocLiveEngine through QQ input and resumes native playback without losing the queue', async () => {
-  const original = { AudioContext: globalThis.AudioContext, Worker: globalThis.Worker, fetch: globalThis.fetch };
-  const methods = Object.fromEntries(['openDecoder', 'pump', 'seek'].map((name) =>
-    [name, Object.getOwnPropertyDescriptor(JocLiveEngine.prototype, name)]));
-  globalThis.AudioContext = function AudioContext() { return contextStub(); };
-  globalThis.Worker = WorkerStub;
-  const calls = [];
-  globalThis.fetch = async (url) => { calls.push(url); return { ok: true, arrayBuffer: async () => mp4().buffer }; };
-  JocLiveEngine.prototype.openDecoder = async () => {};
-  JocLiveEngine.prototype.pump = async () => {};
-  JocLiveEngine.prototype.seek = async function (time) { this.anchorTime = time; };
-  const player = Object.create(AmPlayer.prototype);
-  Object.assign(player, {
-    source: 'qq', playToken: 0, queueSerial: 0, nextSerial: 0, current: null, pcm: null, spatial: {},
-    unsupportedListeners: new Set(), mse: { destroy() {} },
-    audio: { volume: 0.4, duration: 240, paused: true, currentTime: 0, canPlayType: () => 'probably',
-      async play() { this.paused = false; }, pause() { this.paused = true; }, removeAttribute() {}, load() {} },
-  });
-  player.clock = player.audio;
-  for (const name of ['show', 'showError', 'setLoading', 'renderTrackText', 'renderArtwork', 'renderMode',
-    'emit', 'updateMediaSession', 'renderProgress', 'prepareNext', 'extendQueue', 'emitSpatial', 'updatePcm']) player[name] = () => {};
-  try {
+  await withJocStubs(async function (time) { this.anchorTime = time; }, async (player, calls) => {
+    Object.assign(player, {
+      source: 'qq', playToken: 0, queueSerial: 0, nextSerial: 0, current: null, pcm: null, spatial: {},
+      unsupportedListeners: new Set(), mse: { destroy() {} },
+      audio: { volume: 0.4, duration: 240, paused: true, currentTime: 0, canPlayType: () => 'probably',
+        async play() { this.paused = false; }, pause() { this.paused = true; }, removeAttribute() {}, load() {} },
+    });
+    player.clock = player.audio;
+    for (const name of ['show', 'showError', 'setLoading', 'renderTrackText', 'renderArtwork', 'renderMode',
+      'emit', 'updateMediaSession', 'renderProgress', 'prepareNext', 'extendQueue', 'emitSpatial', 'updatePcm']) player[name] = () => {};
     await player.playQueue([qq.entryOf(qq.toTrack({ id: 'WET' })), qq.entryOf(qq.toTrack({ id: 'next' }))]);
     const queue = player.queue;
     player.audio.currentTime = 0.25;
     await player.switchVariant(qq.qualityVariant('DAEAC3', { format: 'E-AC-3 JOC' }));
     const engine = player.pcm;
     assert.ok(engine instanceof JocLiveEngine);
-  assert.deepEqual(calls, ['/qq/song/WET/qualities?basic=1', '/qq/song/WET/download?quality=DAEAC3']);
+    assert.deepEqual(calls, ['/qq/song/WET/qualities?basic=1', '/qq/song/WET/download?quality=DAEAC3']);
     assert.equal(player.current.mode, 'joc2');
     assert.equal(engine.currentTime, 0.25);
     assert.equal(engine.paused, false);
@@ -251,12 +242,5 @@ test('QQ quality switching enters JocLiveEngine through QQ input and resumes nat
     assert.equal(player.audio.paused, false);
     assert.equal(player.queue, queue);
     assert.equal(queue.entries[1].track, 'next');
-  } finally {
-    if (player.pcm) { if (player.pcm.decoder) player.pcm.decoder.broken = true; player.pcm.destroy(); }
-    for (const [name, descriptor] of Object.entries(methods)) {
-      if (descriptor) Object.defineProperty(JocLiveEngine.prototype, name, descriptor);
-      else delete JocLiveEngine.prototype[name];
-    }
-    globalThis.AudioContext = original.AudioContext; globalThis.Worker = original.Worker; globalThis.fetch = original.fetch;
-  }
+  });
 });

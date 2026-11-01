@@ -88,20 +88,6 @@ test('QQ player labels reuse localized quality names and fall back to the code',
   assert.equal(variantLabel({ source: 'qq', quality: 'DAEAC3' }), 'QQ · DAEAC3');
 });
 
-test('QQ entries and quality helpers use HQ when no quality is supplied', async () => {
-  const player = playerHarness();
-  await player.playQueue([qq.entryOf(track())]);
-  assert.equal(player.current.quality, 'HQ');
-  assert.equal(player.current.variant.quality, 'HQ');
-  assert.equal(player.current.variants, undefined);
-  assert.equal(player.audio.src, '/qq/song/song/play?quality=HQ');
-  assert.equal(qq.qualityItem(track()).quality, 'HQ');
-  assert.equal(qq.qualityEntry(track()).quality, 'HQ');
-  await player.playQueue([qq.entryOf(track('next'))]);
-  assert.equal(player.current.quality, 'HQ');
-  assert.equal(player.audio.src, '/qq/song/next/play?quality=HQ');
-});
-
 test('QQ badge opens the shared panel, fetches once and marks the current quality with its format', async () => {
   const player = playerHarness();
   await player.playQueue([qq.entryOf(track())]);

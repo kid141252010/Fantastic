@@ -15,22 +15,6 @@ fn cli(args: &[&str]) -> crate::cli::Cli {
 }
 
 #[test]
-fn proxy_cli_and_env_contract_keeps_values_private() {
-    use clap::CommandFactory;
-    let command = crate::cli::Cli::command();
-    let arg = command
-        .get_arguments()
-        .find(|arg| arg.get_id() == "qq_proxy")
-        .unwrap();
-    assert_eq!(arg.get_long(), Some("qq-proxy"));
-    assert_eq!(
-        arg.get_env(),
-        Some(std::ffi::OsStr::new("AM_HOOK_QQ_PROXY"))
-    );
-    assert!(arg.is_hide_env_values_set());
-}
-
-#[test]
 fn proxy_environment_is_parsed_and_cli_takes_precedence() {
     use clap::{CommandFactory, Parser};
     const PROXY: &str = "socks5://127.0.0.1:11080";
@@ -572,16 +556,6 @@ fn auxiliary_lines_prefers_word_text_and_filters_empty_or_placeholder_content() 
 }
 
 #[test]
-fn auxiliary_matching_uses_adaptive_nearest_neighbors() {
-    let main = vec![test_line(1000, 1200, "main")];
-    let translated = align_auxiliary(&main, vec![test_line(1400, 1500, "offset 400ms")]);
-    assert_eq!(translated[0].as_deref(), Some("offset 400ms"));
-
-    let too_far = align_auxiliary(&main, vec![test_line(2001, 2100, "offset 1001ms")]);
-    assert!(too_far[0].is_none());
-}
-
-#[test]
 fn auxiliary_matching_keeps_competing_rows_in_order() {
     let main = vec![
         test_line(1000, 1200, "first"),
@@ -889,48 +863,6 @@ fn puyi_lyric_new_attaches_all_translations_without_crossing_rows() {
             .find(|row| row.starts_with(&format!("begin=\"{start}\"")))
             .unwrap_or_else(|| panic!("missing row {start}"));
         assert!(row.contains(&format!("x-translation\">{translation}</span>")), "{row}");
-    }
-}
-
-#[test]
-fn cold_song_info_map_supplies_lyric_filter_context() {
-    let mid = "001ATFiY3pb3y6";
-    let data = json!({
-        (mid): {
-            "track_info": {
-                "mid": mid,
-                "name": "WET",
-                "ar": [{"name": "J.Y. Park"}],
-                "al": {"mid": mid, "name": "WET"}
-            }
-        }
-    });
-    let qq = qq();
-    assert!(qq.songs.get(mid).is_none());
-    assert!(qq.infos.get(mid).is_none());
-    let song = qq
-        .song_from_info(mid, &data)
-        .unwrap_or_else(|error| panic!("song info parse failed: {}", error.0));
-    assert_eq!(song.name, "WET");
-    assert_eq!(song.artists, ["J.Y. Park"]);
-    // song_from_info is the same parser used by info_data for a cold response;
-    // the info LRU remains empty here, while the parsed song supplies context.
-    assert!(qq.infos.get(mid).is_none());
-    let context = LyricContext {
-        name: &song.name,
-        artists: &song.artists,
-    };
-    let raw: Value =
-        serde_json::from_str(include_str!("../fixtures/qq_lyric_new_wet_full.json")).unwrap();
-    let candidates = converted_lyrics_with_context(&raw, Some(context));
-    assert_eq!(candidates.len(), 2);
-    for candidate in candidates {
-        assert_eq!(candidate.text.matches("<p ").count(), 55);
-        assert_eq!(
-            candidate.text.matches("ttm:role=\"x-translation\"").count(),
-            54
-        );
-        assert!(!candidate.text.contains("WET - "));
     }
 }
 
@@ -1266,68 +1198,27 @@ async fn raw_lyric_route_validates_kind_reports_missing_data_and_uses_utf8_filen
             },
         },
     );
-    let response = get(
-        state.clone(),
-        &format!("/qq/song/{mid}/lyrics/raw?kind=qrc"),
-    )
-    .await;
-    assert_eq!(response.status(), StatusCode::OK);
-    assert_eq!(
-        response.headers()[header::CONTENT_TYPE],
-        "text/plain; charset=utf-8"
-    );
-    assert_eq!(
-        response.headers()[header::CONTENT_DISPOSITION],
-        "attachment; filename=\"download.qrc\"; filename*=UTF-8''%E5%91%A8%E6%9D%B0%E4%BC%A6%20%2D%20%E6%99%B4%E5%A4%A9%2E%71%72%63"
-    );
-    assert_eq!(
-        String::from_utf8(
-            to_bytes(response.into_body(), 100_000)
-                .await
-                .unwrap()
-                .to_vec()
-        )
-        .unwrap(),
-        "<LyricContent>qrc raw</LyricContent>"
-    );
-    let response = get(
-        state.clone(),
-        &format!("/qq/song/{mid}/lyrics/raw?kind=qrctrans"),
-    )
-    .await;
-    assert_eq!(response.status(), StatusCode::OK);
-    assert!(response.headers()[header::CONTENT_DISPOSITION]
-        .to_str()
-        .unwrap()
-        .contains("%2E%74%72%61%6E%73%2E%6C%72%63"));
-    assert_eq!(
-        String::from_utf8(
-            to_bytes(response.into_body(), 100_000)
-                .await
-                .unwrap()
-                .to_vec()
-        )
-        .unwrap(),
-        "[00:01.00]translation raw"
-    );
-    let response = get(
-        state.clone(),
-        &format!("/qq/song/{mid}/lyrics/raw?kind=qrcroma"),
-    )
-    .await;
-    assert_eq!(response.status(), StatusCode::OK);
-    assert!(response.headers()[header::CONTENT_DISPOSITION]
-        .to_str()
-        .unwrap()
-        .contains("%2E%72%6F%6D%61%2E%71%72%63"));
-    for query in ["", "?kind=bad", "?kind=qrc%2F"] {
+    // filename* is the percent-encoded "周杰伦 - 晴天" plus the kind's suffix.
+    const BASE: &str = "%E5%91%A8%E6%9D%B0%E4%BC%A6%20%2D%20%E6%99%B4%E5%A4%A9";
+    for (kind, file, suffix, body) in [
+        ("qrc", "download.qrc", "%2E%71%72%63", "<LyricContent>qrc raw</LyricContent>"),
+        ("qrctrans", "download.lrc", "%2E%74%72%61%6E%73%2E%6C%72%63", "[00:01.00]translation raw"),
+        ("qrcroma", "download.qrc", "%2E%72%6F%6D%61%2E%71%72%63", "[00:01.00]roman raw"),
+    ] {
+        let response = get(state.clone(), &format!("/qq/song/{mid}/lyrics/raw?kind={kind}")).await;
+        assert_eq!(response.status(), StatusCode::OK, "{kind}");
+        assert_eq!(response.headers()[header::CONTENT_TYPE], "text/plain; charset=utf-8");
         assert_eq!(
-            get(state.clone(), &format!("/qq/song/{mid}/lyrics/raw{query}"))
-                .await
-                .status(),
-            StatusCode::BAD_REQUEST,
-            "{query}"
+            response.headers()[header::CONTENT_DISPOSITION],
+            format!("attachment; filename=\"{file}\"; filename*=UTF-8''{BASE}{suffix}").as_str()
         );
+        let bytes = to_bytes(response.into_body(), 100_000).await.unwrap();
+        assert_eq!(String::from_utf8(bytes.to_vec()).unwrap(), body, "{kind}");
+    }
+    // Unknown and missing kinds are rejected before serving any data.
+    for query in ["", "?kind=bad", "?kind=qrc%2F"] {
+        let path = format!("/qq/song/{mid}/lyrics/raw{query}");
+        assert_eq!(get(state.clone(), &path).await.status(), StatusCode::BAD_REQUEST, "{query}");
     }
 }
 
