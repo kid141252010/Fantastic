@@ -164,7 +164,7 @@ The "wrapper-lite" setting at the bottom of the navigation switches between two 
 
 Configure `--qq-api https://example.invalid/api/web` or `AM_HOOK_QQ_API` on the Rust server. Use `--qq-proxy <URL>` or `AM_HOOK_QQ_PROXY` for the server-side QQ API, AMLL, cover and media requests; proxy credentials stay on the server. Playback returns a `302` to the allowlisted QQ CDN and the browser connects to the CDN directly, so the proxy does not proxy playback bytes. QQ search, playback, covers, lyrics, downloads and browser-local favorites are supported. Lyrics accept plaintext QRC or a `LyricContent`-wrapped QRC; there is no decryption step. Apple and QQ use separate playback queues.
 
-A public deployment should set the existing `--client-rate` / `--client-concurrency` limits: QQ `/download` streams whole tracks and can consume substantial outbound bandwidth.
+QQ has no client-side rate or concurrency limit; upstream services remain responsible for handling aggressive traffic.
 
 ## User Guide
 
@@ -380,9 +380,6 @@ Some songs (for example `1569279827`) have no master m3u8: wrapper-lite `/m3u8` 
 | `--wrapper-rate <N>` | `24` | Max requests per second to wrapper-lite (any 1-second window; extra requests wait in order). 0 = unlimited |
 | `--wrapper-concurrency <N>` | `24` | Max concurrent requests to wrapper-lite. 0 = unlimited. Lower it (e.g. `8`) if wrapper-lite runs in QEMU and requests time out under load |
 | `--wrapper-auth <VALUE>` | not sent | `Authorization` header for wrapper-lite requests. A bare token is sent as `Bearer <token>`; a value with a scheme (`Bearer …`, `Basic …`) is sent as is. Also read from `AM_HOOK_WRAPPER_AUTH` (keeps it out of the process list). These three apply to server relaying only; a page switched to a local wrapper-lite sets its own |
-| `--client-rate <N>` | `0` | Max relayed wrapper-lite and selected QQ requests per client IP in any 60 seconds (`/status` not counted: it is shared by all clients and asks wrapper-lite at most once per 10 s); further requests get HTTP 429 with `Retry-After`. 0 = unlimited |
-| `--client-concurrency <N>` | `0` | Max wrapper-lite and selected QQ requests relayed at once per client IP (`/status` not counted); further requests wait instead of failing, so one visitor's burst cannot hold every global permit. 0 = unlimited |
-| `--client-ip-header <NAME>` | TCP peer | Header holding the client IP, set by the reverse proxy in front (e.g. `X-Real-IP`, `CF-Connecting-IP`; the first entry of a list is used). Needed behind a proxy, where every peer is the proxy. Only set it when all requests pass through that proxy, otherwise clients can spoof it |
 | `--local-wrapper-only` | off | Never relay wrapper-lite requests: pages only offer the local mode, as on a serverless deployment without `AM_HOOK_WRAPPER_URL`, and the relaying endpoints return 501. `--wrapper-url`, `--wrapper-rate` and `--wrapper-concurrency` become the page defaults for visitors who have not saved their own; `--wrapper-auth` is not used and never sent to pages |
 | `--wrapper-hint <TEXT>` | none | Note shown above the local wrapper-lite settings, e.g. where to get a token for a public wrapper-lite. URLs in it become links. Also read from `AM_HOOK_WRAPPER_HINT` |
 | `--amp-keepalive <SECONDS>` | `30` | Keeps the amp-api connection warm: after this long idle, sends a tiny request (0 disables). The token is fetched and the connection opened at startup either way |
@@ -405,7 +402,7 @@ Page URLs (see [Pages](#pages)) all return the single-page app `app.html`. The A
 | `GET /amp/v1/catalog/<path>?<query>` | Proxies Apple Music catalog API (`amp-api-edge.music.apple.com/v1/catalog/...`, used by home page search) with the music.apple.com web developer token; query passed through unchanged. Uses a dedicated HTTP/2 connection warmed at startup, caches successful responses, merges identical concurrent requests, and reports `Server-Timing` (`cache;desc=hit/miss/shared`, upstream time) |
 | `GET /amp/v1/editorial/<path>?<query>` | Proxies the editorial API (`amp-api-edge.music.apple.com/v1/editorial/...`: groupings, rooms, multirooms; used by New and the editorial pages) like `/amp/v1/catalog`, sharing its connection and cache |
 | `GET /amp/v1/storefronts` | All storefronts from amp-api (query passed through to follow `next` paging); pages fetch it once and keep it in localStorage (refreshed in the background after 30 days); it supplies the storefront picker and the catalog language choices (each storefront's `supportedLanguageTags`) (an unsupported `l` silently falls back to the storefront default, e.g. `cn` only supports `zh-Hans-CN` / `en-GB`) |
-| `GET /qq/capabilities`, `/qq/search`, `/qq/song/<mid>/*` | Optional QQ source: static quality capabilities, search, song metadata, 302 playback, lyrics, qualities, cover proxy and download. Search, qualities and download use the client limits. |
+| `GET /qq/capabilities`, `/qq/search`, `/qq/song/<mid>/*` | Optional QQ source: static quality capabilities, search, song metadata, 302 playback, lyrics, qualities, cover proxy and download. Search, qualities and download have no client-side rate or concurrency limit. |
 | `GET /mv/webplayback/<adamId>`, `POST /mv/license` | Relays to wrapper-lite `/webplayback` and `/license`: MVs (PlayReady, `drm-type: pr`) and songs without a master m3u8 (AAC-LC media m3u8, Widevine without `drm-type`) |
 | `POST /station/next-tracks/ra.<id>`, `GET /station/assets?<playParams>`, `GET /station/catalog/<path>`, `GET /station/recent`, `GET /station/storefront` | Station endpoints: call `amp-api.music.apple.com` (`/v1/me/stations/next-tracks`, `/v1/play/assets`, `/v1/catalog`, `/v1/me/recent/radio-stations`, `/v1/me/storefront`) with the developer token and the media-user-token the page sends in `X-Media-User-Token`; responses are relayed as is and never cached; 401 without a token |
 | `POST /station/license` | `{ url, body, renewal }`: POSTs `body` with both tokens to the station's license server (`url` must be an Apple HTTPS URL on a license path MusicKit knows) and relays the response |
@@ -503,7 +500,6 @@ src/
   lib.rs               Router construction
   assets.rs            Embedded front-end assets: one table (`ASSETS`) drives both the routes and the MIME types; add a browser file by adding one line
   amp.rs               amp-api catalog proxy (fetches and refreshes the music.apple.com web developer token) and station endpoints (media-user-token and license relays)
-  limit.rs             Per-client-IP rate and concurrency limits for relayed wrapper-lite requests
   log.rs               Request log
   links.rs             Apple Music link parsing and page-path matching (shared regex fragments; log.rs reuses them to classify requests)
   state.rs             Configuration and shared clients

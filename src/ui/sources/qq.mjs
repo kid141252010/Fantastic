@@ -173,10 +173,6 @@ async function request(path, signal) {
   if (!response.ok) {
     const error = new Error(`QQ HTTP ${response.status}`);
     error.status = response.status;
-    if (response.headers?.get) {
-      const retryAfter = response.headers.get('Retry-After');
-      if (retryAfter) error.retryAfter = retryAfter;
-    }
     throw error;
   }
   return response.json();

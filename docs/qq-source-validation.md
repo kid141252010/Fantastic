@@ -20,7 +20,7 @@ QQ 是可选服务端音源。设置 `--qq-api` / `AM_HOOK_QQ_API` 后启用；�
 | GET | `/qq/cover/:albumMid` | 只请求固定 QQ 封面模板，禁止重定向 |
 | GET | `/qq/capabilities` | 返回 [`qq-quality-validation.md`](qq-quality-validation.md) 定义的静态 20 档表 |
 
-`/search`、`/qualities` 和 `/download` 经过现有 `--client-rate` / `--client-concurrency` 客户端限流；JOC 的 DAEAC3 播放仍使用同一个 `/download` 路径和相同默认限额。
+QQ 搜索、音质查询和下载没有客户端限流；JOC 的 DAEAC3 播放仍使用同一个 `/download` 路径。
 
 ## 播放与安全边界
 

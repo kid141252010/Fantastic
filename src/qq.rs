@@ -1100,22 +1100,10 @@ fn adapter(state: &AppState) -> ApiResult<&Qq> {
 }
 
 pub fn routes() -> Router<Arc<AppState>> {
-    unlimited_routes().merge(limited_routes())
-}
-
-/// QQ endpoints that can fan out upstream requests or stream a whole track.
-/// The caller applies the existing per-client middleware to this router.
-pub fn limited_routes() -> Router<Arc<AppState>> {
     Router::new()
         .route("/qq/search", get(search))
         .route("/qq/song/:mid/download", get(download))
         .route("/qq/song/:mid/qualities", get(qualities))
-}
-
-/// QQ endpoints whose response size and upstream request count are bounded by
-/// the normal song/lyrics/cache behavior and do not use client-rate limiting.
-pub fn unlimited_routes() -> Router<Arc<AppState>> {
-    Router::new()
         .route("/qq/cover/:albumMid", get(cover))
         .route("/qq/song/:mid", get(info))
         .route("/qq/song/:mid/play", get(play))

@@ -34,8 +34,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         tokio::spawn(log::report_wrapper_queue(state.clone()));
     }
 
-    // 对端地址供按客户端 IP 限流使用（见 limit.rs）
-    axum::serve(listener, router(state).into_make_service_with_connect_info::<std::net::SocketAddr>())
+    axum::serve(listener, router(state))
         .with_graceful_shutdown(async {
             let _ = tokio::signal::ctrl_c().await;
             info!("Shutting down");

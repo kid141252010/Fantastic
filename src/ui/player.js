@@ -400,17 +400,7 @@
         try {
           rows = await qq.qualities(entry.track, undefined, { basic: true });
         } catch (error) {
-          if (error?.status === 429) {
-            let delay = Number(error.retryAfter);
-            if (!Number.isFinite(delay)) {
-              const date = Date.parse(error.retryAfter || '');
-              delay = Number.isFinite(date) ? Math.max(0, (date - Date.now()) / 1000) : 0;
-            }
-            await new Promise((resolve) => setTimeout(resolve, Math.min(3000, Math.max(0, delay * 1000))));
-            // A second 429/error is deliberately allowed to reach playAt so the
-            // existing player error surface tells the user instead of changing tier.
-            rows = await qq.qualities(entry.track, undefined, { basic: true });
-          }
+          if (error?.status === 429) throw error;
           // Non-rate-limit failures retain the historical HQ fallback.
         }
         if (rows) {

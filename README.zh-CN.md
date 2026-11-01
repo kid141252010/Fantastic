@@ -164,7 +164,7 @@ am-hook --listen 0.0.0.0:8888 --wrapper-url http://127.0.0.1:12340
 
 在 Rust 服务端设置 `--qq-api https://example.invalid/api/web` 或 `AM_HOOK_QQ_API`。可用 `--qq-proxy <URL>` 或 `AM_HOOK_QQ_PROXY` 设置只供服务端 QQ API、AMLL、封面和媒体请求使用的代理，代理凭据不会发送到页面。播放接口返回 302，浏览器随后直连白名单内的 QQ CDN，因此代理不转发播放字节。支持 QQ 搜索、播放、封面、歌词、下载与浏览器本地收藏。歌词接受明文 QRC 或 `LyricContent` 包装的 QRC，不包含解密逻辑。Apple 与 QQ 使用独立的播放队列。
 
-公开部署应设置现有的 `--client-rate` / `--client-concurrency` 限额：QQ `/download` 会流式传输整首歌曲，可能消耗大量出站带宽。
+QQ 不设置客户端限流；激进流量由上游服务自行处理。
 
 ## 使用指南
 
@@ -380,9 +380,6 @@ box 处理：FairPlay 元数据 box（`sinf`、`senc`、`saiz`、`saio`、`pssh`
 | `--wrapper-rate <N>` | `24` | 每秒发往 wrapper-lite 的最大请求数（任意 1 秒内，超出的请求按顺序排队）。0 不限 |
 | `--wrapper-concurrency <N>` | `24` | 同时进行的 wrapper-lite 请求上限。0 不限。wrapper-lite 运行在 QEMU 中、负载高时请求超时的话可调低（如 `8`） |
 | `--wrapper-auth <VALUE>` | 不发送 | wrapper-lite 请求的 `Authorization` 头。只填 token 时自动加 `Bearer ` 前缀；已带认证方案（`Bearer …`、`Basic …`）则原样发送。也可用环境变量 `AM_HOOK_WRAPPER_AUTH` 设置（不会出现在进程列表中）。以上三项只作用于服务端转发；页面切换为本地 wrapper-lite 时在页面中另行设置 |
-| `--client-rate <N>` | `0` | 每个客户端 IP 任意 60 秒内转发 wrapper-lite 与指定 QQ 路由的请求上限（不含 `/status`：它由所有客户端共用，每 10 秒最多请求一次 wrapper-lite）；超出时返回 HTTP 429 与 `Retry-After`。0 不限 |
-| `--client-concurrency <N>` | `0` | 每个客户端 IP 同时转发 wrapper-lite 与指定 QQ 路由的请求上限（不含 `/status`）；超出的请求排队等待而不是失败，避免单个访客突发时占满全局名额。0 不限 |
-| `--client-ip-header <NAME>` | TCP 对端地址 | 存放客户端 IP 的请求头，由前面的反向代理设置（如 `X-Real-IP`、`CF-Connecting-IP`；是列表时取第一个）。在反向代理后面时需要设置，否则所有请求的对端都是代理。只有所有请求都经过该代理时才能设置，否则客户端可以伪造 |
 | `--local-wrapper-only` | 关闭 | 不转发 wrapper-lite 请求：页面只有本地模式（与 serverless 部署没有设置 `AM_HOOK_WRAPPER_URL` 时相同），转发接口一律返回 501。`--wrapper-url`、`--wrapper-rate`、`--wrapper-concurrency` 改为页面的默认值（只作用于没有保存过设置的访客）；不使用 `--wrapper-auth`，也不会把它交给页面 |
 | `--wrapper-hint <TEXT>` | 无 | 显示在本地 wrapper-lite 设置上方的提示，如去哪里申请公共 wrapper-lite 的 token，其中的网址显示为链接。也可用环境变量 `AM_HOOK_WRAPPER_HINT` 设置 |
 | `--amp-keepalive <SECONDS>` | `30` | amp-api 连接保活：空闲达到该时长时发送一个轻量请求（0 关闭）。无论是否开启，启动时都会先获取 token 并建立连接 |
@@ -405,7 +402,7 @@ box 处理：FairPlay 元数据 box（`sinf`、`senc`、`saiz`、`saio`、`pssh`
 | `GET /amp/v1/catalog/<path>?<query>` | 代理 Apple Music 目录接口（`amp-api-edge.music.apple.com/v1/catalog/...`，首页搜索使用），自动附带 music.apple.com 网页版 developer token，查询参数原样转发。使用启动时预热的专用 HTTP/2 连接，缓存成功响应，合并相同的并发请求，并通过 `Server-Timing` 标明缓存命中（`cache;desc=hit/miss/shared`）与上游耗时 |
 | `GET /amp/v1/editorial/<path>?<query>` | 代理编辑内容接口（`amp-api-edge.music.apple.com/v1/editorial/...`：groupings、rooms、multirooms，新发现与编辑页使用），方式与 `/amp/v1/catalog` 相同，共用连接与缓存 |
 | `GET /amp/v1/storefronts` | amp-api 全部地区信息（查询参数原样转发，以便跟随分页 `next`）；页面只拉取一次并保存在 localStorage（超过 30 天后在后台刷新），用于主地区列表与曲库语言的可选项（各地区的 `supportedLanguageTags`）（地区不支持的 `l` 会被静默回退到默认语言，如 `cn` 只支持 `zh-Hans-CN` / `en-GB`） |
-| `GET /qq/capabilities`、`/qq/search`、`/qq/song/<mid>/*` | 可选 QQ 音源：静态音质 capabilities、搜索、歌曲信息、302 播放、歌词、音质、封面代理与下载。搜索、音质和下载使用客户端限流。 |
+| `GET /qq/capabilities`、`/qq/search`、`/qq/song/<mid>/*` | 可选 QQ 音源：静态音质 capabilities、搜索、歌曲信息、302 播放、歌词、音质、封面代理与下载。搜索、音质和下载不设置客户端限流。 |
 | `GET /mv/webplayback/<adamId>`、`POST /mv/license` | 转发到 wrapper-lite `/webplayback` 与 `/license`：MV（PlayReady，`drm-type: pr`）与没有 master m3u8 的歌曲（AAC-LC 的 media m3u8，Widevine，不带 `drm-type`） |
 | `POST /station/next-tracks/ra.<id>`、`GET /station/assets?<playParams>`、`GET /station/catalog/<path>`、`GET /station/recent`、`GET /station/storefront` | 电台接口：带上页面经 `X-Media-User-Token` 传来的 media-user-token 与 developer token 请求 `amp-api.music.apple.com`（`/v1/me/stations/next-tracks`、`/v1/play/assets`、`/v1/catalog`、`/v1/me/recent/radio-stations`、`/v1/me/storefront`），原样返回、不缓存；没有 token 时返回 401 |
 | `POST /station/license` | `{ url, body, renewal }`：把 `body` 连同两个 token POST 给电台的 license 服务器（`url` 须为 Apple 的 HTTPS 地址，且是 MusicKit 认识的 license 路径），原样返回响应 |
@@ -503,7 +500,6 @@ src/
   lib.rs               路由构建
   assets.rs            内嵌前端资源：一张表（`ASSETS`）同时决定路由与 MIME，新增浏览器文件只需加一行
   amp.rs               amp-api 目录接口代理（自动获取并刷新 music.apple.com 网页版 developer token）与电台接口（转发 media-user-token 与 license 请求）
-  limit.rs             按客户端 IP 限制转发 wrapper-lite 的请求频率与并发
   log.rs               请求日志
   links.rs             Apple Music 链接解析与页面路径判定（共用的正则片段，log.rs 也复用它给请求归类）
   state.rs             配置与共享客户端

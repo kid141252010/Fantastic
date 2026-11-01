@@ -21,12 +21,6 @@ pub struct Config {
     pub wrapper_relay: bool,
     /// 页面本地 wrapper-lite 设置上方的提示（如去哪里申请公共 wrapper-lite 的 token）
     pub wrapper_hint: Option<String>,
-    /// 每个客户端 IP 每分钟转发 wrapper-lite 的请求上限（不含 `/status`），0 表示不限
-    pub client_rate: u32,
-    /// 每个客户端 IP 同时转发 wrapper-lite 的请求上限（不含 `/status`），超出的排队，0 表示不限
-    pub client_concurrency: usize,
-    /// 取客户端 IP 的请求头（小写，由反向代理设置），None 表示用 TCP 对端地址
-    pub client_ip_header: Option<String>,
 }
 
 pub struct AppState {
@@ -39,8 +33,6 @@ pub struct AppState {
     pub wrapper: crate::wrapper::Wrapper,
     /// amp-api（Apple Music 目录 / 搜索）代理：专用连接、developer token 与响应缓存
     pub amp: Arc<crate::amp::Amp>,
-    /// 按客户端 IP 限流（见 [`crate::limit`]）
-    pub client_limit: crate::limit::ClientLimit,
     /// `/status` 的共用缓存（见 [`crate::ui::status_handler`]）
     pub status_cache: crate::ui::StatusCache,
 }
@@ -59,9 +51,6 @@ impl AppState {
             wrapper_auth: None,
             wrapper_relay: true,
             wrapper_hint: None,
-            client_rate: 0,
-            client_concurrency: 0,
-            client_ip_header: None,
         })
     }
 
@@ -96,11 +85,10 @@ impl AppState {
             .expect("Failed to build reqwest Apple-only HTTP client");
         let amp = Arc::new(crate::amp::Amp::new(config.amp_cache_mb * 1024 * 1024));
         let wrapper = crate::wrapper::Wrapper::new(&config);
-        let client_limit = crate::limit::ClientLimit::new(config.client_rate, config.client_concurrency, config.client_ip_header.as_deref());
         let qq = config.qq_api.as_deref()
             .map(|base| crate::qq::Qq::new(base, &config.amll_api, qq_proxy))
             .transpose()?;
-        Ok(Self { config, qq, http_client, apple_client, wrapper, amp, client_limit, status_cache: Default::default() })
+        Ok(Self { config, qq, http_client, apple_client, wrapper, amp, status_cache: Default::default() })
     }
 }
 
