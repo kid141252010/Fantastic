@@ -9,6 +9,11 @@
             <option value="qq" data-i18n="source.qq"></option>
           </select>
         </label>
+        <button class="storefront" id="storefront" type="button" data-picker="storefront" aria-haspopup="dialog" aria-expanded="false" aria-controls="picker">
+          <span class="storefront-caption" data-i18n="search.storefront"></span>
+          <span class="storefront-value" data-setting-value="storefront"></span>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+        </button>
         <a id="qq-favorites" href="/?source=qq&amp;qq=favorites" data-i18n="qq.favorites" hidden></a>
       </div>
       <form class="search" id="form" novalidate>
@@ -41,11 +46,6 @@
       <div class="section-head">
         <h2 class="section-title" id="results-title"></h2>
         <div class="results-tools">
-          <button class="storefront" id="storefront" type="button" data-picker="storefront" aria-haspopup="dialog" aria-expanded="false" aria-controls="picker">
-            <span class="storefront-caption" data-i18n="search.storefront"></span>
-            <span class="storefront-value" data-setting-value="storefront"></span>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
-          </button>
           <button class="link-btn" id="close-results" type="button" data-i18n="search.close"></button>
         </div>
       </div>
