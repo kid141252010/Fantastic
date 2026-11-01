@@ -5,9 +5,6 @@
 ### 新增
 - ✨ 可选 QQ 音源配置（`--qq-api` / `AM_HOOK_QQ_API`、`--qq-proxy` / `AM_HOOK_QQ_PROXY`）、静态音质 capabilities 与歌词降级链。
 
-### 移除
-- 🗑️ 移除 `--client-rate`、`--client-concurrency`、`--qq-client-rate`、`--qq-client-concurrency` 及其服务端和前端重试逻辑。
-
 ## v0.6.5 (2026-10-30)
 
 ### 新功能

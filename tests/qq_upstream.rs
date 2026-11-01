@@ -46,6 +46,9 @@ fn config(api: String, amll: String) -> Config {
         wrapper_auth: None,
         wrapper_relay: true,
         wrapper_hint: None,
+        client_rate: 0,
+        client_concurrency: 0,
+        client_ip_header: None,
     }
 }
 

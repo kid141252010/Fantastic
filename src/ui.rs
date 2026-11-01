@@ -287,7 +287,7 @@ pub async fn key_handler(
     }
 }
 
-/// `/status` 的结果在所有客户端间共用这么久：页面定时轮询它，
+/// `/status` 的结果在所有客户端间共用这么久：页面定时轮询它，不计入按 IP 限流（见 limit.rs），
 /// 缓存后不论有多少客户端、刷得多快，wrapper-lite 每个周期最多收到一次 `/status`
 const STATUS_TTL: std::time::Duration = std::time::Duration::from_secs(10);
 

@@ -60,6 +60,24 @@ pub struct Cli {
     #[arg(long, env = "AM_HOOK_QQ_PROXY", hide_env_values = true)]
     pub qq_proxy: Option<String>,
 
+    /// Max wrapper-lite requests relayed per client IP in any 60 seconds (/status not
+    /// counted); further requests get HTTP 429 with Retry-After. 0 = unlimited
+    #[arg(long, default_value_t = 0)]
+    pub client_rate: u32,
+
+    /// Max wrapper-lite requests relayed at once per client IP (/status not counted);
+    /// further requests wait, so one visitor's burst cannot hold every
+    /// --wrapper-concurrency permit. 0 = unlimited
+    #[arg(long, default_value_t = 0)]
+    pub client_concurrency: usize,
+
+    /// Request header holding the client IP, set by the reverse proxy in front
+    /// (e.g. X-Real-IP, CF-Connecting-IP; the first entry of a list is used).
+    /// Only set it when every request passes through that proxy, otherwise clients can
+    /// spoof it. Default: the TCP peer address
+    #[arg(long)]
+    pub client_ip_header: Option<String>,
+
     /// Seconds between keep-alive requests that keep the amp-api (catalog / search)
     /// connection warm while idle; 0 disables them
     #[arg(long, default_value_t = 30)]
@@ -108,6 +126,12 @@ impl Cli {
             wrapper_auth,
             wrapper_relay: !self.local_wrapper_only,
             wrapper_hint: self.wrapper_hint.as_deref().map(str::trim).filter(|h| !h.is_empty()).map(str::to_owned),
+            client_rate: self.client_rate,
+            client_concurrency: self.client_concurrency,
+            client_ip_header: match &self.client_ip_header {
+                Some(raw) => crate::limit::parse_ip_header(raw)?,
+                None => None,
+            },
         })
     }
 }
