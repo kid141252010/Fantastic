@@ -38,6 +38,8 @@ pub async fn fallback_handler(uri: Uri, headers: HeaderMap) -> Response<Body> {
         || is_radio_path(path)
         || is_settings_path(path)
         || path.strip_prefix("qq-song/").is_some_and(|mid| crate::qq::valid_mid(mid.trim_end_matches('/')) && !mid.contains("//"))
+        || path.strip_prefix("qq-artist/").is_some_and(|mid| crate::qq::valid_mid(mid.trim_end_matches('/')) && !mid.contains("//"))
+        || path.strip_prefix("qq-album/").is_some_and(|mid| crate::qq::valid_mid(mid.trim_end_matches('/')) && !mid.contains("//"))
     {
         return app_handler(headers).await;
     }
@@ -409,7 +411,7 @@ mod tests {
             assert_eq!(response.headers()[axum::http::header::CACHE_CONTROL], "no-store", "{path}");
         }
         // 页面地址仍返回外壳
-        for path in ["/library/songs", "/radio", "/https://music.apple.com/us/station/apple-music-1/ra.978194965", "/qq-song/0039MnYb0qxYhV", "/qq-song/123/"] {
+        for path in ["/library/songs", "/radio", "/https://music.apple.com/us/station/apple-music-1/ra.978194965", "/qq-song/0039MnYb0qxYhV", "/qq-song/123/", "/qq-artist/0025NhlN2yWrP4", "/qq-album/000MkMni19ClKG"] {
             let page = fallback_handler(path.parse().unwrap(), HeaderMap::new()).await;
             assert_eq!(page.status(), StatusCode::OK, "{path}");
         }

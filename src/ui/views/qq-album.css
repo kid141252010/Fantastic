@@ -1,0 +1,8 @@
+.qq-album-page .detail-headings { align-items: center; }
+.qq-album-page .album-artist { font-size: 17px; }
+.qq-album-page .album-artist a { color: inherit; text-decoration: none; }
+.qq-album-page .album-artist a:hover { text-decoration: underline; }
+.qq-album-page .album-notes { white-space: pre-line; }
+.qq-album-page .track-album { display: none; }
+.qq-album-page .album-footer { margin-top: 22px; }
+@media (min-width: 1000px) { .qq-album-page .detail-headings { align-items: flex-start; } }

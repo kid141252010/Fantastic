@@ -133,11 +133,18 @@ export function artworkUrl(artwork, albumMid) {
 export function toTrack(dto) {
   const id = mid(dto.id);
   const albumMid = MID.test(dto.albumMid || '') ? dto.albumMid : '';
-  const artists = (Array.isArray(dto.artists) ? dto.artists : []).filter((a) => typeof a === 'string').map((name) => ({ name, href: '' }));
+  const artists = (Array.isArray(dto.artists) ? dto.artists : []).map((artist) => {
+    const name = typeof artist === 'string' ? artist : artist?.name;
+    if (typeof name !== 'string') return null;
+    const artistMid = typeof artist === 'object' && artist
+      ? artist.mid || String(artist.href || '').match(/^\/qq-artist\/([0-9A-Za-z]{1,32})\/?$/)?.[1] || '' : '';
+    return { name, href: MID.test(String(artistMid || '')) ? `/qq-artist/${artistMid}` : '' };
+  }).filter(Boolean);
+  const album = String(dto.album || '');
   return withIdentity({
     source: 'qq', kind: 'song', id, name: String(dto.name || ''), title: String(dto.name || ''),
-    artists, artist: artists.map((a) => a.name).join(' / '), album: String(dto.album || ''),
-    albumId: albumMid, albumHref: '', href: songPath(id), country: '',
+    artists, artist: artists.map((a) => a.name).join(' / '), album,
+    albumId: albumMid, albumHref: albumMid && album ? `/qq-album/${albumMid}` : '', href: songPath(id), country: '',
     duration: Number.isFinite(dto.durationMs) ? Math.max(0, dto.durationMs) : 0,
     artwork: { url: albumMid ? artworkUrl(dto.cover, albumMid) : '' }, explicit: false,
     qq: { mid: id, albumMid, vip: dto.vip === true, ttml: dto.ttml === true },
@@ -182,6 +189,8 @@ export async function searchSongs(q, { limit = 30, offset = 0, signal } = {}) {
   return { songs: (data.songs || []).map(toTrack), total: data.total || 0 };
 }
 export async function song(id, signal) { return toTrack(await request(`/qq/song/${mid(id)}`, signal)); }
+export async function album(id, signal) { return request(`/qq/album/${mid(id)}`, signal); }
+export async function artist(id, signal) { return request(`/qq/artist/${mid(id)}`, signal); }
 export function qualityRows(data, id, detect, environment = globalThis) {
   const rows = Array.isArray(data?.qualities) ? data.qualities : [];
   detect ||= globalThis.window?.AmHook?.detectQqModes;
@@ -264,7 +273,7 @@ export function favorites(storage) {
     for (const raw of records) {
       if (raw?.source !== 'qq' || !MID.test(String(raw.id))) continue;
       // Rebuild snapshots through the same DTO allowlist; never persist audio URLs.
-      const track = toTrack({ id: raw.id, name: raw.name, artists: raw.artists?.map((a) => a.name),
+      const track = toTrack({ id: raw.id, name: raw.name, artists: raw.artists,
         album: raw.album, albumMid: raw.qq?.albumMid, cover: typeof raw.artwork === 'string' ? raw.artwork : raw.artwork?.url,
         durationMs: raw.duration, vip: raw.qq?.vip, ttml: raw.qq?.ttml });
       unique.set(track.key, track);

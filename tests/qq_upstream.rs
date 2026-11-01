@@ -134,6 +134,69 @@ async fn search_parses_result_and_forwards_limit_offset() {
     task.abort();
 }
 
+#[tokio::test]
+async fn album_and_artist_pages_normalize_upstream_shapes() {
+    let upstream = Router::new().fallback(any(|request: Request<Body>| async move {
+        let path = request.uri().path();
+        match path {
+            "/album" => Json(json!({
+                "code": 200,
+                "album": {
+                    "id": "albummid", "name": "Album", "picUrl": "https://y.qq.com/music/photo_new/T002R500x500M000albummid_5.jpg",
+                    "publishTime": 1704067200000u64, "size": 2, "subType": "录音室版", "description": "About",
+                    "artists": [{"id": "artistmid", "name": "Artist"}]
+                },
+                "songs": [song("songa"), song("songb")]
+            })).into_response(),
+            "/artist/detail" => Json(json!({
+                "code": 200,
+                "data": {"artist": {"id": "artistmid", "name": "Artist", "avatar": "http://y.gtimg.cn/avatar.jpg", "cover": "https://y.gtimg.cn/cover.jpg", "briefDesc": "Bio", "musicSize": 2, "albumSize": 1}}
+            })).into_response(),
+            "/artist/songs" => Json(json!({"code": 200, "total": 101, "songs": [song("songa")] })).into_response(),
+            "/artist/album" => Json(json!({"code": 200, "hotAlbums": [{"id": "albummid", "name": "Album", "picUrl": "https://y.qq.com/music/photo_new/T002R500x500M000albummid_5.jpg", "publishTime": 1704067200000u64, "size": 2}]})).into_response(),
+            _ => StatusCode::NOT_FOUND.into_response(),
+        }
+    }));
+    let Some((base, task)) = serve(upstream).await else { return; };
+    let state = Arc::new(AppState::with_config(config(base.clone(), base)));
+
+    let response = get(state.clone(), "/qq/album/albummid").await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = json_body(response).await;
+    assert_eq!(body["album"]["mid"], "albummid");
+    assert_eq!(body["album"]["artists"][0], json!({"name": "Artist", "mid": "artistmid"}));
+    assert_eq!(body["songs"].as_array().unwrap().len(), 2);
+
+    let response = get(state.clone(), "/qq/artist/artistmid").await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = json_body(response).await;
+    assert_eq!(body["artist"]["avatar"], "https://y.gtimg.cn/avatar.jpg");
+    assert_eq!(body["totalSongs"], 101);
+    assert_eq!(body["albums"][0]["mid"], "albummid");
+    assert_eq!(body["songs"].as_array().unwrap().len(), 1);
+    task.abort();
+}
+
+#[tokio::test]
+async fn artist_page_degrades_when_songs_upstream_fails() {
+    let upstream = Router::new().fallback(any(|request: Request<Body>| async move {
+        match request.uri().path() {
+            "/artist/detail" => Json(json!({"code": 200, "data": {"artist": {"id": "artistmid", "name": "Artist"}}})).into_response(),
+            "/artist/songs" => StatusCode::BAD_GATEWAY.into_response(),
+            "/artist/album" => Json(json!({"code": 200, "hotAlbums": []})).into_response(),
+            _ => StatusCode::NOT_FOUND.into_response(),
+        }
+    }));
+    let Some((base, task)) = serve(upstream).await else { return; };
+    let state = Arc::new(AppState::with_config(config(base.clone(), base)));
+    let response = get(state, "/qq/artist/artistmid").await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = json_body(response).await;
+    assert_eq!(body["songs"], json!([]));
+    assert_eq!(body["albums"], json!([]));
+    task.abort();
+}
+
 fn lyric_info(mid: &str) -> Value {
     json!({"data": [song(mid)]})
 }

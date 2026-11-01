@@ -86,7 +86,7 @@ test('path checks match src/amp.rs, src/state.rs and src/links.rs', () => {
     '/https://music.apple.com/us/curator/1019400049', '/https:/music.apple.com/us/album/lover/1468058165',
     '/radio', '/https://music.apple.com/cn/radio', '/https://music.apple.com/us/station/apple-music-1/ra.978194965',
     '/https://music.apple.com/cn/station/ra.686227433',
-    '/qq-song/0039MnYb0qxYhV', '/qq-song/123/',
+    '/qq-song/0039MnYb0qxYhV', '/qq-song/123/', '/qq-artist/0025NhlN2yWrP4', '/qq-album/000MkMni19ClKG',
   ]) assert(isPagePath(page), page);
   for (const other of [
     '/new/other', '/new/top-charts/x', '/top-charts', '/settings/x', '/library/other', '/library/playlist/pl.123', '/library/artists/a/b',
@@ -94,6 +94,7 @@ test('path checks match src/amp.rs, src/state.rs and src/links.rs', () => {
     '/https://music.apple.com/cn/new/top-charts/stations', '/http://music.apple.com/us/song/name/123', '/https://example.com/us/song/name/123',
     '/assets/missing.js', '/favicon.ico', '/radio/x', '/https://music.apple.com/us/station/apple-music-1',
     '/qq-song/', '/qq-song/123//', '/qq-song/../bad', '/qq-song/123/play', '/qq/song/123',
+    '/qq-artist/', '/qq-artist/123//', '/qq-artist/../bad', '/qq-album/', '/qq-album/123//', '/qq-album/../bad',
   ]) assert(!isPagePath(other), other);
 
   for (const ok of ['ra.978194965', 'ra.u-5e1a0b_x']) assert(validStationId(ok), ok);
