@@ -1,6 +1,6 @@
 <div align="center">
 
-# am-hook
+# Fantastic
 
 **浏览器里的音乐网页播放器：Apple Music 与 QQ 音乐同在一个播放器——无损、杜比全景声与 MV，全部由 WebAssembly 在本地解密。**
 
@@ -8,18 +8,20 @@
 [![Build Test](https://github.com/itouakirai/am-hook/actions/workflows/build-test.yml/badge.svg)](https://github.com/itouakirai/am-hook/actions/workflows/build-test.yml)
 [![License: AGPL-3.0-only](https://img.shields.io/badge/license-AGPL--3.0--only-blue)](LICENSE)
 [![Telegram](https://img.shields.io/badge/Telegram-apple__music__alac-26A5E4?logo=telegram)](https://t.me/apple_music_alac)
+[![QQ Group](https://img.shields.io/badge/QQ_Group-AMLL_678038548-12B7F5?logo=qq)](https://qun.qq.com/universal-share/share?busi_data=eyJncm91cENvZGUiOiI2NzgwMzg1NDgiLCJ0b2tlbiI6IkJrWmNuZUt6bjAwcDFEWFZxN3FRQlNUeWhyd21BbEU3RXBrbWl6VkpKMnAxeUI0WVhQd01rNThkSE9nU0ZGeU8iLCJ1aW4iOiIzMzE5NDA2NDMzIn0=&data=_3dZowj6FqunhT1cxI3F_NM2b8r-Cv1IYvqZQAG2z6TO-8baaR3Lj5UiKhuGOo3VvCLc9dp8F2-IfW7iTdoEyQ&svctype=4)
+[![Discord](https://img.shields.io/badge/Discord-AMLL-5865F2?logo=discord)](https://discord.gg/xSqKAnpSxR)
 
 中文 | [English](README.md)
 
-![am-hook：桌面端的新发现页与手机上的专辑页](docs/home.zh-CN.png)
+![Fantastic：桌面端的新发现页与手机上的专辑页](docs/home.zh-CN.png)
 
 </div>
 
-am-hook 是一个用 Rust 编写的音乐网页播放器。它最初是一个 Apple Music 播放器，现在是多音源播放器：Apple Music 与 QQ 音乐并存——队列各自独立、共用同一个播放器；网易云音乐（NCM）音源待开发。
+Fantastic 是一个用 Rust 编写的音乐网页播放器。它最初是一个 Apple Music 播放器，现在是多音源播放器：Apple Music 与 QQ 音乐并存——队列各自独立、共用同一个播放器；网易云音乐（NCM）音源待开发。
 
 Apple Music 部分支持歌曲（FairPlay HLS）和 MV（PlayReady HLS），**解密完全在浏览器中完成**：服务端只与 wrapper-lite 通信（master 播放列表、解密模板、许可证），媒体数据由浏览器直接从 Apple CDN 获取，并在 Web Worker 中用 WebAssembly 解密，不消耗服务器流量。
 
-QQ 音源由 am-hook 服务端提供：服务端代理一个只有服务端知道的 QQ API（用 `--qq-api` 配置），浏览器不直接访问该 API。
+QQ 音源由 Fantastic 服务端提供：服务端代理一个只有服务端知道的 QQ API（用 `--qq-api` 配置），浏览器不直接访问该 API。
 
 ## 音乐源
 
@@ -165,10 +167,10 @@ am-hook --listen 0.0.0.0:8888 --wrapper-url http://127.0.0.1:12340
 
 导航底部的「wrapper-lite」设置可以在两种方式间切换（保存在浏览器中）：
 
-- **服务端**（默认）：wrapper-lite 请求经 am-hook 转发，限速、限并发与 `Authorization` 由 `--wrapper-*` 参数决定。[Serverless 部署](#serverless-部署vercel--cloudflare)没有设置 `AM_HOOK_WRAPPER_URL`、或二进制以 `--local-wrapper-only` 启动时没有这一项。
+- **服务端**（默认）：wrapper-lite 请求经 Fantastic 转发，限速、限并发与 `Authorization` 由 `--wrapper-*` 参数决定。[Serverless 部署](#serverless-部署vercel--cloudflare)没有设置 `AM_HOOK_WRAPPER_URL`、或二进制以 `--local-wrapper-only` 启动时没有这一项。
 - **本地**：浏览器直接请求你自己的 wrapper-lite（`/status`、`/m3u8`、`/key`、`/lyrics`、`/webplayback`、`/license`），在面板中填写地址、每秒请求数上限、同时请求数上限与 `Authorization`（规则与 `--wrapper-auth` 相同）。限制只作用于当前页面。地址可以带用户信息（如 `https://<token>@host`），与 `--wrapper-url` 相同，转为 `Authorization: Basic …` 发送；单独填写的 `Authorization` 优先。
   - 请求是跨源的：wrapper-lite 需允许跨源请求（返回 `Access-Control-Allow-Origin`，填了 `Authorization` 时还需在预检中允许该请求头），或在浏览器中安装解除跨域限制的插件。
-  - MV 的 master 播放列表仍由 am-hook 以 `User-Agent: AM` 获取，其余 MV 请求（`/webplayback`、`/license`）直连本地 wrapper-lite。
+  - MV 的 master 播放列表仍由 Fantastic 以 `User-Agent: AM` 获取，其余 MV 请求（`/webplayback`、`/license`）直连本地 wrapper-lite。
 
 ### QQ 音源（可选）
 
@@ -328,7 +330,7 @@ QQ 不设置客户端限流；激进流量由上游服务自行处理。
 ```mermaid
 flowchart LR
   B["浏览器<br/>Web Worker + WebAssembly"]
-  S["am-hook<br/>（二进制或 serverless 函数）"]
+  S["Fantastic<br/>（二进制或 serverless 函数）"]
   W["wrapper-lite"]
   A["amp-api<br/>（目录）"]
   C["Apple CDN"]
@@ -486,7 +488,7 @@ cargo test --test e2e_test -- --ignored
 </details>
 
 <details>
-<summary><b>在线（需运行 am-hook、wrapper-lite 并能访问 Apple CDN）</b></summary>
+<summary><b>在线（需运行 Fantastic、wrapper-lite 并能访问 Apple CDN）</b></summary>
 
 | 命令 | 覆盖内容 |
 |---|---|
@@ -572,10 +574,10 @@ docs/                  发布指南（RELEASE.md）与 README 截图
 
 ## 交流群
 
-使用问题、反馈与讨论：Telegram 群组 [@apple_music_alac](https://t.me/apple_music_alac)。Bug 与功能建议仍欢迎提交到 [Issues](https://github.com/itouakirai/am-hook/issues)。
+使用问题、反馈与讨论：Telegram 群组 [@apple_music_alac](https://t.me/apple_music_alac)。AMLL 社区（Fantastic 内嵌的歌词库）在 QQ 群 [AMLL 亲友团](https://qun.qq.com/universal-share/share?busi_data=eyJncm91cENvZGUiOiI2NzgwMzg1NDgiLCJ0b2tlbiI6IkJrWmNuZUt6bjAwcDFEWFZxN3FRQlNUeWhyd21BbEU3RXBrbWl6VkpKMnAxeUI0WVhQd01rNThkSE9nU0ZGeU8iLCJ1aW4iOiIzMzE5NDA2NDMzIn0=&data=_3dZowj6FqunhT1cxI3F_NM2b8r-Cv1IYvqZQAG2z6TO-8baaR3Lj5UiKhuGOo3VvCLc9dp8F2-IfW7iTdoEyQ&svctype=4)（群号 678038548）与 [Discord](https://discord.gg/xSqKAnpSxR)。Bug 与功能建议仍欢迎提交到 [Issues](https://github.com/itouakirai/am-hook/issues)。
 
 ## 许可证
 
-am-hook 以 [GNU Affero 通用公共许可证 v3.0（仅此版本）](LICENSE)（AGPL-3.0-only）发布，因为 Web 界面内嵌了以 AGPL 授权的 [AMLL](https://github.com/amll-dev/applemusic-like-lyrics) 歌词播放器。如果将修改后的版本作为网络服务运行，需要向其用户提供对应的源代码。
+Fantastic 以 [GNU Affero 通用公共许可证 v3.0（仅此版本）](LICENSE)（AGPL-3.0-only）发布，因为 Web 界面内嵌了以 AGPL 授权的 [AMLL](https://github.com/amll-dev/applemusic-like-lyrics) 歌词播放器。如果将修改后的版本作为网络服务运行，需要向其用户提供对应的源代码。
 
 内置的第三方组件保留各自的许可证：`crates/temari`（MIT）、hls.js CEA-608 解析器（Apache-2.0，`browser/cea608/LICENSE`）、`@mediabunny/ac3`（MPL-2.0，`src/ui/EC3-LICENSE.txt`）、AMLL 及其依赖（AGPL-3.0-only，`browser/amll`）、来自 am-hook-joc 的 JOC 渲染器（AGPL-3.0-only 或 MIT，`crates/joc-core/LICENSE`）、来自 YouLyPlus 的歌词封面背景（MIT，声明见 `src/ui/lyrics/backdrop-render.mjs`），以及 SADIE II HRTF 场（Apache-2.0，见 `src/ui/JOC-NOTICE.md`）。
