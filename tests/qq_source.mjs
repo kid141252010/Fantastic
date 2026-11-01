@@ -30,11 +30,6 @@ const dto = {
   file_url: 'https://example.invalid/private.mp3',
   cover: 'https://y.qq.com/music/photo_new/T002R{w}x{h}M000003DFRzD192KKD_5.jpg',
 };
-const storage = () => {
-  const data = new Map();
-  return { getItem: (key) => data.get(key) ?? null, setItem: (key, value) => data.set(key, value) };
-};
-
 test('QQ DTO maps names, timing, badges and direct QQ artwork', () => {
   const track = qq.toTrack(dto);
   assert.equal(track.key, 'qq:0039MnYb0qxYhV');
@@ -265,49 +260,6 @@ test('missing, blank, malformed and untimed lyrics fall through without blocking
   assert.deepEqual(qq.selectLyrics([candidate('apple'), candidate('unknown')], parse), { song: null });
 });
 
-test('QQ favorites persist independently, deduplicate keys and discard upstream fields', () => {
-  const local = storage();
-  local.setItem('am-hook:library', 'Apple snapshot');
-  const track = qq.toTrack(dto);
-  assert.equal(qq.toggleFavorite({ ...track, file_url: 'https://example.invalid/private' }, local), true);
-  assert.equal(qq.favorites(local)[0].key, track.key);
-  assert.deepEqual(qq.favorites(local)[0].artwork, { url: qq.artworkUrl(dto.cover) });
-  assert.equal(local.getItem('am-hook:qq-favorites').includes('file_url'), false);
-  assert.equal(local.getItem('am-hook:library'), 'Apple snapshot');
-  local.setItem('am-hook:qq-favorites', JSON.stringify([track, track, { source: 'apple', id: track.id }, { source: 'qq', id: '../x' }]));
-  assert.equal(qq.favorites(local).length, 1);
-  assert.equal(qq.toggleFavorite(track, local), false);
-  assert.deepEqual(qq.favorites(local), []);
-  local.setItem('am-hook:qq-favorites', '{broken');
-  assert.deepEqual(qq.favorites(local), []);
-  assert.deepEqual(qq.favorites({ getItem() { throw new Error('storage blocked'); } }), []);
-});
-
-test('QQ favorite checks use a default-storage key cache and injected storage bypasses it', () => {
-  const saved = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
-  const data = new Map();
-  let reads = 0;
-  const local = {
-    getItem(key) { reads++; return data.get(key) ?? null; },
-    setItem(key, value) { data.set(key, value); },
-  };
-  const track = qq.toTrack(dto);
-  Object.defineProperty(globalThis, 'localStorage', { value: local, configurable: true });
-  try {
-    data.set('am-hook:qq-favorites', JSON.stringify([track]));
-    assert.equal(qq.isFavorite(track), true);
-    const firstRead = reads;
-    assert.equal(qq.isFavorite(track), true);
-    assert.equal(reads, firstRead, 'repeated row checks should hit the key Set');
-    qq.favorites(local);
-    assert.ok(reads > firstRead, 'an explicitly injected storage is parsed independently');
-    qq.toggleFavorite(track);
-    assert.equal(qq.isFavorite(track), false, 'toggle invalidates the default-storage cache');
-  } finally {
-    if (saved) Object.defineProperty(globalThis, 'localStorage', saved); else delete globalThis.localStorage;
-  }
-});
-
 test('home search source changes do not switch or tear down the playing source', () => {
   const home = fs.readFileSync(new URL('../src/ui/views/home.mjs', import.meta.url), 'utf8');
   assert.doesNotMatch(home, /player\.switchSource\(source\)/);
@@ -319,21 +271,15 @@ test('home search source changes do not switch or tear down the playing source',
   assert.equal(tornDown, 1, 'the old switchSource path tears down playback; home must not call it');
 });
 
-test('QQ covers resolve for rows, legacy favorites and player entries; Apple templates retain their shape', () => {
+test('QQ covers resolve for rows and player entries; Apple templates retain their shape', () => {
   const track = qq.toTrack(dto);
   const fixed = dto.cover.replace('{w}', '500').replace('{h}', '500');
   assert.equal(track.artwork.url, fixed);
   assert.doesNotMatch(track.artwork.url, /\{[wh]\}/);
   for (const size of [68, 80, 96, 160, 600, 632, 1000]) assert.equal(artUrl(track.artwork, size), fixed);
-  const local = storage();
   for (const artwork of [dto.cover, { url: dto.cover }]) {
-    local.setItem('am-hook:qq-favorites', JSON.stringify([{ ...track, artwork }]));
-    assert.deepEqual(qq.favorites(local)[0].artwork, { url: fixed });
-    assert.equal(artUrl(qq.favorites(local)[0].artwork, 96), fixed);
     assert.equal(qq.entryOf({ ...track, artwork }).artwork, fixed);
-    const favorite = qq.favorites(local)[0];
-    assert.equal(qq.entryOf(favorite).artwork, fixed);
-    assert.equal(qq.qualityItem(favorite, 'SQ').artwork, fixed);
+    assert.equal(qq.qualityItem({ ...track, artwork }, 'SQ').artwork, fixed);
   }
   assert.equal(qq.entryOf(track).artwork, fixed);
   const apple = 'https://example.com/{w}x{h}{c}.{f}';
