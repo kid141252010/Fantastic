@@ -8,7 +8,7 @@
 [![Build Test](https://github.com/itouakirai/am-hook/actions/workflows/build-test.yml/badge.svg)](https://github.com/itouakirai/am-hook/actions/workflows/build-test.yml)
 [![License: AGPL-3.0-only](https://img.shields.io/badge/license-AGPL--3.0--only-blue)](LICENSE)
 [![Telegram](https://img.shields.io/badge/Telegram-apple__music__alac-26A5E4?logo=telegram)](https://t.me/apple_music_alac)
-[![QQ Group](https://img.shields.io/badge/QQ_Group-AMLL_678038548-12B7F5?logo=qq)](https://qun.qq.com/universal-share/share?busi_data=eyJncm91cENvZGUiOiI2NzgwMzg1NDgiLCJ0b2tlbiI6IkJrWmNuZUt6bjAwcDFEWFZxN3FRQlNUeWhyd21BbEU3RXBrbWl6VkpKMnAxeUI0WVhQd01rNThkSE9nU0ZGeU8iLCJ1aW4iOiIzMzE5NDA2NDMzIn0=&data=_3dZowj6FqunhT1cxI3F_NM2b8r-Cv1IYvqZQAG2z6TO-8baaR3Lj5UiKhuGOo3VvCLc9dp8F2-IfW7iTdoEyQ&svctype=4)
+[![QQ Group](https://img.shields.io/badge/QQ_Group-AMLL_678038548-12B7F5?logo=qq)](https://qun.qq.com/universal-share/share?ac=1&authKey=1ao3fc9n1aN4ese64QmDs6mOZgvdB7YfR1K9y0YncbQp1%2Bz61x3EKfMCROv9MHhv&busi_data=eyJncm91cENvZGUiOiI2NzgwMzg1NDgiLCJ0b2tlbiI6IkJrWmNuZUt6bjAwcDFEWFZxN3FRQlNUeWhyd21BbEU3RXBrbWl6VkpKMnAxeUI0WVhQd01rNThkSE9nU0ZGeU8iLCJ1aW4iOiIzMzE5NDA2NDMzIn0=&data=_3dZowj6FqunhT1cxI3F_NM2b8r-Cv1IYvqZQAG2z6TO-8baaR3Lj5UiKhuGOo3VvCLc9dp8F2-IfW7iTdoEyQ&svctype=4&tempid=h5_group_info)
 [![Discord](https://img.shields.io/badge/Discord-AMLL-5865F2?logo=discord)](https://discord.gg/xSqKAnpSxR)
 
 中文 | [English](README.md)
@@ -574,7 +574,7 @@ docs/                  发布指南（RELEASE.md）与 README 截图
 
 ## 交流群
 
-使用问题、反馈与讨论：Telegram 群组 [@apple_music_alac](https://t.me/apple_music_alac)。AMLL 社区（Fantastic 内嵌的歌词库）在 QQ 群 [AMLL 亲友团](https://qun.qq.com/universal-share/share?busi_data=eyJncm91cENvZGUiOiI2NzgwMzg1NDgiLCJ0b2tlbiI6IkJrWmNuZUt6bjAwcDFEWFZxN3FRQlNUeWhyd21BbEU3RXBrbWl6VkpKMnAxeUI0WVhQd01rNThkSE9nU0ZGeU8iLCJ1aW4iOiIzMzE5NDA2NDMzIn0=&data=_3dZowj6FqunhT1cxI3F_NM2b8r-Cv1IYvqZQAG2z6TO-8baaR3Lj5UiKhuGOo3VvCLc9dp8F2-IfW7iTdoEyQ&svctype=4)（群号 678038548）与 [Discord](https://discord.gg/xSqKAnpSxR)。Bug 与功能建议仍欢迎提交到 [Issues](https://github.com/itouakirai/am-hook/issues)。
+使用问题、反馈与讨论：Telegram 群组 [@apple_music_alac](https://t.me/apple_music_alac)。AMLL 社区（Fantastic 内嵌的歌词库）在 QQ 群 [AMLL 亲友团](https://qun.qq.com/universal-share/share?ac=1&authKey=1ao3fc9n1aN4ese64QmDs6mOZgvdB7YfR1K9y0YncbQp1%2Bz61x3EKfMCROv9MHhv&busi_data=eyJncm91cENvZGUiOiI2NzgwMzg1NDgiLCJ0b2tlbiI6IkJrWmNuZUt6bjAwcDFEWFZxN3FRQlNUeWhyd21BbEU3RXBrbWl6VkpKMnAxeUI0WVhQd01rNThkSE9nU0ZGeU8iLCJ1aW4iOiIzMzE5NDA2NDMzIn0=&data=_3dZowj6FqunhT1cxI3F_NM2b8r-Cv1IYvqZQAG2z6TO-8baaR3Lj5UiKhuGOo3VvCLc9dp8F2-IfW7iTdoEyQ&svctype=4&tempid=h5_group_info)（群号 678038548）与 [Discord](https://discord.gg/xSqKAnpSxR)。Bug 与功能建议仍欢迎提交到 [Issues](https://github.com/itouakirai/am-hook/issues)。
 
 ## 许可证
 
