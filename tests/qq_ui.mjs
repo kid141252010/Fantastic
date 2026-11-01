@@ -14,7 +14,7 @@ const defaultQualities = [
 ];
 
 function detailPage(t, { qualities = defaultQualities, failQualities = false, nativeModes = ['native'] } = {}) {
-  const saved = Object.fromEntries(['document', 'window', 'MediaSource', 'matchMedia', 'fetch', 'localStorage']
+  const saved = Object.fromEntries(['document', 'window', 'MediaSource', 'matchMedia', 'fetch']
     .map((key) => [key, Object.getOwnPropertyDescriptor(globalThis, key)]));
   const controller = new AbortController();
   t.after(() => {
@@ -24,16 +24,13 @@ function detailPage(t, { qualities = defaultQualities, failQualities = false, na
       else delete globalThis[key];
     }
   });
-  const root = ids('favorite', 'title', 'subtitle', 'meta', 'badges', 'art', 'radiosity', 'enqueue', 'play-best',
+  const root = ids('title', 'subtitle', 'meta', 'badges', 'art', 'radiosity', 'enqueue', 'play-best',
     'variant-list', 'quality-status', 'lyrics', 'lyrics-source', 'lyrics-actions', 'lyrics-preview',
     'lyrics-qrc', 'lyrics-trans', 'lyrics-roma', 'lyrics-lines', 'alert');
-  const data = new Map();
-  const local = { getItem: (key) => data.get(key) ?? null, setItem: (key, value) => data.set(key, value) };
   const played = [], queued = [];
   const player = { current: null, onChange() {}, play: (item) => played.push(item), appendQueue: (entry) => queued.push(entry) };
   let rerender;
   globalThis.document = document;
-  globalThis.localStorage = local;
   globalThis.matchMedia = () => ({ matches: false, addEventListener() {} });
   globalThis.window = { AmI18n: { t: (key) => key }, AmHook: { formatTime: String, detectQqModes: () => nativeModes } };
   globalThis.MediaSource = { isTypeSupported: () => true };
@@ -43,7 +40,7 @@ function detailPage(t, { qualities = defaultQualities, failQualities = false, na
         : { id: 'test', name: 'Test', albumMid: '003DFRzD192KKD', cover } });
   mount({ root, url: new URL('https://am.test/qq-song/test'), signal: controller.signal,
     player, onLangChange: (fn) => { rerender = fn; }, toast() {} });
-  return { root, local, played, queued, rerender: () => rerender() };
+  return { root, played, queued, rerender: () => rerender() };
 }
 
 test('QQ detail omits unavailable tiers while retaining runtime-playable and download rows after rerender', async (t) => {
@@ -63,8 +60,8 @@ test('QQ detail omits unavailable tiers while retaining runtime-playable and dow
   }
 });
 
-test('QQ detail header, radiosity, playback, favorites and queue use the fixed cover URL', async (t) => {
-  const { root, local, played, queued } = detailPage(t);
+test('QQ detail header, radiosity, playback and queue use the fixed cover URL', async (t) => {
+  const { root, played, queued } = detailPage(t);
   assert.equal(root.querySelector('#lyrics-preview').getAttribute('aria-controls'), 'lyrics-lines');
   await new Promise(setImmediate);
   assert.equal(root.querySelector('#lyrics-qrc').href, '/qq/song/test/lyrics/raw?kind=qrc');
@@ -78,10 +75,8 @@ test('QQ detail header, radiosity, playback, favorites and queue use the fixed c
   await root.querySelector('#enqueue').click();
   await root.querySelector('#play-best').click();
   await root.querySelector('#variant-list').children[0].querySelector('button').click();
-  await root.querySelector('#favorite').click();
   assert.equal(queued[0].artwork, fixedCover);
   assert.deepEqual(played.map((item) => item.artwork), [fixedCover, fixedCover]);
-  assert.deepEqual(JSON.parse(local.getItem('am-hook:qq-favorites'))[0].artwork, { url: fixedCover });
 });
 
 test('QQ detail retains available downloads when the browser cannot play any tier', async (t) => {

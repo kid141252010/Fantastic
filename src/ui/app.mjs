@@ -147,6 +147,7 @@ import('/assets/lyrics/panel.mjs')
       targetId = id;
       target = nowPlayingTarget(player.current);
       resolved = null;
+      favorite.button.hidden = player.current?.source === 'qq';
       favorite.refresh();
     }
     function resolveTarget() {

@@ -1,7 +1,6 @@
 // 资料库的界面部件（导航与各页面共用）：对话框、歌单封面拼图、「添加到歌单」菜单、新建 / 编辑 / 删除歌单、导入与导出。
 // 数据的读写见 /assets/library.mjs。
 import * as library from '/assets/library.mjs';
-import * as qq from '../sources/qq.mjs';
 import { trackKey } from '../sources/track.mjs';
 
 const { AmI18n } = window;
@@ -174,7 +173,7 @@ export function trackRow(track, { actions, onPlay, extraItems, playlistId, lead 
         ...(track.qq?.vip ? [el('span', { className: 'qq-badge qq-vip', textContent: t('qq.vip') })] : []),
         ...(track.qq?.ttml ? [el('span', { className: 'qq-badge', textContent: t('qq.ttml') })] : [])] : []),
       track.explicit ? el('span', { className: 'explicit', textContent: 'E', title: t('search.explicit') }) : null,
-      (track.source === 'qq' ? qq.isFavorite(track) : library.isFavorite(track.kind, track.id)) ? el('span', { className: 'lib-fav', innerHTML: LIB_ICON.starFilled, title: t('library.favorited') }) : null,
+      track.source !== 'qq' && library.isFavorite(track.kind, track.id) ? el('span', { className: 'lib-fav', innerHTML: LIB_ICON.starFilled, title: t('library.favorited') }) : null,
       video ? el('span', { className: 'track-kind', innerHTML: VIDEO_ICON, title: t('album.video') }) : null),
     el('div', { className: 'track-artist' }, ...artistParts(track)));
   const albumCol = track.albumHref && track.album ? el('a', { className: 'track-album', href: track.albumHref, textContent: track.album })
