@@ -177,6 +177,51 @@ test('QQ consumes the complete capabilities table at module startup and keeps fa
   }
 });
 
+test('QQ capabilities keep the bundled table when a non-2xx response has valid but different JSON', async () => {
+  const saved = { window: Object.getOwnPropertyDescriptor(globalThis, 'window'), fetch: Object.getOwnPropertyDescriptor(globalThis, 'fetch') };
+  const base = qq.capabilities();
+  const altered = base.map((entry) => entry.quality === 'HQ'
+    ? { ...entry, defaultCodec: 'vorbis', contentType: 'audio/ogg; codecs="vorbis"', displayName: 'MUTATED HQ' } : entry);
+  Object.defineProperty(globalThis, 'window', { value: {}, configurable: true });
+  Object.defineProperty(globalThis, 'fetch', { value: async () => ({
+    ok: false,
+    status: 500,
+    json: async () => ({ enabled: true, qualities: altered }),
+  }), configurable: true });
+  try {
+    const fallback = await import(`../src/ui/sources/qq.mjs?capabilities-http-error-${Date.now()}`);
+    await fallback.capabilitiesReady;
+    assert.deepEqual(fallback.capabilities(), base);
+    assert.equal(fallback.playbackInfo('HQ').codec, 'mp3');
+    assert.equal(fallback.playbackInfo('HQ').contentType, 'audio/mpeg');
+  } finally {
+    if (saved.window) Object.defineProperty(globalThis, 'window', saved.window); else delete globalThis.window;
+    if (saved.fetch) Object.defineProperty(globalThis, 'fetch', saved.fetch); else delete globalThis.fetch;
+  }
+});
+
+test('QQ capabilities keep the bundled table when the capabilities request rejects', async () => {
+  const saved = { window: Object.getOwnPropertyDescriptor(globalThis, 'window'), fetch: Object.getOwnPropertyDescriptor(globalThis, 'fetch') };
+  const base = qq.capabilities();
+  Object.defineProperty(globalThis, 'window', { value: {}, configurable: true });
+  Object.defineProperty(globalThis, 'fetch', { value: async (path) => {
+    if (path === '/qq/capabilities') throw new Error('network offline');
+    assert.equal(path, '/qq/song/song/qualities');
+    return { ok: true, json: async () => ({ qualities: [{ quality: 'HQ', available: true, sizeBytes: 1 }] }) };
+  }, configurable: true });
+  try {
+    const fallback = await import(`../src/ui/sources/qq.mjs?capabilities-rejected-${Date.now()}`);
+    await assert.doesNotReject(fallback.capabilitiesReady);
+    assert.deepEqual(fallback.capabilities(), base);
+    assert.equal(fallback.playbackInfo('HQ').codec, 'mp3');
+    const rows = await fallback.qualities('song');
+    assert.equal(rows.find((row) => row.quality === 'HQ').codec, 'mp3');
+  } finally {
+    if (saved.window) Object.defineProperty(globalThis, 'window', saved.window); else delete globalThis.window;
+    if (saved.fetch) Object.defineProperty(globalThis, 'fetch', saved.fetch); else delete globalThis.fetch;
+  }
+});
+
 test('detail lyric lines use the best parsed source and retain translations as text', () => {
   const result = qq.selectLyrics([candidate('ttml', 'bad'), candidate('lrc', 'valid')], (text) => {
     if (text === 'bad') throw new Error('bad XML');
@@ -354,7 +399,7 @@ test('QQ plays the local 302 route through native audio without asking Apple for
   assert.equal(player.audio.paused, false);
 });
 
-test('QQ native play rejection advances through the planned mode list', async () => {
+test('QQ native play rejection advances through the planned mode list', { timeout: 10000 }, async () => {
   const player = playerHarness();
   const attempted = [];
   player.tryMode = async (mode) => {
@@ -366,7 +411,7 @@ test('QQ native play rejection advances through the planned mode list', async ()
   assert.equal(player.current.mode, 'joc2');
 });
 
-test('QQ native media error hands off with the live paused state and preserves the queue', async () => {
+test('QQ native media error hands off with the live paused state and preserves the queue', { timeout: 10000 }, async () => {
   const player = playerHarness();
   const attempted = [];
   const item = qq.qualityEntry(qq.toTrack(dto), 'DAEAC3');
@@ -388,7 +433,7 @@ test('QQ native media error hands off with the live paused state and preserves t
   assert.deepEqual(player.queue.entries.map((entry) => entry.track), [dto.id, 'next']);
 });
 
-test('QQ native fallback does not react to a network error after native startup', async () => {
+test('QQ native fallback does not react to a network error after native startup', { timeout: 10000 }, async () => {
   const player = playerHarness();
   const attempted = [];
   player.tryMode = async (mode) => { attempted.push(mode); };
@@ -400,7 +445,7 @@ test('QQ native fallback does not react to a network error after native startup'
   assert.deepEqual(attempted, ['native']);
 });
 
-test('QQ native startup hands off on a media error while play is pending', async () => {
+test('QQ native startup hands off on a media error while play is pending', { timeout: 10000 }, async () => {
   const player = playerHarness();
   const item = qq.qualityEntry(qq.toTrack(dto), 'DAEAC3');
   const realTryMode = player.tryMode.bind(player);
@@ -414,6 +459,23 @@ test('QQ native startup hands off on a media error while play is pending', async
   player.handleAudioError();
   await pending;
   assert.equal(player.current.mode, 'joc2');
+});
+
+test('QQ native handoff probes a missing JOC content type from its EC-3 codec', () => {
+  const calls = [];
+  const previous = { media: globalThis.MediaSource, managed: globalThis.ManagedMediaSource };
+  globalThis.ManagedMediaSource = undefined;
+  globalThis.MediaSource = { isTypeSupported: (mime) => { calls.push(mime); return true; } };
+  try {
+    const item = { ...qq.qualityItem(qq.toTrack(dto), 'DAEAC3'), contentType: undefined };
+    assert.equal(item.codec, 'ec-3');
+    assert.equal(item.contentType, undefined);
+    assert.deepEqual(detectQqModes(item), ['native']);
+    assert.deepEqual(calls, ['audio/mp4; codecs="ec-3"']);
+  } finally {
+    globalThis.MediaSource = previous.media;
+    if (previous.managed) globalThis.ManagedMediaSource = previous.managed; else delete globalThis.ManagedMediaSource;
+  }
 });
 
 test('QQ lazily resolves defaults per track; changing the setting preserves current and manual quality', async () => {

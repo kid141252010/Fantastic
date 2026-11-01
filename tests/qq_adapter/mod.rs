@@ -463,10 +463,20 @@ fn qrc_background_rows_attach_with_nested_roles_or_stand_alone() {
         "<span ttm:role=\"x-bg\" begin=\"1.000\" end=\"2.000\"><span begin=\"1.000\" end=\"1.500\">bg</span><span begin=\"1.500\" end=\"2.000\"></span><span ttm:role=\"x-translation\">bg translation</span><span ttm:role=\"x-roman\">roman</span></span>"
     ));
 
-    let standalone = qrc_ttml_filtered("[1000,500](bg(1000,200))(1200,300)", None, None, None).unwrap();
+    let standalone = qrc_ttml_filtered(
+        "[1000,500](bg(1000,200))(1200,300)",
+        Some("[00:01.000]standalone translation"),
+        Some("[1000,100]standalone roman(1000,100)"),
+        None,
+    )
+    .unwrap();
     assert_eq!(standalone.matches("<p ").count(), 1);
     assert!(!standalone.contains("ttm:role=\"x-bg\""));
     assert!(standalone.contains("<p begin=\"1.000\" end=\"1.500\">"));
+    assert!(standalone.contains(
+        "<span ttm:role=\"x-translation\">standalone translation</span>"
+    ));
+    assert!(standalone.contains("<span ttm:role=\"x-roman\">standalone roman</span>"));
 
     let fullwidth = qrc_ttml_filtered(
         "[2000,1000]（bg(2000,500)）（2500,500）",
@@ -1621,15 +1631,18 @@ fn spatial_flac_is_native_and_undecodable_tiers_remain_download_only() {
     for quality in [Quality::Qai, Quality::Q360v1, Quality::Q360v2] {
         for (extension, expected) in [
             ("flac", Playback::Native),
+            ("opus", Playback::Native),
             ("ac4", Playback::Native),
             ("dts", Playback::Download),
             ("mp4", Playback::Download),
         ] {
             let source = audio(quality, Some(123), extension);
-            assert_eq!(
-                QualityRow::from_audio(quality, &json!({"size_new":[123]}), Some(&source)).playback,
-                expected
-            );
+            let row = QualityRow::from_audio(quality, &json!({"size_new":[123]}), Some(&source));
+            assert_eq!(row.playback, expected);
+            if extension == "opus" {
+                assert_eq!(row.codec, "opus");
+                assert_eq!(row.content_type, "audio/ogg; codecs=\"opus\"");
+            }
         }
     }
     for quality in [Quality::Nac, Quality::Dts, Quality::Dtsx, Quality::Ra360] {

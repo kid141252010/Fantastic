@@ -127,7 +127,7 @@ async fn search_parses_result_and_forwards_limit_offset() {
     assert!(query.contains("keywords=hello+world") || query.contains("keywords=hello%20world"));
     assert!(query.contains("limit=2"));
     assert!(query.contains("offset=4"));
-    assert!(query.contains("type=1"));
+    assert!(query.split('&').any(|pair| pair == "type=1"));
 
     let response = get(state, "/qq/search?q=missing").await;
     assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
