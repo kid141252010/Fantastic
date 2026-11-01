@@ -1,6 +1,6 @@
 # QQ 音源规格
 
-本文只描述当前实现的接口和运行约束。早期验证流水账保存在 [`docs/archive/qq-source-validation.md`](archive/qq-source-validation.md)。
+本文只描述当前实现的接口和运行约束。
 
 ## 配置与请求路径
 
