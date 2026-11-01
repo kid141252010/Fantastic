@@ -1,6 +1,6 @@
 <div align="center">
 
-# am-hook
+# Fantastic
 
 **A music web player in your browser: Apple Music and QQ Music in one player — lossless, Dolby Atmos and music videos, decrypted with WebAssembly.**
 
@@ -8,18 +8,20 @@
 [![Build Test](https://github.com/itouakirai/am-hook/actions/workflows/build-test.yml/badge.svg)](https://github.com/itouakirai/am-hook/actions/workflows/build-test.yml)
 [![License: AGPL-3.0-only](https://img.shields.io/badge/license-AGPL--3.0--only-blue)](LICENSE)
 [![Telegram](https://img.shields.io/badge/Telegram-apple__music__alac-26A5E4?logo=telegram)](https://t.me/apple_music_alac)
+[![QQ Group](https://img.shields.io/badge/QQ_Group-AMLL_678038548-12B7F5?logo=qq)](https://qun.qq.com/universal-share/share?busi_data=eyJncm91cENvZGUiOiI2NzgwMzg1NDgiLCJ0b2tlbiI6IkJrWmNuZUt6bjAwcDFEWFZxN3FRQlNUeWhyd21BbEU3RXBrbWl6VkpKMnAxeUI0WVhQd01rNThkSE9nU0ZGeU8iLCJ1aW4iOiIzMzE5NDA2NDMzIn0=&data=_3dZowj6FqunhT1cxI3F_NM2b8r-Cv1IYvqZQAG2z6TO-8baaR3Lj5UiKhuGOo3VvCLc9dp8F2-IfW7iTdoEyQ&svctype=4)
+[![Discord](https://img.shields.io/badge/Discord-AMLL-5865F2?logo=discord)](https://discord.gg/xSqKAnpSxR)
 
 [中文](README.zh-CN.md) | English
 
-![am-hook: the New page on desktop and an album page on a phone](docs/home.png)
+![Fantastic: the New page on desktop and an album page on a phone](docs/home.png)
 
 </div>
 
-am-hook is a music web player written in Rust. What started as an Apple Music player is now a multi-source player: Apple Music and QQ Music live side by side — separate queues, one shared player — and a NetEase Cloud Music (NCM) source is planned.
+Fantastic is a music web player written in Rust. What started as an Apple Music player is now a multi-source player: Apple Music and QQ Music live side by side — separate queues, one shared player — and a NetEase Cloud Music (NCM) source is planned.
 
 For Apple Music — songs (FairPlay HLS) and music videos (PlayReady HLS) — **decryption happens entirely in the browser** by default. The server only talks to wrapper-lite (master playlists, decryption templates, licenses). The browser fetches media straight from Apple's CDN and decrypts it with WebAssembly in Web Workers, so no media traffic goes through the server.
 
-The QQ Music source is served by am-hook itself: the server proxies a QQ API that only it knows about (configured with `--qq-api`), so the browser never talks to that API directly.
+The QQ Music source is served by Fantastic itself: the server proxies a QQ API that only it knows about (configured with `--qq-api`), so the browser never talks to that API directly.
 
 ## Music sources
 
@@ -165,10 +167,10 @@ Other differences from the binary:
 
 The "wrapper-lite" setting at the bottom of the navigation switches between two modes (saved in the browser):
 
-- **Server** (default): wrapper-lite requests are relayed by am-hook; rate, concurrency and `Authorization` come from the `--wrapper-*` options. Not offered on a [serverless deployment](#serverless-deployment-vercel--cloudflare) without `AM_HOOK_WRAPPER_URL`, or by a binary started with `--local-wrapper-only`.
+- **Server** (default): wrapper-lite requests are relayed by Fantastic; rate, concurrency and `Authorization` come from the `--wrapper-*` options. Not offered on a [serverless deployment](#serverless-deployment-vercel--cloudflare) without `AM_HOOK_WRAPPER_URL`, or by a binary started with `--local-wrapper-only`.
 - **Local**: the browser requests your own wrapper-lite directly (`/status`, `/m3u8`, `/key`, `/lyrics`, `/webplayback`, `/license`). The panel sets its URL, max requests per second, max concurrent requests and `Authorization` (same rules as `--wrapper-auth`). The limits apply to the current page only. The URL may carry credentials (such as `https://<token>@host`); as with `--wrapper-url`, they are sent as `Authorization: Basic …`, and a separately set `Authorization` takes precedence.
   - The requests are cross-origin: the wrapper-lite must allow CORS (send `Access-Control-Allow-Origin`, and allow the `Authorization` header in preflights if one is set), or install a browser extension that lifts CORS restrictions.
-  - MV master playlists are still fetched by am-hook with `User-Agent: AM`; the other MV requests (`/webplayback`, `/license`) go to the local wrapper-lite.
+  - MV master playlists are still fetched by Fantastic with `User-Agent: AM`; the other MV requests (`/webplayback`, `/license`) go to the local wrapper-lite.
 
 ### QQ music source (optional)
 
@@ -328,7 +330,7 @@ Like music.apple.com's Library and Playlists, but **stored only in your browser*
 ```mermaid
 flowchart LR
   B["Browser<br/>Web Workers + WebAssembly"]
-  S["am-hook<br/>(binary or serverless function)"]
+  S["Fantastic<br/>(binary or serverless function)"]
   W["wrapper-lite"]
   A["amp-api<br/>(catalog)"]
   C["Apple CDN"]
@@ -486,7 +488,7 @@ Browser-side tests are plain Node scripts. `<playwright>` is the path to a Playw
 </details>
 
 <details>
-<summary><b>Live (running am-hook, wrapper-lite, Apple CDN access)</b></summary>
+<summary><b>Live (running Fantastic, wrapper-lite, Apple CDN access)</b></summary>
 
 | Command | Covers |
 |---|---|
@@ -572,10 +574,10 @@ docs/                  Release guide (RELEASE.md) and README screenshots
 
 ## Community
 
-Questions, feedback and discussion: the Telegram group [@apple_music_alac](https://t.me/apple_music_alac). Bug reports and feature requests are still welcome in [Issues](https://github.com/itouakirai/am-hook/issues).
+Questions, feedback and discussion: the Telegram group [@apple_music_alac](https://t.me/apple_music_alac). The AMLL community (the lyrics library Fantastic embeds) is on QQ: [AMLL 亲友团](https://qun.qq.com/universal-share/share?busi_data=eyJncm91cENvZGUiOiI2NzgwMzg1NDgiLCJ0b2tlbiI6IkJrWmNuZUt6bjAwcDFEWFZxN3FRQlNUeWhyd21BbEU3RXBrbWl6VkpKMnAxeUI0WVhQd01rNThkSE9nU0ZGeU8iLCJ1aW4iOiIzMzE5NDA2NDMzIn0=&data=_3dZowj6FqunhT1cxI3F_NM2b8r-Cv1IYvqZQAG2z6TO-8baaR3Lj5UiKhuGOo3VvCLc9dp8F2-IfW7iTdoEyQ&svctype=4) (group 678038548), and on [Discord](https://discord.gg/xSqKAnpSxR). Bug reports and feature requests are still welcome in [Issues](https://github.com/itouakirai/am-hook/issues).
 
 ## License
 
-am-hook is licensed under the [GNU Affero General Public License v3.0 only](LICENSE) (AGPL-3.0-only), because the web UI embeds the AGPL-licensed [AMLL](https://github.com/amll-dev/applemusic-like-lyrics) lyric player. If you run a modified version as a network service, you must offer its users the corresponding source.
+Fantastic is licensed under the [GNU Affero General Public License v3.0 only](LICENSE) (AGPL-3.0-only), because the web UI embeds the AGPL-licensed [AMLL](https://github.com/amll-dev/applemusic-like-lyrics) lyric player. If you run a modified version as a network service, you must offer its users the corresponding source.
 
 Bundled third-party components keep their own licenses: `crates/temari` (MIT), the hls.js CEA-608 parser (Apache-2.0, `browser/cea608/LICENSE`), `@mediabunny/ac3` (MPL-2.0, `src/ui/EC3-LICENSE.txt`), AMLL with its dependencies (AGPL-3.0-only, `browser/amll`), the JOC renderer from am-hook-joc (AGPL-3.0-only or MIT, `crates/joc-core/LICENSE`), the lyric artwork background from YouLyPlus (MIT, notice in `src/ui/lyrics/backdrop-render.mjs`) and the SADIE II HRTF fields (Apache-2.0, see `src/ui/JOC-NOTICE.md`).
