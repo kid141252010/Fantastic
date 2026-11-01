@@ -88,6 +88,62 @@ fn cdn_url(raw: &str) -> Option<reqwest::Url> {
     .then_some(url)
 }
 
+/// QQ's artist detail endpoint still returns a few gtimg URLs over HTTP. Keep
+/// only the same public CDN hosts accepted by `cdn_url`, upgrading those URLs
+/// to HTTPS before they enter a DTO.
+fn cdn_url_upgrade(raw: &str) -> Option<reqwest::Url> {
+    let mut url = reqwest::Url::parse(raw).ok()?;
+    if url.scheme() == "http"
+        && url.port().is_none()
+        && url.username().is_empty()
+        && url.password().is_none()
+        && url
+            .host_str()
+            .is_some_and(|h| h.ends_with(".qq.com") || h == "qq.com" || h.ends_with(".gtimg.cn"))
+    {
+        url.set_scheme("https").ok()?;
+    }
+    cdn_url(url.as_str())
+}
+
+fn artwork_template(raw: Option<&Value>, mid: &str) -> String {
+    let direct = raw
+        .and_then(Value::as_str)
+        .and_then(cdn_url)
+        .map(|url| url.to_string())
+        .map(|url| {
+            static RE: LazyLock<Regex> =
+                LazyLock::new(|| Regex::new(r"T002(?:R\d+x\d+)?M000").unwrap());
+            RE.replace(&url, "T002R{w}x{h}M000").into_owned()
+        });
+    direct.unwrap_or_else(|| {
+        if valid_mid(mid) {
+            format!("https://y.gtimg.cn/music/photo_new/T002R{{w}}x{{h}}M000{mid}.jpg")
+        } else {
+            String::new()
+        }
+    })
+}
+
+fn artwork_template_upgrade(raw: Option<&Value>, mid: &str) -> String {
+    let direct = raw
+        .and_then(Value::as_str)
+        .and_then(cdn_url_upgrade)
+        .map(|url| url.to_string())
+        .map(|url| {
+            static RE: LazyLock<Regex> =
+                LazyLock::new(|| Regex::new(r"T002(?:R\d+x\d+)?M000").unwrap());
+            RE.replace(&url, "T002R{w}x{h}M000").into_owned()
+        });
+    direct.unwrap_or_else(|| {
+        if valid_mid(mid) {
+            format!("https://y.gtimg.cn/music/photo_new/T002R{{w}}x{{h}}M000{mid}.jpg")
+        } else {
+            String::new()
+        }
+    })
+}
+
 pub(crate) fn outbound_proxy(proxy: Option<&str>) -> Result<Option<reqwest::Proxy>, String> {
     let Some(proxy) = proxy.map(str::trim).filter(|url| !url.is_empty()) else {
         return Ok(None);
@@ -299,8 +355,16 @@ impl Qq {
             .and_then(Value::as_array)
             .map(|a| {
                 a.iter()
-                    .filter_map(|a| a.get("name").and_then(Value::as_str))
-                    .map(str::to_owned)
+                    .filter_map(|a| {
+                        let name = a.get("name").and_then(Value::as_str)?.to_owned();
+                        let mid = a
+                            .get("mid")
+                            .or_else(|| a.get("id"))
+                            .map(string)
+                            .filter(|mid| valid_mid(mid))
+                            .unwrap_or_default();
+                        Some(Artist { name, mid })
+                    })
                     .collect()
             })
             .unwrap_or_default();
@@ -962,7 +1026,7 @@ fn string(v: &Value) -> String {
 struct Song {
     id: String,
     name: String,
-    artists: Vec<String>,
+    artists: Vec<Artist>,
     album: String,
     album_mid: String,
     duration_ms: u64,
@@ -971,9 +1035,70 @@ struct Song {
     ttml: bool,
 }
 #[derive(Clone, Serialize)]
+struct Artist {
+    name: String,
+    mid: String,
+}
+impl From<String> for Artist {
+    fn from(name: String) -> Self {
+        Self { name, mid: String::new() }
+    }
+}
+impl From<&str> for Artist {
+    fn from(name: &str) -> Self {
+        Self { name: name.into(), mid: String::new() }
+    }
+}
+#[derive(Clone, Serialize)]
 struct SearchResult {
     songs: Vec<Song>,
     total: u64,
+}
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AlbumPage {
+    album: Album,
+    songs: Vec<Song>,
+}
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct Album {
+    mid: String,
+    name: String,
+    cover: String,
+    publish_time: u64,
+    size: u64,
+    sub_type: String,
+    description: String,
+    artists: Vec<Artist>,
+}
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AlbumSummary {
+    mid: String,
+    name: String,
+    cover: String,
+    publish_time: u64,
+    size: u64,
+}
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ArtistPage {
+    artist: ArtistDetail,
+    songs: Vec<Song>,
+    total_songs: u64,
+    albums: Vec<AlbumSummary>,
+}
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ArtistDetail {
+    mid: String,
+    name: String,
+    avatar: String,
+    cover: String,
+    brief_desc: String,
+    music_size: u64,
+    album_size: u64,
 }
 #[derive(Clone, Serialize)]
 struct Lyric {
@@ -1012,11 +1137,165 @@ pub fn routes() -> Router<Arc<AppState>> {
         .route("/qq/song/:mid/download", get(download))
         .route("/qq/song/:mid/qualities", get(qualities))
         .route("/qq/cover/:albumMid", get(cover))
+        .route("/qq/album/:albumMid", get(album))
+        .route("/qq/artist/:singerMid", get(artist))
         .route("/qq/song/:mid", get(info))
         .route("/qq/song/:mid/play", get(play))
         .route("/qq/song/:mid/lyrics", get(lyrics))
         .route("/qq/song/:mid/lyrics/raw", get(raw_lyrics))
         .route("/qq/capabilities", get(capabilities))
+}
+
+fn upstream_ok(data: &Value) -> bool {
+    match data.get("code") {
+        None => true,
+        Some(code) => code.as_i64() == Some(200) || code.as_str() == Some("200"),
+    }
+}
+
+fn raw_artist(value: &Value) -> Option<Artist> {
+    let name = value.get("name").and_then(Value::as_str)?.to_owned();
+    let mid = value
+        .get("mid")
+        .or_else(|| value.get("id"))
+        .map(string)
+        .filter(|mid| valid_mid(mid))
+        .unwrap_or_default();
+    Some(Artist { name, mid })
+}
+
+async fn album(
+    State(state): State<Arc<AppState>>,
+    Path(album_mid): Path<String>,
+) -> ApiResult<Json<AlbumPage>> {
+    let qq = adapter(&state)?;
+    check_mid(&album_mid)?;
+    let raw = qq.request("/album", &[("id", album_mid.clone())]).await?;
+    if !upstream_ok(&raw) {
+        return Err(unavailable());
+    }
+    let album_raw = raw.get("album").filter(|value| value.is_object()).ok_or_else(unavailable)?;
+    let name = album_raw.get("name").and_then(Value::as_str).ok_or_else(unavailable)?.to_owned();
+    let artists = album_raw
+        .get("artists")
+        .and_then(Value::as_array)
+        .map(|items| items.iter().filter_map(raw_artist).collect())
+        .unwrap_or_default();
+    let songs: Vec<Song> = raw
+        .get("songs")
+        .and_then(Value::as_array)
+        .ok_or_else(unavailable)?
+        .iter()
+        .filter_map(|song| qq.song_dto(song))
+        .collect();
+    let album = Album {
+        mid: album_raw
+            .get("id")
+            .or_else(|| album_raw.get("mid"))
+            .map(string)
+            .filter(|mid| valid_mid(mid))
+            .unwrap_or_else(|| album_mid.clone()),
+        name,
+        cover: artwork_template(album_raw.get("picUrl").or_else(|| album_raw.get("blurPicUrl")), &album_mid),
+        publish_time: album_raw.get("publishTime").and_then(Value::as_u64).unwrap_or(0),
+        size: album_raw.get("size").and_then(Value::as_u64).unwrap_or(songs.len() as u64),
+        sub_type: album_raw.get("subType").and_then(Value::as_str).unwrap_or_default().to_owned(),
+        description: album_raw.get("description").and_then(Value::as_str).unwrap_or_default().to_owned(),
+        artists,
+    };
+    Ok(Json(AlbumPage { album, songs }))
+}
+
+async fn artist(
+    State(state): State<Arc<AppState>>,
+    Path(singer_mid): Path<String>,
+) -> ApiResult<Json<ArtistPage>> {
+    let qq = adapter(&state)?;
+    check_mid(&singer_mid)?;
+    let detail_params = [("id", singer_mid.clone())];
+    let songs_params = [
+        ("id", singer_mid.clone()),
+        ("limit", "50".into()),
+        ("offset", "0".into()),
+    ];
+    let albums_params = [("id", singer_mid.clone()), ("limit", "30".into())];
+    let detail_request = qq.request("/artist/detail", &detail_params);
+    let songs_request = qq.request("/artist/songs", &songs_params);
+    let albums_request = qq.request("/artist/album", &albums_params);
+    let (detail, songs, albums) = tokio::join!(detail_request, songs_request, albums_request);
+
+    let detail = detail?;
+    if !upstream_ok(&detail) {
+        return Err(unavailable());
+    }
+    let artist_raw = detail
+        .get("data")
+        .and_then(|data| data.get("artist"))
+        .filter(|value| value.is_object())
+        .ok_or_else(unavailable)?;
+    let artist = ArtistDetail {
+        mid: artist_raw
+            .get("id")
+            .or_else(|| artist_raw.get("mid"))
+            .map(string)
+            .filter(|mid| valid_mid(mid))
+            .unwrap_or_else(|| singer_mid.clone()),
+        name: artist_raw.get("name").and_then(Value::as_str).ok_or_else(unavailable)?.to_owned(),
+        avatar: artist_raw
+            .get("avatar")
+            .or_else(|| artist_raw.get("picUrl"))
+            .and_then(Value::as_str)
+            .and_then(cdn_url_upgrade)
+            .map(|url| url.to_string())
+            .unwrap_or_default(),
+        cover: artist_raw
+            .get("cover")
+            .or_else(|| artist_raw.get("picUrl"))
+            .and_then(Value::as_str)
+            .and_then(cdn_url_upgrade)
+            .map(|url| url.to_string())
+            .unwrap_or_default(),
+        brief_desc: artist_raw.get("briefDesc").and_then(Value::as_str).unwrap_or_default().to_owned(),
+        music_size: artist_raw.get("musicSize").and_then(Value::as_u64).unwrap_or(0),
+        album_size: artist_raw.get("albumSize").and_then(Value::as_u64).unwrap_or(0),
+    };
+
+    let (songs, total_songs) = match songs {
+        Ok(raw) if upstream_ok(&raw) => {
+            let total = raw.get("total").and_then(Value::as_u64).unwrap_or(0);
+            let songs = raw
+                .get("songs")
+                .and_then(Value::as_array)
+                .map(|items| items.iter().filter_map(|song| qq.song_dto(song)).collect())
+                .unwrap_or_default();
+            (songs, total)
+        }
+        _ => (Vec::new(), 0),
+    };
+    let albums = match albums {
+        Ok(raw) if upstream_ok(&raw) => raw
+            .get("hotAlbums")
+            .and_then(Value::as_array)
+            .map(|items| {
+                items
+                    .iter()
+                    .filter_map(|item| {
+                        let mid = item.get("id").or_else(|| item.get("mid")).map(string)?;
+                        if !valid_mid(&mid) { return None; }
+                        Some(AlbumSummary {
+                            mid: mid.clone(),
+                            name: item.get("name").and_then(Value::as_str).unwrap_or_default().to_owned(),
+                            cover: artwork_template_upgrade(item.get("picUrl").or_else(|| item.get("blurPicUrl")), &mid),
+                            publish_time: item.get("publishTime").and_then(Value::as_u64).unwrap_or(0),
+                            size: item.get("size").and_then(Value::as_u64).unwrap_or(0),
+                        })
+                    })
+                    .collect()
+            })
+            .unwrap_or_default(),
+        _ => Vec::new(),
+    };
+    Ok(Json(ArtistPage { artist, songs, total_songs, albums }))
 }
 async fn cover(
     State(state): State<Arc<AppState>>,
@@ -1160,7 +1439,12 @@ fn raw_lyrics_kind(kind: Option<&str>) -> ApiResult<&'static str> {
     }
 }
 fn safe_basename(song: &Song) -> String {
-    let artists = song.artists.join(", ");
+    let artists = song
+        .artists
+        .iter()
+        .map(|artist| artist.name.as_str())
+        .collect::<Vec<_>>()
+        .join(", ");
     let raw = match (artists.is_empty(), song.name.is_empty()) {
         (false, false) => format!("{artists} - {}", song.name),
         (false, true) => artists,
@@ -2207,9 +2491,12 @@ async fn fetch_lyrics(qq: &Qq, mid: &str) -> ApiResult<(Lyrics, Duration)> {
         // song cache. Reuse the normal song/info path on a cold cache so the
         // metadata-aware filters see the same title and artists. A failed info
         // request only drops the context; the lyric candidates remain usable.
+        let artist_names = song
+            .as_ref()
+            .map(|song| song.artists.iter().map(|artist| artist.name.clone()).collect::<Vec<_>>());
         let context = song.as_ref().map(|song| LyricContext {
             name: &song.name,
-            artists: &song.artists,
+            artists: artist_names.as_deref().unwrap_or_default(),
         });
         raw_lyrics.qrc = field_text(&raw, "qrc")
             .filter(|text| !text.trim().is_empty())

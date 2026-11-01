@@ -242,7 +242,7 @@ fn dto_is_a_whitelist_with_direct_cover_and_vip_flags() {
     let song = qq.song_dto(&raw_song()).unwrap();
     let dto = serde_json::to_value(&song).unwrap();
     assert_eq!(dto["id"], "0039MnYb0qxYhV");
-    assert_eq!(dto["artists"], json!(["周杰伦"]));
+    assert_eq!(dto["artists"], json!([{ "name": "周杰伦", "mid": "1" }]));
     assert_eq!(dto["durationMs"], 269000);
     assert_eq!(
         dto["cover"],
@@ -263,6 +263,30 @@ fn dto_is_a_whitelist_with_direct_cover_and_vip_flags() {
     }
     assert!(qq.songs.get("0039MnYb0qxYhV").is_some());
     assert!(qq.song_dto(&json!({"id":"../x"})).is_none());
+}
+#[test]
+fn dto_keeps_artist_names_and_valid_mids_in_order() {
+    let song = qq().song_dto(&json!({
+        "id": "song",
+        "name": "Duet",
+        "ar": [{"id": "artistA", "name": "A"}, {"mid": "artistB", "name": "B"}],
+        "al": {"id": "album", "name": "Album"},
+    })).unwrap();
+    assert_eq!(serde_json::to_value(song).unwrap()["artists"], json!([
+        {"name": "A", "mid": "artistA"}, {"name": "B", "mid": "artistB"}
+    ]));
+}
+#[test]
+fn dto_uses_an_empty_artist_mid_when_upstream_omits_or_rejects_it() {
+    let song = qq().song_dto(&json!({
+        "id": "song",
+        "name": "Song",
+        "ar": [{"name": "A"}, {"id": "bad-mid!", "name": "B"}],
+        "al": {"id": "album", "name": "Album"},
+    })).unwrap();
+    assert_eq!(serde_json::to_value(song).unwrap()["artists"], json!([
+        {"name": "A", "mid": ""}, {"name": "B", "mid": ""}
+    ]));
 }
 #[test]
 fn native_qq_info_dialect_is_supported() {

@@ -42,7 +42,7 @@ test('QQ DTO maps names, timing, badges and direct QQ artwork', () => {
   assert.deepEqual(track.qq, { mid: dto.id, albumMid: dto.albumMid, vip: true, ttml: true });
   assert.deepEqual(track.artwork, { url: qq.artworkUrl(dto.cover) });
   assert.equal(track.href, `/qq-song/${dto.id}`);
-  assert.equal(track.albumHref, '');
+  assert.equal(track.albumHref, `/qq-album/${dto.albumMid}`);
   assert.equal(JSON.stringify(track).includes('example.invalid'), false);
   assert.equal(JSON.stringify(track).includes('file_url'), false);
   const entry = qq.entryOf(track);
@@ -53,6 +53,12 @@ test('QQ DTO maps names, timing, badges and direct QQ artwork', () => {
   assert.equal(qq.qualityItem(track, 'SQ').artworkFetchUrl, entry.artworkFetchUrl);
   const opaque = { ...dto, cover: 'https://y.qq.com/cover.jpg?version=5' };
   assert.equal(qq.entryOf(qq.toTrack(opaque)).artwork, opaque.cover);
+});
+
+test('QQ DTO turns valid artist and album mids into local links', () => {
+  const track = qq.toTrack({ ...dto, artists: [{ name: '周杰伦', mid: '0025NhlN2yWrP4' }] });
+  assert.deepEqual(track.artists, [{ name: '周杰伦', href: '/qq-artist/0025NhlN2yWrP4' }]);
+  assert.equal(track.albumHref, `/qq-album/${dto.albumMid}`);
 });
 
 test('QQ optional fields default safely; invalid IDs cannot form adapter paths', () => {

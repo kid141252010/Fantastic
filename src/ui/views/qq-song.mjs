@@ -34,8 +34,18 @@ export function mount({ root, url, signal, player, onLangChange, toast }) {
     document.title = `${track?.name || t('qq.songTitle')} · am-hook`;
     if (!track) return;
     $('title').textContent = track.name;
-    $('subtitle').textContent = track.artist;
-    $('meta').textContent = [track.album, track.duration ? formatTime(track.duration / 1000) : ''].filter(Boolean).join(' · ');
+    const subtitle = $('subtitle');
+    const artistParts = [];
+    for (const [index, artist] of track.artists.entries()) {
+      if (index) artistParts.push(' / ');
+      artistParts.push(artist.href ? el('a', { href: artist.href, textContent: artist.name }) : artist.name);
+    }
+    subtitle.replaceChildren(...artistParts);
+    const meta = $('meta');
+    const metaParts = [];
+    if (track.album) metaParts.push(track.albumHref ? el('a', { href: track.albumHref, textContent: track.album }) : track.album);
+    if (track.duration) { if (metaParts.length) metaParts.push(' · '); metaParts.push(formatTime(track.duration / 1000)); }
+    meta.replaceChildren(...metaParts);
     $('badges').replaceChildren(el('span', { className: 'qq-badge', textContent: t('source.qq') }),
       ...(track.qq.vip ? [el('span', { className: 'qq-badge qq-vip', textContent: t('qq.vip') })] : []));
     header({ cover: track.artwork, attrs: {}, alt: t('song.coverAlt', { title: track.name }) });
