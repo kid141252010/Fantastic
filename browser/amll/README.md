@@ -1,18 +1,36 @@
 # AMLL lyric player
 
 The lyrics view uses [Apple Music-like Lyrics](https://github.com/amll-dev/applemusic-like-lyrics)
-(`@applemusic-like-lyrics/core`, version in `VERSION`, AGPL-3.0-only, see `LICENSE`):
-`DomLyricPlayer` renders the lyrics, and `BackgroundRender` + `MeshGradientRenderer` draw
-the flowing artwork background.
+(`@applemusic-like-lyrics/core`, the source lock in `VERSION`, AGPL-3.0-only, see `LICENSE`):
+`DomLyricPlayer` renders the lyrics, and `BackgroundRender` plus the Mesh, Isolation, and
+Titanium renderers draw the selectable backgrounds. `PixiRenderer` is deliberately excluded.
 
 `scripts/build-amll.cjs` bundles `entry.mjs` with esbuild into `src/ui/lyrics/amll-core.mjs`
-and copies the package stylesheet to `src/ui/lyrics/amll.css`. Its dependencies are bundled
-too (gl-matrix MIT, bezier-easing MIT, @ungap/structured-clone ISC, deep-freeze public domain).
-Pixi is only needed by AMLL's `PixiRenderer`, which is not used, so `pixi-stub.mjs` replaces
-it and nothing from Pixi ends up in the bundle. Rebuild with:
+and copies the package stylesheet to `src/ui/lyrics/amll.css`. Its dependencies are bundled too
+(gl-matrix MIT, bezier-easing MIT, @ungap/structured-clone ISC, deep-freeze public domain).
+`pixi-stub.mjs` replaces Pixi's imports, so nothing from Pixi ends up in the bundle.
 
-    npm i --legacy-peer-deps @applemusic-like-lyrics/core@$(cat browser/amll/VERSION) esbuild
-    node scripts/build-amll.cjs node_modules
+`VERSION` records both the package version and the exact AMLL source revision as
+`<package-version>+git.<short-commit>`, currently `0.6.0+git.6a6d90a`. The installed core's
+`package.json` version must match the part before `+`; the source commit is recorded in the
+generated JavaScript and CSS banners.
+
+To rebuild from the pinned AMLL source:
+
+    git clone https://github.com/amll-dev/applemusic-like-lyrics.git
+    cd applemusic-like-lyrics
+    git checkout 6a6d90a81b96b0322ab056c49dced00d603895cd
+    pnpm install --filter @applemusic-like-lyrics/core
+    pnpm --filter @applemusic-like-lyrics/core run build-only
+    cd packages/core
+    pnpm pack
+    mkdir /tmp/amll-build-input
+    cd /tmp/amll-build-input
+    npm init -y
+    npm install --legacy-peer-deps /path/to/applemusic-like-lyrics/packages/core/applemusic-like-lyrics-core-0.6.0.tgz esbuild
+    node /path/to/am-hook/scripts/build-amll.cjs /tmp/amll-build-input/node_modules
+
+The last command regenerates the two checked-in files in `src/ui/lyrics/`.
 
 The full-screen player's layout, icons and animations follow AMLL's
 [`react-full`](https://github.com/amll-dev/applemusic-like-lyrics/tree/main/packages/react-full) package

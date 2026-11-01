@@ -1,2 +1,8 @@
-// Only the DOM lyric player and the mesh-gradient background are used.
-export { DomLyricPlayer, BackgroundRender, MeshGradientRenderer } from '@applemusic-like-lyrics/core';
+// Only the DOM lyric player and AMLL's mesh, Isolation, and Titanium backgrounds are used.
+export {
+  DomLyricPlayer,
+  BackgroundRender,
+  MeshGradientRenderer,
+  IsolationRenderer,
+  TitaniumRenderer,
+} from '@applemusic-like-lyrics/core';

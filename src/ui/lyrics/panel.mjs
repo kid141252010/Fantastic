@@ -8,9 +8,9 @@
  *            ttml.mjs 解析 TTML，toAmllLines() 转成 AMLL 的 LyricLine（对唱侧由 ttml.mjs 的 duetSides() 照 AMLL 逐行决定）
  *   选项     「歌词选项」按钮弹出的菜单：翻译 / 发音、字号、字重、歌词来源、背景、下载当前显示的 TTML；除翻译 / 发音外都保存在浏览器中
  *   时间     每帧把 player.transport().currentTime 交给 DomLyricPlayer，点击歌词行跳转并继续播放
- *   背景     歌曲页已有的专辑封面，交给 AMLL 的 MeshGradientRenderer 生成流动背景（AMLL 不可用时改用封面动态背景），
+ *   背景     歌曲页已有的专辑封面，交给 AMLL 的 MeshGradientRenderer、IsolationRenderer 或 TitaniumRenderer 生成背景（所选渲染器不可用时依次回退 Mesh，再回退封面动态背景），
  *            或在菜单里选封面动态背景：移植自 YouLyPlus 的 ArtworkBackdrop（backdrop.mjs，三份旋转、环绕的封面经模糊与调色，WebGL 1 即可）；
- *            两种背景都可以随节拍律动（pulse.mjs 从播放的声音里取低频起音，各种播放方式都只旁路取样），默认关闭，在菜单里开启
+ *            背景可以随节拍律动（pulse.mjs 从播放的声音里取低频起音，各种播放方式都只旁路取样；AMLL 渲染器按统一接口响应），默认关闭，在菜单里开启
  *   布局     照 AMLL 的 react-full（PrebuiltLyricPlayer / AutoLyricLayout，AGPL-3.0-only）：宽大于高时为横向布局
  *            （左边封面、歌名与控件，右边歌词，底部一行开关；隐藏歌词时左边整体移到中间），否则为竖向布局（显示歌词时顶部为小封面与歌名，
  *            隐藏时为大封面，封面在两处之间以弹簧动画移动）。图标、按下动画、进度条与音量条、收起按钮也取自 react-full。
@@ -23,7 +23,13 @@
  */
 import { parseTTML, duetSides } from './ttml.mjs';
 import { lyrics as qqLyrics } from '../sources/qq.mjs';
-import { DomLyricPlayer, BackgroundRender, MeshGradientRenderer } from './amll-core.mjs';
+import {
+  DomLyricPlayer,
+  BackgroundRender,
+  MeshGradientRenderer,
+  IsolationRenderer,
+  TitaniumRenderer,
+} from './amll-core.mjs';
 import { ArtworkBackdrop } from './backdrop.mjs';
 import { BeatPulse } from './pulse.mjs';
 
@@ -198,16 +204,21 @@ function saveShown(shown) {
 }
 
 /**
- * 歌词选项：字号（AMLL 默认字号的倍数）、字重、歌词来源、背景（'amll' 流动背景 | 'artwork' 封面动态背景）与背景是否随节拍律动，
- * 保存在浏览器中；以前选的经典背景（'classic'，已移除）换成封面动态背景
+ * 歌词选项：字号（AMLL 默认字号的倍数）、字重、歌词来源、背景（'amll' Mesh | 'isolation' Isolation | 'titanium' Titanium | 'artwork' 封面动态背景）与背景是否随节拍律动，
+ * 保存在浏览器中；AMLL 背景按所选渲染器 → Mesh → 封面动态背景 → 纯色背景回退；以前选的经典背景（'classic'，已移除）换成封面动态背景
  */
 const PREFS_KEY = 'am-hook:lyrics-prefs';
 export const FONT_SCALES = [0.7, 0.8, 0.9, 1, 1.1, 1.2, 1.35, 1.5];
 export const FONT_WEIGHTS = [300, 400, 500, 600, 700, 800];
-export const BACKDROPS = ['amll', 'artwork'];
+export const BACKDROPS = ['amll', 'isolation', 'titanium', 'artwork'];
+const BACKDROP_LABELS = {
+  amll: 'lyrics.backdropAmll', isolation: 'lyrics.backdropIsolation',
+  titanium: 'lyrics.backdropTitanium', artwork: 'lyrics.backdropArtwork',
+};
+const AMLL_RENDERERS = { amll: MeshGradientRenderer, isolation: IsolationRenderer, titanium: TitaniumRenderer };
 /**
- * 节拍律动满强度时交给 AMLL setLowFreqVolume 的值。AMLL 按它把网格放大并转动（取值 0..1，1 时放大 25%、转 0.2 弧度），
- * 每个鼓点都到 1 时整个背景一跳一跳，取 0.4（放大约 9%）
+ * 节拍律动满强度时交给 AMLL setLowFreqVolume 的值（取值 0..1；各 AMLL 背景按自身方式响应），
+ * 每个鼓点都到 1 时整个背景一跳一跳，取 0.4
  */
 const AMLL_PULSE = 0.4;
 const DEFAULT_PREFS = { scale: 1, weight: 600, source: 'apple', backdrop: 'amll', pulse: false };
@@ -332,13 +343,17 @@ export function mountLyrics({ root, toggle, bar, player, getMeta, t, notify, onL
   /**
    * 按 prefs.backdrop 在 canvas 上创建背景，统一成 { setImage(blob) → 是否已显示, resume, pause, setHasLyric, setStaticMode, setPulse, dispose }；
    * setPulse(0..1) 每帧给出节拍律动的强度；
-   * 流动背景不可用时改用封面动态背景，都不可用（不支持 WebGL）时为 null（保留纯色背景）
+   * 所选 AMLL 渲染器不可用或初始化失败时回退 Mesh，再回退封面动态背景，都不可用（不支持 WebGL）时为 null（保留纯色背景）
    */
   function createBackdrop() {
-    if (prefs.backdrop === 'amll') {
-      try {
-        if (MeshGradientRenderer.isSupported()) {
-          const render = new BackgroundRender(new MeshGradientRenderer(canvas), canvas);
+    const selectedRenderer = AMLL_RENDERERS[prefs.backdrop];
+    if (selectedRenderer) {
+      const renderers = prefs.backdrop === 'amll' ? [selectedRenderer] : [selectedRenderer, MeshGradientRenderer];
+      for (const Renderer of renderers) {
+        let render;
+        try {
+          if (!Renderer?.isSupported?.()) continue;
+          render = new BackgroundRender(new Renderer(canvas), canvas);
           render.setHasLyric(true);
           render.setStaticMode(motion.matches);
           render.pause();
@@ -356,9 +371,10 @@ export function mountLyrics({ root, toggle, bar, player, getMeta, t, notify, onL
             // 会移除自己的画布
             dispose: () => render.dispose(),
           };
+        } catch (error) {
+          try { render?.pause(); render?.getRenderer?.().disconnectResizeObserver?.(); } catch { /* 初始化失败时可能还没有可清理的资源 */ }
+          console.warn(`[am-hook] AMLL ${prefs.backdrop} 背景不可用，尝试下一个渲染器`, error);
         }
-      } catch (error) {
-        console.warn('[am-hook] AMLL 歌词背景不可用，改用封面动态背景', error);
       }
     }
     try {
@@ -980,7 +996,7 @@ export function mountLyrics({ root, toggle, bar, player, getMeta, t, notify, onL
       separator(),
       menuItem(menuNode('span', '', t('lyrics.backdrop')), 'presentation', 'lyrics-menu-heading'),
       ...BACKDROPS.map((kind) => menuItem(menuButton({
-        label: t(kind === 'amll' ? 'lyrics.backdropAmll' : 'lyrics.backdropArtwork'),
+        label: t(BACKDROP_LABELS[kind]),
         icon: prefs.backdrop === kind ? 'check' : '', action: 'backdrop', value: kind, checked: prefs.backdrop === kind,
       }))),
       menuItem(menuButton({
