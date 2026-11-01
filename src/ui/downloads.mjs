@@ -21,7 +21,7 @@
 import { prefs, classify, pickVariant } from './prefs.mjs';
 import { buildIlst, imageType } from './mp4-tags.mjs';
 import { buildZip, crc32 } from './zip.mjs';
-import { formatPath, formatName, fitFolder, fitFile } from './naming.mjs';
+import { appendMediaExtension, formatPath, formatName, fitFolder, fitFile } from './naming.mjs';
 import { ttmlToLrc } from './lrc.mjs';
 import { parseMaster, pickMvVideo, pickMvAudio, mvQualityVars } from './mv/hls.mjs';
 import { createFragmentScanner, tagValue, DEFECTS } from './alac-check.mjs';
@@ -470,7 +470,7 @@ function filePath(job, task, info, quality) {
   const o = job.options;
   const template = job.kind === 'album' ? o.songFile : job.kind === 'playlist' ? o.playlistFile : o.singleFile;
   const path = fitFile(job.folder, formatPath(template, nameVars(job, task, info, quality)));
-  path[path.length - 1] += task.mv ? '.mp4' : '.m4a';
+  path[path.length - 1] = appendMediaExtension(path[path.length - 1], task.mv);
   return path;
 }
 

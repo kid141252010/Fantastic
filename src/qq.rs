@@ -597,7 +597,7 @@ impl Quality {
             Self::Rs => Some("size_hires"),
             Self::Ra360 => Some("size_360ra"),
             Self::Dts => Some("size_dts"),
-            Self::Da | Self::Daeac3 => Some("size_dolby"),
+            Self::Da => Some("size_dolby"),
             _ => None,
         }
     }

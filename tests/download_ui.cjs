@@ -110,6 +110,9 @@ async function pickTracks(page, indexes) {
       await page.fill('.set-template >> nth=1', '{tracknum:02d}. {title}');
       await page.locator('.set-template >> nth=1').blur();
       assert.match(await page.locator('.set-preview >> nth=1').textContent(), /^02\. Blank Space\.m4a$/);
+      await page.fill('.set-template >> nth=1', '{tracknum:02d}. {title}.mp4');
+      await page.locator('.set-template >> nth=1').blur();
+      assert.match(await page.locator('.set-preview >> nth=1').textContent(), /^02\. Blank Space\.mp4$/);
       assert.deepEqual(errors, []);
       await page.context().close();
     }

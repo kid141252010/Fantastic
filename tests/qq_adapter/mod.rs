@@ -1121,7 +1121,7 @@ async fn proxy_is_not_exposed_in_capabilities_or_host_config() {
             let joc = qualities.iter().find(|row| row["quality"] == "DAEAC3").unwrap();
             assert_eq!(joc["defaultCodec"], "ec-3");
             assert_eq!(joc["playbackClass"], "joc");
-            assert_eq!(joc["sizeField"], "size_dolby");
+            assert_eq!(joc["sizeField"], Value::Null);
         }
     }
 }
@@ -1521,7 +1521,6 @@ fn quality_sizes_use_only_positive_bytes_and_verified_mapping() {
         (Quality::Rs, "size_hires"),
         (Quality::Dts, "size_dts"),
         (Quality::Da, "size_dolby"),
-        (Quality::Daeac3, "size_dolby"),
         (Quality::Ra360, "size_360ra"),
     ] {
         assert_eq!(quality.size_field(), Some(field));
@@ -1534,6 +1533,7 @@ fn quality_sizes_use_only_positive_bytes_and_verified_mapping() {
         Quality::Dtsx,
         Quality::Da448,
         Quality::Da1500,
+        Quality::Daeac3,
     ] {
         // No unverified size_new slot indices or DTSX field names.
         assert!(quality.size_field().is_none());
@@ -1623,14 +1623,25 @@ fn dolby_tiers_follow_verified_wet_sample_entries() {
         (Quality::Da, 5112212, Codec::Ac4, Playback::Native, "AC-4 Dolby Atmos"),
         (Quality::Da448, 8936764, Codec::Ac4, Playback::Native, "AC-4 A-JOC 448 kbps"),
         (Quality::Da1500, 29870162, Codec::Ac4, Playback::Native, "AC-4 A-JOC 1500 kbps"),
-        (Quality::Daeac3, 5112212, Codec::Ec3, Playback::Joc, "E-AC-3 JOC"),
+        (Quality::Daeac3, 8915833, Codec::Ec3, Playback::Joc, "E-AC-3 JOC"),
     ];
     for (quality, size, codec, playback, format) in cases {
-        let info_row = QualityRow::from_size(quality, Some(size), quality.format());
+        let info_row = if quality == Quality::Daeac3 {
+            assert!(quality.needs_probe(&file));
+            QualityRow::from_info(quality, &file)
+        } else {
+            QualityRow::from_size(quality, Some(size), quality.format())
+        };
         assert_eq!(info_row.playback, playback, "{quality:?}");
         assert_eq!(info_row.codec, codec.name());
         assert_eq!(info_row.format, format);
-        assert_eq!(QualityRow::from_audio(quality, &file, None).format, format);
+        assert_eq!(
+            info_row.size_bytes,
+            (quality != Quality::Daeac3).then_some(size)
+        );
+        let no_audio = QualityRow::from_audio(quality, &file, None);
+        assert_eq!(no_audio.size_bytes, None, "{quality:?}");
+        assert_eq!(no_audio.format, format);
         // Generic MP4 URLs, shared size_dolby and conflicting metadata cannot
         // override the fixed pipelines verified by WET's dac4/dec3 boxes.
         for hint in [None, Some(Codec::Ac4), Some(Codec::Ec3), Some(Codec::Flac)] {
@@ -1856,6 +1867,7 @@ async fn qualities_endpoint_returns_all_tiers_and_uses_shared_cached_probes() {
         (Quality::Q360v2, Some(80437198), "flac"),
         (Quality::Qai, Some(186980254), "flac"),
         (Quality::Dtsx, None, "dtsx"),
+        (Quality::Daeac3, Some(8915833), "mp4"),
         (Quality::Da448, Some(8936764), "mp4"),
         (Quality::Da1500, Some(29870162), "mp4"),
     ] {
@@ -1898,7 +1910,7 @@ async fn qualities_endpoint_returns_all_tiers_and_uses_shared_cached_probes() {
         ("DTS", false, None, "DTS", "download", "dts", "audio/vnd.dts"),
         ("DTSX", false, None, "DTS:X", "download", "dtsx", "audio/vnd.dts.hd; codecs=\"dtsx\""),
         ("DA", true, Some(5112212), "AC-4 Dolby Atmos", "native", "ac-4", "audio/mp4; codecs=\"ac-4\""),
-        ("DAEAC3", true, Some(5112212), "E-AC-3 JOC", "joc", "ec-3", "audio/mp4; codecs=\"ec-3\""),
+        ("DAEAC3", true, Some(8915833), "E-AC-3 JOC", "joc", "ec-3", "audio/mp4; codecs=\"ec-3\""),
         ("DA448", true, Some(8936764), "AC-4 A-JOC 448 kbps", "native", "ac-4", "audio/mp4; codecs=\"ac-4\""),
         ("DA1500", true, Some(29870162), "AC-4 A-JOC 1500 kbps", "native", "ac-4", "audio/mp4; codecs=\"ac-4\""),
     ];
@@ -1947,11 +1959,11 @@ async fn basic_qualities_use_only_info_fields_and_negative_probe_cache() {
     assert_eq!(response.status(), StatusCode::OK);
     let body = json_body(response).await;
     let rows = body["qualities"].as_array().unwrap();
-    assert_eq!(rows.len(), 13);
+    assert_eq!(rows.len(), 12);
     assert!(rows.iter().all(|row| {
         [
             "MP3128", "AAC48", "WEB", "AAC192", "OGG96", "OGG192", "HQ", "SQ", "RS", "RA360",
-            "DTS", "DA", "DAEAC3",
+            "DTS", "DA",
         ]
         .contains(&row["quality"].as_str().unwrap())
     }));
@@ -2088,9 +2100,9 @@ async fn quality_probes_are_bounded_and_cache_negative_results() {
     let state = Arc::new(AppState::with_config(config));
     let qq = state.qq.as_ref().unwrap();
     assert!(qq.qualities("abc", false).await.is_ok(), "quality probe request failed");
-    assert_eq!(requests.load(Ordering::SeqCst), 7);
+    assert_eq!(requests.load(Ordering::SeqCst), 8);
     assert_eq!(peak.load(Ordering::SeqCst), 3);
-    for quality in [Quality::Nac, Quality::Qai, Quality::Q360v1, Quality::Q360v2, Quality::Dtsx, Quality::Da448, Quality::Da1500] {
+    for quality in [Quality::Nac, Quality::Qai, Quality::Q360v1, Quality::Q360v2, Quality::Dtsx, Quality::Daeac3, Quality::Da448, Quality::Da1500] {
         assert!(qq.audio_failures.get(&quality.cache_key("abc")).is_some(), "{quality:?}");
     }
     task.abort();
@@ -2156,5 +2168,5 @@ async fn cached_payload_overrides_verified_default_without_cross_tier_leakage() 
     assert_eq!(row("DA")["playback"], "native");
     assert_eq!(row("DA")["format"], "AC-4 Dolby Atmos");
     assert_eq!(row("DAEAC3")["playback"], "joc");
-    assert_eq!(row("DAEAC3")["sizeBytes"], 5112212);
+    assert_eq!(row("DAEAC3")["sizeBytes"], Value::Null);
 }
