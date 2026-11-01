@@ -2,7 +2,7 @@
 
 # am-hook
 
-**Apple Music in your browser: lossless, Dolby Atmos and music videos, decrypted with WebAssembly.**
+**A music web player in your browser: Apple Music and QQ Music in one player — lossless, Dolby Atmos and music videos, decrypted with WebAssembly.**
 
 [![Release](https://img.shields.io/github/v/release/itouakirai/am-hook)](https://github.com/itouakirai/am-hook/releases/latest)
 [![Build Test](https://github.com/itouakirai/am-hook/actions/workflows/build-test.yml/badge.svg)](https://github.com/itouakirai/am-hook/actions/workflows/build-test.yml)
@@ -15,12 +15,21 @@
 
 </div>
 
-An Apple Music decryption tool written in Rust, covering songs (FairPlay HLS) and music videos (PlayReady HLS).
+am-hook is a music web player written in Rust. What started as an Apple Music player is now a multi-source player: Apple Music and QQ Music live side by side — separate queues, one shared player — and a NetEase Cloud Music (NCM) source is planned.
 
-By default **decryption happens entirely in the browser**. The server only talks to wrapper-lite (master playlists, decryption templates, licenses). The browser fetches media straight from Apple's CDN and decrypts it with WebAssembly in Web Workers, so no media traffic goes through the server.
+For Apple Music — songs (FairPlay HLS) and music videos (PlayReady HLS) — **decryption happens entirely in the browser** by default. The server only talks to wrapper-lite (master playlists, decryption templates, licenses). The browser fetches media straight from Apple's CDN and decrypts it with WebAssembly in Web Workers, so no media traffic goes through the server.
+
+The QQ Music source is served by am-hook itself: the server proxies a QQ API that only it knows about (configured with `--qq-api`), so the browser never talks to that API directly.
+
+## Music sources
+
+- **Apple Music**: fully supported — songs, music videos, radio and stations, synced lyrics, downloads.
+- **QQ Music**: supported — search, playback in 20 quality tiers up to Dolby Atmos, word-by-word QRC lyrics with translation and romanization, covers and downloads. Needs a server-side QQ API; see [QQ music source](#qq-music-source-optional).
+- **NetEase Cloud Music (NCM)**: planned — not available yet.
 
 ## Contents
 
+- [Music sources](#music-sources)
 - [Highlights](#highlights)
 - [Screenshots](#screenshots)
 - [Quick Start](#quick-start)
@@ -53,6 +62,7 @@ By default **decryption happens entirely in the browser**. The server only talks
 
 ## Highlights
 
+- **Two sources, one player**: Apple Music and QQ Music in a single web player, with per-source queues and source switching on the search page. A NetEase Cloud Music (NCM) source is planned.
 - **Every quality**: lossless ALAC (up to 24-bit / 192 kHz), Dolby Atmos, AAC, HE-AAC, binaural and downmix, plus music videos up to 4K Dolby Vision with Atmos audio.
 - **Decrypted in the browser**: WebAssembly in Web Workers; media never passes through the server.
 - **Plays anywhere**: built-in gapless player with a shared queue, ALAC-to-FLAC and EC-3-to-PCM fallbacks, system media controls, and optional Dolby Atmos object rendering (JOC) to stereo speakers or binaural headphones right in the browser.

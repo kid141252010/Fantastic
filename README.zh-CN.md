@@ -2,7 +2,7 @@
 
 # am-hook
 
-**在浏览器里听 Apple Music：无损、杜比全景声与 MV，全部由 WebAssembly 在本地解密。**
+**浏览器里的音乐网页播放器：Apple Music 与 QQ 音乐同在一个播放器——无损、杜比全景声与 MV，全部由 WebAssembly 在本地解密。**
 
 [![Release](https://img.shields.io/github/v/release/itouakirai/am-hook)](https://github.com/itouakirai/am-hook/releases/latest)
 [![Build Test](https://github.com/itouakirai/am-hook/actions/workflows/build-test.yml/badge.svg)](https://github.com/itouakirai/am-hook/actions/workflows/build-test.yml)
@@ -15,12 +15,21 @@
 
 </div>
 
-一个用 Rust 编写的 Apple Music 解密工具，支持歌曲（FairPlay HLS）和 MV（PlayReady HLS）。
+am-hook 是一个用 Rust 编写的音乐网页播放器。它最初是一个 Apple Music 播放器，现在是多音源播放器：Apple Music 与 QQ 音乐并存——队列各自独立、共用同一个播放器；网易云音乐（NCM）音源待开发。
 
-**解密完全在浏览器中完成**：服务端只与 wrapper-lite 通信（master 播放列表、解密模板、许可证），媒体数据由浏览器直接从 Apple CDN 获取，并在 Web Worker 中用 WebAssembly 解密，不消耗服务器流量。
+Apple Music 部分支持歌曲（FairPlay HLS）和 MV（PlayReady HLS），**解密完全在浏览器中完成**：服务端只与 wrapper-lite 通信（master 播放列表、解密模板、许可证），媒体数据由浏览器直接从 Apple CDN 获取，并在 Web Worker 中用 WebAssembly 解密，不消耗服务器流量。
+
+QQ 音源由 am-hook 服务端提供：服务端代理一个只有服务端知道的 QQ API（用 `--qq-api` 配置），浏览器不直接访问该 API。
+
+## 音乐源
+
+- **Apple Music**：完整支持——歌曲、MV、广播与电台、逐字歌词、下载。
+- **QQ 音乐**：已支持——搜索、20 档音质播放（最高杜比全景声）、逐字 QRC 歌词（含翻译与罗马音）、封面与下载。需要服务端配置 QQ API，见 [QQ 音源](#qq-音源可选)。
+- **网易云音乐（NCM）**：待开发，尚不可用。
 
 ## 目录
 
+- [音乐源](#音乐源)
 - [亮点](#亮点)
 - [截图](#截图)
 - [快速开始](#快速开始)
@@ -53,6 +62,7 @@
 
 ## 亮点
 
+- **双音源、一个播放器**：Apple Music 与 QQ 音乐同在一个网页播放器里，各自独立队列，可在搜索页切换音源；网易云音乐（NCM）音源待开发。
 - **全部音质**：无损 ALAC（最高 24-bit / 192 kHz）、杜比全景声、AAC、HE-AAC、双耳与缩混版本，以及最高 4K 杜比视界、全景声音轨的 MV。
 - **浏览器内解密**：Web Worker 中的 WebAssembly 完成解密，媒体数据不经过服务器。
 - **到处都能播**：内置无缝衔接的播放器与播放队列，ALAC 转 FLAC、EC-3 转 PCM 兜底，支持系统媒体控制；还可以在浏览器内把杜比全景声对象（JOC）渲染为立体声扬声器或双耳耳机输出。
