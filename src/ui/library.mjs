@@ -210,7 +210,7 @@ function persist({ putItems = [], deleteItems = [], putLists = [], deleteLists =
     try {
       tx = db.transaction(STORES, 'readwrite');
     } catch (err) {
-      console.warn('[am-hook] 资料库写入失败', err);
+      console.warn('[fantastic] 资料库写入失败', err);
       resolve();
       return;
     }
@@ -227,7 +227,7 @@ function persist({ putItems = [], deleteItems = [], putLists = [], deleteLists =
       resolve();
     };
     tx.onerror = tx.onabort = () => {
-      console.warn('[am-hook] 资料库写入失败', tx.error);
+      console.warn('[fantastic] 资料库写入失败', tx.error);
       resolve();
     };
   });
@@ -249,11 +249,11 @@ export const ready = (async () => {
     await loadAll();
     if (globalThis.BroadcastChannel) {
       channel = new BroadcastChannel(CHANNEL);
-      channel.onmessage = () => { if (db) loadAll().then(emit, (err) => console.warn('[am-hook] 资料库读取失败', err)); };
+      channel.onmessage = () => { if (db) loadAll().then(emit, (err) => console.warn('[fantastic] 资料库读取失败', err)); };
     }
   } catch (err) {
     db = null;
-    console.warn('[am-hook] 资料库只保存在内存中', err);
+    console.warn('[fantastic] 资料库只保存在内存中', err);
   }
   emit();
 })();

@@ -544,7 +544,7 @@ async function runTask(job, task) {
     } else {
       task.state = 'error';
       task.error = (err && err.message) || String(err);
-      console.warn('[am-hook] 下载失败', task.id, err);
+      console.warn('[fantastic] 下载失败', task.id, err);
     }
   } finally {
     task.ctl = null;
@@ -560,7 +560,7 @@ async function exists(job, task) {
 /** 封面：拿不到时不影响下载，只是不写入 */
 function coverFor(job, info, signal, wanted) {
   return wanted
-    ? fetchCover(job.covers, coverUrl(info.artwork, job.options.coverFormat, job.options.coverSize), signal).catch((err) => { console.warn('[am-hook] 封面获取失败', err); return null; })
+    ? fetchCover(job.covers, coverUrl(info.artwork, job.options.coverFormat, job.options.coverSize), signal).catch((err) => { console.warn('[fantastic] 封面获取失败', err); return null; })
     : Promise.resolve(null);
 }
 
@@ -637,9 +637,9 @@ function checkWhileDownloading(task, track, v, o) {
       task.check = { bad: result.escapes.filter((e) => DEFECTS.has(e.verdict)).length };
       return tagValue(result, { repair: o.alacRepair });
     } catch (err) {
-      console.warn('[am-hook] ALAC 检测失败', task.id, err);
+      console.warn('[fantastic] ALAC 检测失败', task.id, err);
       task.check = { failed: true };
-      return `result=error; error=${String((err && err.message) || err).replace(/[;=]/g, ' ')}; by=am-hook`;
+      return `result=error; error=${String((err && err.message) || err).replace(/[;=]/g, ' ')}; by=fantastic`;
     } finally {
       notify();
     }
@@ -710,7 +710,7 @@ async function fetchLyrics(job, task, signal) {
         break;
       } catch (err) {
         if (signal.aborted || attempt >= LYRICS_ATTEMPTS) throw err;
-        console.warn(`[am-hook] 歌词获取失败，${attempt} 秒后重试`, err);
+        console.warn(`[fantastic] 歌词获取失败，${attempt} 秒后重试`, err);
         await wait(1000 * attempt, signal);
       }
     }
@@ -719,12 +719,12 @@ async function fetchLyrics(job, task, signal) {
     try {
       lrc = ttmlToLrc(ttml, { syllable: o.syllable, translation: o.lyricsTranslation, pronunciation: o.lyricsPronunciation });
     } catch (err) {
-      console.warn('[am-hook] 歌词转换失败', err);
+      console.warn('[fantastic] 歌词转换失败', err);
     }
     return { ttml, lrc };
   } catch (err) {
     // 取消时下载本身会结束，这里不再抛出（没有人等待这个 Promise 时会成为未处理的拒绝）
-    if (!signal.aborted) console.warn('[am-hook] 歌词获取失败', err);
+    if (!signal.aborted) console.warn('[fantastic] 歌词获取失败', err);
     return null;
   }
 }
@@ -853,7 +853,7 @@ async function finalize(job, force = false) {
       }
       for (const f of files) entries.push({ name: f.path.join('/'), data: f.data, crc: crc32(f.data) });
       job.zip = await buildZip(entries);
-      job.zipName = `${job.folder.join(' - ') || 'am-hook'}.zip`;
+      job.zipName = `${job.folder.join(' - ') || 'fantastic'}.zip`;
       saveBlob(job.zip, job.zipName);
     }
     job.saved = true;

@@ -29,7 +29,7 @@ const SAMPLE = {
 };
 
 export function mount({ root, signal, onLangChange, toast }) {
-  document.title = `${t('set.title')} · am-hook`;
+  document.title = `${t('set.title')} · Fantastic`;
   const host = root.querySelector('#download');
   /** 控件：每项设置变化后刷新显示（正在输入的文本框除外） */
   const controls = [];
@@ -459,7 +459,7 @@ export function mount({ root, signal, onLangChange, toast }) {
     if (center) center.hidden = !downloads.jobs.length;
   });
   signal.addEventListener('abort', offDl, { once: true });
-  onLangChange(() => { document.title = `${t('set.title')} · am-hook`; renderPlayback(); render(); });
+  onLangChange(() => { document.title = `${t('set.title')} · Fantastic`; renderPlayback(); render(); });
   renderPlayback();
   render();
 }

@@ -1,11 +1,11 @@
-// Live source-repair regression. Start am-hook with wrapper-lite, then:
-// AM_HOOK_URL=http://127.0.0.1:8888 node tests/alac_source_recovery.cjs <playwright-path>
+// Live source-repair regression. Start fantastic with wrapper-lite, then:
+// FANTASTIC_URL=http://127.0.0.1:8888 node tests/alac_source_recovery.cjs <playwright-path>
 // Compares browser workers with unmodified temari plaintext.
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const { chromium } = require(process.argv[2] || 'playwright');
 const { sourceSamples } = require('../src/ui/flac-transcode-worker.js');
-const origin = process.env.AM_HOOK_URL || 'http://127.0.0.1:8888';
+const origin = process.env.FANTASTIC_URL || 'http://127.0.0.1:8888';
 
 (async () => {
   const w = (await WebAssembly.instantiate(fs.readFileSync(`${__dirname}/../src/ui/hook.wasm`))).instance.exports;

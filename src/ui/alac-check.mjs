@@ -496,7 +496,7 @@ const iso = (date) => (date ? date.toISOString().replace(/\.\d{3}Z$/, 'Z') : '')
 /**
  * 写入标签（下载时检测，见 downloads.mjs）的一行文字：分号分隔的 key=value，便于脚本解析。
  *   result=ok|damaged; noEnd=; hidden=; oversize=; frames=; escapes=; format=位深/采样率; bad=#帧号@秒:结果,…（最多 50 个）;
- *   packaged=打包时间; packager=打包软件; endTagRepair=on|off（下载时是否补上 END 标记）; checked=检测时间; by=am-hook
+ *   packaged=打包时间; packager=打包软件; endTagRepair=on|off（下载时是否补上 END 标记）; checked=检测时间; by=fantastic
  */
 export function tagValue(result, { repair, checked = new Date() } = {}) {
   const bad = result.escapes.filter((e) => DEFECTS.has(e.verdict));
@@ -514,7 +514,7 @@ export function tagValue(result, { repair, checked = new Date() } = {}) {
     ['packager', result.info.software.replace(/[;=]/g, ' ')],
     ['endTagRepair', repair ? 'on' : 'off'],
     ['checked', iso(checked)],
-    ['by', 'am-hook'],
+    ['by', 'fantastic'],
   ];
   return fields.filter(([, v]) => v !== '').map(([k, v]) => `${k}=${v}`).join('; ');
 }

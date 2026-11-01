@@ -1,5 +1,5 @@
 // Run with: node tests/browse_ui.cjs <path-to-playwright-package> [base]
-// Live: needs a running am-hook with access to music.apple.com / amp-api (default http://127.0.0.1:8888).
+// Live: needs a running fantastic with access to music.apple.com / amp-api (default http://127.0.0.1:8888).
 // In-page playback is checked too when wrapper-lite is online.
 // Covers the editorial pages (views/browse.mjs): New (/new, groupings?name=music) with the same sections as music.apple.com/cn/new,
 // shelf arrows, See All into a room (paged grid), Back, the link list, room / curator / grouping pages, links pasted on the home page,
@@ -7,7 +7,7 @@
 const assert = require('node:assert/strict');
 const { chromium } = require(process.argv[2] || 'playwright');
 
-const base = (process.argv[3] || process.env.AM_HOOK_URL || 'http://127.0.0.1:8888').replace(/\/$/, '');
+const base = (process.argv[3] || process.env.FANTASTIC_URL || 'http://127.0.0.1:8888').replace(/\/$/, '');
 const localPage = /^\/https:\/\/music\.apple\.com\/[a-z]{2}\/(song|music-video|album|playlist|artist|room|multi-room|grouping|curator|station|post)\//;
 
 (async () => {

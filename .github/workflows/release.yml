@@ -15,20 +15,20 @@ jobs:
         include:
           - os: windows-latest
             target: x86_64-pc-windows-msvc
-            artifact_name: am-hook.exe
-            asset_name: am-hook-windows-x86_64.exe
+            artifact_name: fantastic.exe
+            asset_name: fantastic-windows-x86_64.exe
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
-            artifact_name: am-hook
-            asset_name: am-hook-linux-x86_64
+            artifact_name: fantastic
+            asset_name: fantastic-linux-x86_64
           - os: macos-latest
             target: x86_64-apple-darwin
-            artifact_name: am-hook
-            asset_name: am-hook-macos-x86_64
+            artifact_name: fantastic
+            asset_name: fantastic-macos-x86_64
           - os: macos-latest
             target: aarch64-apple-darwin
-            artifact_name: am-hook
-            asset_name: am-hook-macos-aarch64
+            artifact_name: fantastic
+            asset_name: fantastic-macos-aarch64
 
     runs-on: ${{ matrix.os }}
 
@@ -66,9 +66,9 @@ jobs:
         run: |
           cd target/${{ matrix.target }}/release
           if [ "${{ runner.os }}" == "Windows" ]; then
-            cp am-hook.exe ../../../${{ matrix.asset_name }}
+            cp fantastic.exe ../../../${{ matrix.asset_name }}
           else
-            cp am-hook ../../../${{ matrix.asset_name }}
+            cp fantastic ../../../${{ matrix.asset_name }}
             chmod +x ../../../${{ matrix.asset_name }}
           fi
 

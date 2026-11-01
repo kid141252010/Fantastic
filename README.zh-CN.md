@@ -97,7 +97,7 @@ QQ 音源由 Fantastic 服务端提供：服务端代理一个只有服务端知
 cargo build --release
 
 # 浏览器端解密，服务端只提供播放列表、解密模板与许可证
-am-hook --listen 0.0.0.0:8888 --wrapper-url http://127.0.0.1:12340
+fantastic --listen 0.0.0.0:8888 --wrapper-url http://127.0.0.1:12340
 ```
 
 浏览器打开 `http://127.0.0.1:8888/`，粘贴链接或搜索即可。
@@ -150,12 +150,12 @@ am-hook --listen 0.0.0.0:8888 --wrapper-url http://127.0.0.1:12340
 
 | 环境变量 | 说明 |
 |---|---|
-| `AM_HOOK_WRAPPER_URL` | wrapper-lite 地址。设置后页面默认使用「服务端」模式，与二进制相同；可带用户信息（`https://<token>@host`） |
-| `AM_HOOK_WRAPPER_AUTH` | 可选，wrapper-lite 请求的 `Authorization`，规则与 `--wrapper-auth` 相同 |
-| `AM_HOOK_WRAPPER_HINT` | 可选，显示在本地 wrapper-lite 设置上方的提示，同 `--wrapper-hint` |
+| `FANTASTIC_WRAPPER_URL` | wrapper-lite 地址。设置后页面默认使用「服务端」模式，与二进制相同；可带用户信息（`https://<token>@host`） |
+| `FANTASTIC_WRAPPER_AUTH` | 可选，wrapper-lite 请求的 `Authorization`，规则与 `--wrapper-auth` 相同 |
+| `FANTASTIC_WRAPPER_HINT` | 可选，显示在本地 wrapper-lite 设置上方的提示，同 `--wrapper-hint` |
 
 > [!WARNING]
-> 设置 `AM_HOOK_WRAPPER_URL` 后，能打开站点的人都能使用你的 wrapper-lite（也就是你的 Apple 账号）。请用平台的访问控制（Vercel Deployment Protection、Cloudflare Access）限制访问。函数实例之间不共享状态，这里没有 `--wrapper-rate` / `--wrapper-concurrency` 那样的限速与限并发。
+> 设置 `FANTASTIC_WRAPPER_URL` 后，能打开站点的人都能使用你的 wrapper-lite（也就是你的 Apple 账号）。请用平台的访问控制（Vercel Deployment Protection、Cloudflare Access）限制访问。函数实例之间不共享状态，这里没有 `--wrapper-rate` / `--wrapper-concurrency` 那样的限速与限并发。
 
 与二进制的其他区别：
 
@@ -167,14 +167,14 @@ am-hook --listen 0.0.0.0:8888 --wrapper-url http://127.0.0.1:12340
 
 导航底部的「wrapper-lite」设置可以在两种方式间切换（保存在浏览器中）：
 
-- **服务端**（默认）：wrapper-lite 请求经 Fantastic 转发，限速、限并发与 `Authorization` 由 `--wrapper-*` 参数决定。[Serverless 部署](#serverless-部署vercel--cloudflare)没有设置 `AM_HOOK_WRAPPER_URL`、或二进制以 `--local-wrapper-only` 启动时没有这一项。
+- **服务端**（默认）：wrapper-lite 请求经 Fantastic 转发，限速、限并发与 `Authorization` 由 `--wrapper-*` 参数决定。[Serverless 部署](#serverless-部署vercel--cloudflare)没有设置 `FANTASTIC_WRAPPER_URL`、或二进制以 `--local-wrapper-only` 启动时没有这一项。
 - **本地**：浏览器直接请求你自己的 wrapper-lite（`/status`、`/m3u8`、`/key`、`/lyrics`、`/webplayback`、`/license`），在面板中填写地址、每秒请求数上限、同时请求数上限与 `Authorization`（规则与 `--wrapper-auth` 相同）。限制只作用于当前页面。地址可以带用户信息（如 `https://<token>@host`），与 `--wrapper-url` 相同，转为 `Authorization: Basic …` 发送；单独填写的 `Authorization` 优先。
   - 请求是跨源的：wrapper-lite 需允许跨源请求（返回 `Access-Control-Allow-Origin`，填了 `Authorization` 时还需在预检中允许该请求头），或在浏览器中安装解除跨域限制的插件。
   - MV 的 master 播放列表仍由 Fantastic 以 `User-Agent: AM` 获取，其余 MV 请求（`/webplayback`、`/license`）直连本地 wrapper-lite。
 
 ### QQ 音源（可选）
 
-在 Rust 服务端设置 `--qq-api https://example.invalid/api/web` 或 `AM_HOOK_QQ_API`。代理行为、请求路径、播放跳转和歌词格式见 [QQ 音源规格](docs/qq-source-validation.md)。Apple 与 QQ 使用独立的播放队列。
+在 Rust 服务端设置 `--qq-api https://example.invalid/api/web` 或 `FANTASTIC_QQ_API`。代理行为、请求路径、播放跳转和歌词格式见 [QQ 音源规格](docs/qq-source-validation.md)。Apple 与 QQ 使用独立的播放队列。
 
 QQ 不设置客户端限流；激进流量由上游服务自行处理。
 
@@ -387,20 +387,20 @@ box 处理：FairPlay 元数据 box（`sinf`、`senc`、`saiz`、`saio`、`pssh`
 | `-l, --listen <ADDR>` | `0.0.0.0:8888` | 监听地址 |
 | `-p, --port <PORT>` | 可选 | 设置时覆盖 `--listen` 中的端口 |
 | `-w, --wrapper-url <URL>` | `http://127.0.0.1:12340` | wrapper-lite 密钥服务地址 |
-| `--qq-api <URL>` | 未设置 | 只在服务端使用的 QQ API 地址；也可用 `AM_HOOK_QQ_API` |
-| `--qq-proxy <URL>` | 未设置 | 只在服务端使用的 QQ API、AMLL、封面和媒体代理；也可用 `AM_HOOK_QQ_PROXY` |
+| `--qq-api <URL>` | 未设置 | 只在服务端使用的 QQ API 地址；也可用 `FANTASTIC_QQ_API` |
+| `--qq-proxy <URL>` | 未设置 | 只在服务端使用的 QQ API、AMLL、封面和媒体代理；也可用 `FANTASTIC_QQ_PROXY` |
 | `--wrapper-rate <N>` | `24` | 每秒发往 wrapper-lite 的最大请求数（任意 1 秒内，超出的请求按顺序排队）。0 不限 |
 | `--wrapper-concurrency <N>` | `24` | 同时进行的 wrapper-lite 请求上限。0 不限。wrapper-lite 运行在 QEMU 中、负载高时请求超时的话可调低（如 `8`） |
-| `--wrapper-auth <VALUE>` | 不发送 | wrapper-lite 请求的 `Authorization` 头。只填 token 时自动加 `Bearer ` 前缀；已带认证方案（`Bearer …`、`Basic …`）则原样发送。也可用环境变量 `AM_HOOK_WRAPPER_AUTH` 设置（不会出现在进程列表中）。以上三项只作用于服务端转发；页面切换为本地 wrapper-lite 时在页面中另行设置 |
+| `--wrapper-auth <VALUE>` | 不发送 | wrapper-lite 请求的 `Authorization` 头。只填 token 时自动加 `Bearer ` 前缀；已带认证方案（`Bearer …`、`Basic …`）则原样发送。也可用环境变量 `FANTASTIC_WRAPPER_AUTH` 设置（不会出现在进程列表中）。以上三项只作用于服务端转发；页面切换为本地 wrapper-lite 时在页面中另行设置 |
 | `--client-rate <N>` | `0` | 每个客户端 IP 任意 60 秒内转发 wrapper-lite 的请求上限（不含 `/status`：它由所有客户端共用，每 10 秒最多请求一次 wrapper-lite），免得单个访客用光共用的 wrapper-lite；超出时返回 HTTP 429 与 `Retry-After`。播放一首歌约 3 个请求（master、key、歌词）。0 不限 |
 | `--client-concurrency <N>` | `0` | 每个客户端 IP 同时转发 wrapper-lite 的请求上限（不含 `/status`）；超出的请求排队等待而不是失败，免得单个访客突发时占满 `--wrapper-concurrency` 的名额、堵住其他用户。播放一首歌同时需要 3 个（master、key、歌词）。0 不限 |
 | `--client-ip-header <NAME>` | TCP 对端地址 | 存放客户端 IP 的请求头，由前面的反向代理设置（如 `X-Real-IP`、`CF-Connecting-IP`；是列表时取第一个）。在反向代理后面时需要设置，否则所有请求的对端都是代理。只有所有请求都经过该代理时才能设置，否则客户端可以伪造 |
-| `--local-wrapper-only` | 关闭 | 不转发 wrapper-lite 请求：页面只有本地模式（与 serverless 部署没有设置 `AM_HOOK_WRAPPER_URL` 时相同），转发接口一律返回 501。`--wrapper-url`、`--wrapper-rate`、`--wrapper-concurrency` 改为页面的默认值（只作用于没有保存过设置的访客）；不使用 `--wrapper-auth`，也不会把它交给页面 |
-| `--wrapper-hint <TEXT>` | 无 | 显示在本地 wrapper-lite 设置上方的提示，如去哪里申请公共 wrapper-lite 的 token，其中的网址显示为链接。也可用环境变量 `AM_HOOK_WRAPPER_HINT` 设置 |
+| `--local-wrapper-only` | 关闭 | 不转发 wrapper-lite 请求：页面只有本地模式（与 serverless 部署没有设置 `FANTASTIC_WRAPPER_URL` 时相同），转发接口一律返回 501。`--wrapper-url`、`--wrapper-rate`、`--wrapper-concurrency` 改为页面的默认值（只作用于没有保存过设置的访客）；不使用 `--wrapper-auth`，也不会把它交给页面 |
+| `--wrapper-hint <TEXT>` | 无 | 显示在本地 wrapper-lite 设置上方的提示，如去哪里申请公共 wrapper-lite 的 token，其中的网址显示为链接。也可用环境变量 `FANTASTIC_WRAPPER_HINT` 设置 |
 | `--amp-keepalive <SECONDS>` | `30` | amp-api 连接保活：空闲达到该时长时发送一个轻量请求（0 关闭）。无论是否开启，启动时都会先获取 token 并建立连接 |
 | `--amp-cache-mb <MB>` | `32` | amp-api 响应缓存（目录 5 分钟、地区表 24 小时；0 关闭）。相同的并发请求始终只请求一次上游 |
 | `--check-update` | 关闭 | 启动时检查 GitHub Releases 上是否有新版本，并写入日志 |
-| `--auto-update` | 关闭 | 同 `--check-update`，并下载当前平台的新版二进制替换当前文件（旧文件保留为备份），之后需重启 am-hook。Windows 无法替换正在运行的 exe，日志会列出手动替换的步骤 |
+| `--auto-update` | 关闭 | 同 `--check-update`，并下载当前平台的新版二进制替换当前文件（旧文件保留为备份），之后需重启 Fantastic。Windows 无法替换正在运行的 exe，日志会列出手动替换的步骤 |
 
 ### 服务端接口
 
@@ -431,7 +431,7 @@ box 处理：FairPlay 元数据 box（`sinf`、`senc`、`saiz`、`saio`、`pssh`
 cargo build --release
 ```
 
-二进制位于 `target/release/am-hook`（Windows 下为 `am-hook.exe`）。浏览器端资源（包括预编译的 WASM）都提交在 `src/ui/` 下并内嵌进二进制，普通构建只需要 Rust。只有修改对应源码后才需要重新生成：
+二进制位于 `target/release/fantastic`（Windows 下为 `fantastic.exe`）。浏览器端资源（包括预编译的 WASM）都提交在 `src/ui/` 下并内嵌进二进制，普通构建只需要 Rust。只有修改对应源码后才需要重新生成：
 
 | 产物 | 源码 | 重新生成 |
 |---|---|---|
@@ -450,7 +450,7 @@ cargo clippy --workspace --all-targets -- -D warnings   # CI 也会运行；work
 
 单元测试覆盖浏览器媒体核心（PlayReady 与 Widevine license 解密、CENC/CBCS（含长度不变的原地解密）、字幕修复、defrag）、URL 解析、m3u8 解析、MP4 box 修补（含 wasm 原地解密路径与并行路径结果一致）、缓存去重和 MV 接口。`crates/joc-core` 用真实全景声元数据制作的样本逐位比对 am-hook-joc 的参考摘要（Speaker 2.0、双耳、reset、每组 HRTF）。离线集成测试还检查 Apple CDN 地址不会被代理。
 
-需要真实 Apple CDN 或 wrapper-lite 的测试默认忽略，不在 GitHub Actions 中运行。请在本地能访问 Apple CDN 且 wrapper-lite 已启动时运行（默认 `http://127.0.0.1:12340`，可用环境变量 `AM_HOOK_WRAPPER` 覆盖）：
+需要真实 Apple CDN 或 wrapper-lite 的测试默认忽略，不在 GitHub Actions 中运行。请在本地能访问 Apple CDN 且 wrapper-lite 已启动时运行（默认 `http://127.0.0.1:12340`，可用环境变量 `FANTASTIC_WRAPPER` 覆盖）：
 
 ```sh
 cargo test --test e2e_test -- --ignored
@@ -458,7 +458,7 @@ cargo test --test e2e_test -- --ignored
 
 这些测试验证歌词。
 
-浏览器端测试是普通的 Node 脚本。`<playwright>` 为 Playwright 包路径；在线测试的 `[base]` 省略时：MV 与电台测试默认 `http://127.0.0.1:18888`，其余测试默认 `AM_HOOK_URL` 或 `http://127.0.0.1:8888`（ALAC 测试只读 `AM_HOOK_URL`）。
+浏览器端测试是普通的 Node 脚本。`<playwright>` 为 Playwright 包路径；在线测试的 `[base]` 省略时：MV 与电台测试默认 `http://127.0.0.1:18888`，其余测试默认 `FANTASTIC_URL` 或 `http://127.0.0.1:8888`（ALAC 测试只读 `FANTASTIC_URL`）。
 
 <details>
 <summary><b>离线，仅需 Node</b></summary>
@@ -499,7 +499,7 @@ cargo test --test e2e_test -- --ignored
 | `node tests/search_ui.cjs <playwright> [base]`、`node tests/album_ui.cjs <playwright> [base]`、`node tests/playlist_ui.cjs <playwright> [base]`、`node tests/artist_ui.cjs <playwright> [base]`、`node tests/browse_ui.cjs <playwright> [base]` | 搜索、专辑、歌单、艺人与浏览页（需能访问 music.apple.com） |
 | `node tests/app_ui.cjs <playwright> [base]` | 单页应用：跳转后继续播放、队列、前进 / 后退、歌词 |
 | `node tests/download_ui.cjs <playwright> [base]` | 批量下载：设置中心、专辑 ZIP 的标签 / 封面 / 歌词、文件夹模式、歌单与 .m3u8、MV、取消 / 重试；需要 cn 地区的 wrapper-lite |
-| `node tests/radio_live.cjs <playwright> [base] [token 文件]` | 电台：需要 media-user-token，取自 token 文件、`AM_HOOK_MEDIA_USER_TOKEN` 或 `target/my-media-user-token.txt`；风格电台与个人电台、最近播放中的广播单集的 Widevine license / 播放 / 跳转 / M4A 下载，以及用单集分片模拟的直播 |
+| `node tests/radio_live.cjs <playwright> [base] [token 文件]` | 电台：需要 media-user-token，取自 token 文件、`FANTASTIC_MEDIA_USER_TOKEN` 或 `target/my-media-user-token.txt`；风格电台与个人电台、最近播放中的广播单集的 Widevine license / 播放 / 跳转 / M4A 下载，以及用单集分片模拟的直播 |
 
 </details>
 

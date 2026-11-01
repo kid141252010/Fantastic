@@ -16,24 +16,24 @@ jobs:
         include:
           - os: windows-latest
             target: x86_64-pc-windows-msvc
-            artifact_name: am-hook.exe
-            asset_name: am-hook-windows-x86_64.exe
+            artifact_name: fantastic.exe
+            asset_name: fantastic-windows-x86_64.exe
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
-            artifact_name: am-hook
-            asset_name: am-hook-linux-x86_64
+            artifact_name: fantastic
+            asset_name: fantastic-linux-x86_64
           - os: ubuntu-24.04-arm
             target: aarch64-unknown-linux-gnu
-            artifact_name: am-hook
-            asset_name: am-hook-linux-aarch64
+            artifact_name: fantastic
+            asset_name: fantastic-linux-aarch64
           - os: macos-latest
             target: x86_64-apple-darwin
-            artifact_name: am-hook
-            asset_name: am-hook-macos-x86_64
+            artifact_name: fantastic
+            asset_name: fantastic-macos-x86_64
           - os: macos-latest
             target: aarch64-apple-darwin
-            artifact_name: am-hook
-            asset_name: am-hook-macos-aarch64
+            artifact_name: fantastic
+            asset_name: fantastic-macos-aarch64
 
     runs-on: ${{ matrix.os }}
 
@@ -74,20 +74,20 @@ jobs:
 
           if [[ "$ASSET_NAME" == *.exe ]]; then
             BASE_NAME="${ASSET_NAME%.exe}"
-            BASE_NAME="${BASE_NAME#am-hook-}"
-            DEV_FILE="am-hook-dev-${BASE_NAME}-${SHORT_SHA}.exe"
+            BASE_NAME="${BASE_NAME#fantastic-}"
+            DEV_FILE="fantastic-dev-${BASE_NAME}-${SHORT_SHA}.exe"
           else
-            BASE_NAME="${ASSET_NAME#am-hook-}"
-            DEV_FILE="am-hook-dev-${BASE_NAME}-${SHORT_SHA}"
+            BASE_NAME="${ASSET_NAME#fantastic-}"
+            DEV_FILE="fantastic-dev-${BASE_NAME}-${SHORT_SHA}"
           fi
 
           echo "DEV_FILE=$DEV_FILE" >> "$GITHUB_ENV"
 
           cd target/${{ matrix.target }}/release
           if [ "${{ runner.os }}" == "Windows" ]; then
-            cp am-hook.exe ../../../$DEV_FILE
+            cp fantastic.exe ../../../$DEV_FILE
           else
-            cp am-hook ../../../$DEV_FILE
+            cp fantastic ../../../$DEV_FILE
             chmod +x ../../../$DEV_FILE
           fi
 

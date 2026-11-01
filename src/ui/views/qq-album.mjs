@@ -37,7 +37,7 @@ export function mount({ root, url, signal, player, navigate, onLangChange, toast
 
   function renderHeader() {
     if (!album) return;
-    document.title = `${album.name || t('album.pageTitle')} · am-hook`;
+    document.title = `${album.name || t('album.pageTitle')} · Fantastic`;
     const title = $('title');
     title.classList.remove('skeleton');
     title.textContent = album.name || '';

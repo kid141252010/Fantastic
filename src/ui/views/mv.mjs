@@ -10,7 +10,7 @@ export const bodyClass = 'mv-body';
 export const styles = ['/assets/mv/style.css'];
 
 export function mount({ root, url, signal, player: music, onLangChange }) {
-  document.title = 'am-hook · MV';
+  document.title = 'Fantastic · MV';
   const $ = id => root.querySelector(`#${id}`);
   // 与 song 页一致：/https://music.apple.com/{cc}/music-video/{slug}/{id}
   // post 页：/https://music.apple.com/{cc}/post/{id}（slug 可省略）
@@ -193,7 +193,7 @@ export function mount({ root, url, signal, player: music, onLangChange }) {
       // post 没有艺人，副标题为上传方（官网 subtitleLinks，如 Apple Music Presents）
       title = item.name || title; artist = (post ? item.uploadingBrandName : item.artistName) || '';
       if (signal.aborted) return;
-      $('title').textContent = title; document.title = `${title} · am-hook ${post ? 'Video' : 'MV'}`;
+      $('title').textContent = title; document.title = `${title} · Fantastic ${post ? 'Video' : 'MV'}`;
       if (post) $('artist').textContent = artist;
       else $('artist').replaceChildren(...artistNodes(artist, (resource.relationships?.artists?.data || []).filter(r => r.attributes?.name)));
       const seconds = Math.floor(Number(item.durationInMillis ?? item.durationInMilliseconds) / 1000);

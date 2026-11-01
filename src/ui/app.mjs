@@ -172,7 +172,7 @@ import('/assets/lyrics/panel.mjs')
     follow(player.current);
     player.onChange(follow);
   })
-  .catch((err) => console.warn('[am-hook] 歌词界面加载失败', err));
+  .catch((err) => console.warn('[fantastic] 歌词界面加载失败', err));
 
 /* ---------- 导航（官网 .navigation）：≥484px 为侧边栏，<484px 为顶栏，菜单按钮展开整屏菜单 ---------- */
 const nav = $('nav');
@@ -577,7 +577,7 @@ async function render(url, { scroll = 0, initial = false } = {}) {
     await Promise.all((view.styles || []).map(stylesheet));
   } catch (err) {
     // 站内跳转时页面资源加载失败（如服务已升级、网络中断）：整页加载该地址；首次加载失败时不再重试，避免反复刷新
-    console.warn('[am-hook] 页面加载失败', err);
+    console.warn('[fantastic] 页面加载失败', err);
     if (seq === renderSeq && !initial) location.reload();
     return;
   }
@@ -589,7 +589,7 @@ async function render(url, { scroll = 0, initial = false } = {}) {
   current = { name, path: url.pathname, controller };
   syncNav(name, url.pathname);
   setNavExpanded(false);
-  document.title = 'am-hook';
+  document.title = 'Fantastic';
   if (view.bodyClass) document.body.classList.add(...view.bodyClass.split(/\s+/));
   // 每次进入页面都换一个新元素：离开后仍在进行的异步操作（如歌曲下载）只会改动已移除的旧元素
   const root = Object.assign(document.createElement('div'), { className: 'app-page', innerHTML: html });
@@ -616,7 +616,7 @@ async function render(url, { scroll = 0, initial = false } = {}) {
       loadStatus,
     });
   } catch (err) {
-    console.error('[am-hook] 页面脚本出错', err);
+    console.error('[fantastic] 页面脚本出错', err);
   }
   restoreScroll(scroll, signal);
 }

@@ -5,7 +5,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
-use am_hook::state::{AppState, Config};
+use fantastic::state::{AppState, Config};
 use axum::Router;
 
 fn config(wrapper_url: String, ip_header: Option<&str>) -> Config {
@@ -30,7 +30,7 @@ fn config(wrapper_url: String, ip_header: Option<&str>) -> Config {
 async fn serve_app(state: AppState) -> String {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let url = format!("http://{}", listener.local_addr().unwrap());
-    let app = am_hook::router(Arc::new(state)).into_make_service_with_connect_info::<SocketAddr>();
+    let app = fantastic::router(Arc::new(state)).into_make_service_with_connect_info::<SocketAddr>();
     tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
     url
 }

@@ -1,5 +1,5 @@
 // Run with: node tests/playlist_ui.cjs <path-to-playwright-package> [base]
-// Live: needs a running am-hook with access to music.apple.com / amp-api (default http://127.0.0.1:8888).
+// Live: needs a running fantastic with access to music.apple.com / amp-api (default http://127.0.0.1:8888).
 // In-page playback is checked too when wrapper-lite is online.
 // Covers the playlist page: catalog data, chart track rows, shelves, language refetch, playback queue,
 // invalid IDs, home-page link detection and the mobile layout.
@@ -8,7 +8,7 @@ const path = require('node:path');
 const { chromium } = require(process.argv[2] || 'playwright');
 const { openPage } = require('./app.cjs');
 
-const base = (process.argv[3] || process.env.AM_HOOK_URL || 'http://127.0.0.1:8888').replace(/\/$/, '');
+const base = (process.argv[3] || process.env.FANTASTIC_URL || 'http://127.0.0.1:8888').replace(/\/$/, '');
 const shots = process.env.PLAYLIST_UI_SHOTS;
 // 每周热门 100 首：全球 — an editorial chart playlist with motion artwork; its tracks change weekly, so no titles are asserted
 const playlistLink = 'https://music.apple.com/cn/playlist/%E6%AF%8F%E5%91%A8%E7%83%AD%E9%97%A8-100-%E9%A6%96-%E5%85%A8%E7%90%83/pl.921750b485a6496ea58b16d46c097557';

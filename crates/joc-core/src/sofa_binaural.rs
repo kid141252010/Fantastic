@@ -693,7 +693,7 @@ pub struct BinauralRenderer {
     allpass_gains: [f64; 2],
     enable_early_reflections: bool,
     enable_late_room: bool,
-    /// Listener pose (an am-hook extension, not in the reference): the world -> head rotation and
+    /// Listener pose (a Fantastic extension, not in the reference): the world -> head rotation and
     /// the head's offset from the room's listening position in metres.  While the head is not
     /// turned and has not moved, every path is computed exactly as the reference does.
     head: [[f64; 3]; 3],

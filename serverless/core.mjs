@@ -1,10 +1,10 @@
-// am-hook 的 serverless 后端（Vercel Edge Function 与 Cloudflare Worker 共用），对应二进制里的 src/amp.rs 与 src/ui.rs。
+// fantastic 的 serverless 后端（Vercel Edge Function 与 Cloudflare Worker 共用），对应二进制里的 src/amp.rs 与 src/ui.rs。
 // 只用 Web 标准接口（fetch / Request / Response），平台差异由入口处理：api/handler.mjs（Vercel）、serverless/cloudflare.mjs。
 //
 // 与二进制的区别：
 // - 没有常驻进程：amp-api 的响应缓存交给平台 CDN（响应带 `s-maxage`），不做连接保活与后台预热；
 //   developer token 缓存在实例内存里，平台提供 `tokenStore` 时跨实例共享。
-// - wrapper-lite 转发是可选的：设置了环境变量 AM_HOOK_WRAPPER_URL 才启用（可另设 AM_HOOK_WRAPPER_AUTH），
+// - wrapper-lite 转发是可选的：设置了环境变量 FANTASTIC_WRAPPER_URL 才启用（可另设 FANTASTIC_WRAPPER_AUTH），
 //   否则页面默认由浏览器直连用户自己的 wrapper-lite（见 src/ui/wrapper.js）。实例之间不共享状态，不限速、不限并发。
 
 const WEB_ORIGIN = 'https://music.apple.com';
@@ -376,7 +376,7 @@ function normalizeAuthorization(raw) {
 
 /** 环境变量里的 wrapper-lite：没有设置地址时为 null。地址中的用户信息改为 Basic 认证（fetch 不接受带用户信息的地址） */
 export function wrapperConfig(env) {
-  const raw = String(env?.AM_HOOK_WRAPPER_URL ?? '').trim().replace(/\/+$/, '');
+  const raw = String(env?.FANTASTIC_WRAPPER_URL ?? '').trim().replace(/\/+$/, '');
   if (!raw) return null;
   let base = raw;
   let basic = '';
@@ -391,7 +391,7 @@ export function wrapperConfig(env) {
     }
   } catch {}
   // 单独设置的 Authorization 优先于地址中的用户信息
-  return { base, auth: normalizeAuthorization(env.AM_HOOK_WRAPPER_AUTH) || basic };
+  return { base, auth: normalizeAuthorization(env.FANTASTIC_WRAPPER_AUTH) || basic };
 }
 
 const query = (params) => new URLSearchParams(params).toString();
@@ -562,7 +562,7 @@ function wrapperRoute(method, path, url, request, wrapper) {
 /**
  * 处理后端接口请求；不是后端接口时返回 null，由平台入口决定（页面外壳或 404）。
  *
- * `env`：环境变量（AM_HOOK_WRAPPER_URL、AM_HOOK_WRAPPER_AUTH、AM_HOOK_WRAPPER_HINT、AM_HOOK_AMLL_API）。
+ * `env`：环境变量（FANTASTIC_WRAPPER_URL、FANTASTIC_WRAPPER_AUTH、FANTASTIC_WRAPPER_HINT、FANTASTIC_AMLL_API）。
  * `platform.tokenStore`（可选）：跨实例共享 developer token，`{ get(): Promise<string|null>, put(token, ttlSeconds) }`。
  */
 export async function handle(request, env = {}, platform = {}) {
@@ -575,11 +575,11 @@ export async function handle(request, env = {}, platform = {}) {
     // 部署环境，页面在 wrapper.js 之前加载（二进制由 src/ui.rs 的 host_js_handler 生成）
     if (path === '/assets/host.js') {
       const host = { serverWrapper: wrapper !== null };
-      const hint = String(env?.AM_HOOK_WRAPPER_HINT ?? '').trim();
+      const hint = String(env?.FANTASTIC_WRAPPER_HINT ?? '').trim();
       if (hint) host.hint = hint;
-      const amllApi = String(env?.AM_HOOK_AMLL_API ?? '').trim().replace(/\/+$/, '');
+      const amllApi = String(env?.FANTASTIC_AMLL_API ?? '').trim().replace(/\/+$/, '');
       if (amllApi) host.amllApi = amllApi;
-      return new Response(`window.AM_HOOK_HOST = ${JSON.stringify(host)};\n`, {
+      return new Response(`window.FANTASTIC_HOST = ${JSON.stringify(host)};\n`, {
         headers: { 'content-type': 'text/javascript; charset=utf-8', 'cache-control': 'public, max-age=300' },
       });
     }
