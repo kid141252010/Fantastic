@@ -2,7 +2,7 @@
  * wrapper-lite 客户端（window.AmWrapper）：页面里所有用到 wrapper-lite 的请求都经这里发出。
  *
  * 两种模式，选择保存在 localStorage：
- *   服务端（默认）：经 am-hook 转发，限速、限并发与 Authorization 由命令行参数决定；
+ *   服务端（默认）：经 fantastic 转发，限速、限并发与 Authorization 由命令行参数决定；
  *         serverless 部署没有配置服务端 wrapper-lite 时不可用（host.js 的 serverWrapper 为 false），页面只用本地模式；
  *   本地：浏览器直接请求用户自己的 wrapper-lite（例如 http://127.0.0.1:12340），
  *         限速、限并发与 Authorization 在页面里设置（见 settings.mjs），只作用于当前页面。
@@ -18,14 +18,14 @@
  *   webplayback(id, signal)  /webplayback 的 m3u8 地址，没有时为 null
  *   key(id, uri)             轨道解密模板（/key 的 data，JSON 文本）
  *   lyrics(id, lang, signal) TTML 原文，没有歌词时为 null
- *   mvMaster(id, signal)     { masterUrl, masterBody }：MV master 总是由 am-hook 以 User-Agent: AM 获取（否则可能没有 4K）
+ *   mvMaster(id, signal)     { masterUrl, masterBody }：MV master 总是由 fantastic 以 User-Agent: AM 获取（否则可能没有 4K）
  *   license(body, signal)    /license 的 data：MV 的 PlayReady license、AAC-LC 歌曲的 Widevine（或 PlayReady）license
  */
 (function (global) {
   'use strict';
 
   const STORAGE_KEY = 'am-hook-wrapper';
-  const HOST = global.AM_HOOK_HOST || {};
+  const HOST = global.FANTASTIC_HOST || {};
   /** 服务端能否转发 wrapper-lite（见 host.js） */
   const SERVER = HOST.serverWrapper !== false;
   /** 部署方给出的本地模式默认值（见 host.js），只作用于没有保存过设置的页面 */
@@ -154,7 +154,7 @@
     return payload.data;
   }
 
-  /** am-hook 的 JSON 接口：失败时抛出带 msg 的错误 */
+  /** fantastic 的 JSON 接口：失败时抛出带 msg 的错误 */
   async function serverJson(url, options) {
     const res = await fetch(url, options);
     const data = await res.json().catch(() => ({}));

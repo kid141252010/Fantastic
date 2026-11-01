@@ -270,7 +270,7 @@ test('checkSources checks the web and wrapper-lite masters, once when their best
 
     const tag = tagValue(both.streams[1].result, { repair: true, checked: new Date('2026-10-21T00:00:00Z') });
     assert.match(tag, /^result=damaged; noEnd=1; hidden=0; oversize=0; frames=2; escapes=1; format=16\/44100; bad=#1@0\.000:noEnd; packaged=2026-08-28T00:27:26Z; /);
-    assert.match(tag, /; endTagRepair=on; checked=2026-10-21T00:00:00Z; by=am-hook$/);
+    assert.match(tag, /; endTagRepair=on; checked=2026-10-21T00:00:00Z; by=fantastic$/);
   } finally {
     globalThis.fetch = realFetch;
   }

@@ -2,7 +2,7 @@
 name = "am-mp4"
 version = "0.1.0"
 edition = "2021"
-description = "fMP4 fragment sanitizing and FairPlay sample decryption shared by am-hook and its browser wasm"
+description = "fMP4 fragment sanitizing and FairPlay sample decryption shared by Fantastic and its browser wasm"
 
 [dependencies]
 am-alac = { path = "../am-alac" }

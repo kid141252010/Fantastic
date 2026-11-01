@@ -4,7 +4,7 @@
 
 use std::{collections::HashMap, sync::{Arc, Mutex}, time::Duration};
 
-use am_hook::{router, state::{AppState, Config}};
+use fantastic::{router, state::{AppState, Config}};
 use axum::{
     body::{to_bytes, Body},
     extract::State,
@@ -21,11 +21,11 @@ async fn serve(app: Router) -> Option<(String, JoinHandle<()>)> {
     let listener = match TcpListener::bind("127.0.0.1:0").await {
         Ok(listener) => listener,
         Err(error) => {
-            if std::env::var("AM_HOOK_TEST_SKIP_LOOPBACK").as_deref() == Ok("1") {
+            if std::env::var("FANTASTIC_TEST_SKIP_LOOPBACK").as_deref() == Ok("1") {
                 eprintln!("skipping loopback QQ mock: {error}");
                 return None;
             }
-            panic!("loopback QQ mock bind failed: {error}; set AM_HOOK_TEST_SKIP_LOOPBACK=1 to skip");
+            panic!("loopback QQ mock bind failed: {error}; set FANTASTIC_TEST_SKIP_LOOPBACK=1 to skip");
         }
     };
     let url = format!("http://{}", listener.local_addr().unwrap());

@@ -1,12 +1,12 @@
 // Run with: node tests/search_ui.cjs <path-to-playwright-package> [base]
-// Live: needs a running am-hook with access to music.apple.com / amp-api (default http://127.0.0.1:8888).
+// Live: needs a running fantastic with access to music.apple.com / amp-api (default http://127.0.0.1:8888).
 // Covers the home page search: suggestions, results, pagination, ?q= state and the mobile layout.
 const assert = require('node:assert/strict');
 const path = require('node:path');
 const { chromium } = require(process.argv[2] || 'playwright');
 const { openPage, pageFrame } = require('./app.cjs');
 
-const base = (process.argv[3] || process.env.AM_HOOK_URL || 'http://127.0.0.1:8888').replace(/\/$/, '');
+const base = (process.argv[3] || process.env.FANTASTIC_URL || 'http://127.0.0.1:8888').replace(/\/$/, '');
 const shots = process.env.SEARCH_UI_SHOTS;
 
 (async () => {

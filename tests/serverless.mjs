@@ -225,13 +225,13 @@ test('MV master is fetched as User-Agent: AM and only follows apple.com redirect
   assert.equal(calls.length, 0);
 });
 
-test('without AM_HOOK_WRAPPER_URL the page is told to use a local wrapper-lite', async () => {
+test('without FANTASTIC_WRAPPER_URL the page is told to use a local wrapper-lite', async () => {
   const calls = stub(() => null);
   const host = await get('/assets/host.js');
   assert.match(host.headers.get('content-type'), /^text\/javascript/);
-  assert.equal(await host.text(), 'window.AM_HOOK_HOST = {"serverWrapper":false};\n');
-  const hinted = await get('/assets/host.js', { AM_HOOK_WRAPPER_HINT: ' Get a token at https://token.test \n' });
-  assert.equal(await hinted.text(), 'window.AM_HOOK_HOST = {"serverWrapper":false,"hint":"Get a token at https://token.test"};\n');
+  assert.equal(await host.text(), 'window.FANTASTIC_HOST = {"serverWrapper":false};\n');
+  const hinted = await get('/assets/host.js', { FANTASTIC_WRAPPER_HINT: ' Get a token at https://token.test \n' });
+  assert.equal(await hinted.text(), 'window.FANTASTIC_HOST = {"serverWrapper":false,"hint":"Get a token at https://token.test"};\n');
   for (const p of ['/status', '/key?adamId=1&uri=skd://x', '/lyrics/1', '/parse/song/1', '/parse/mv/1', '/mv/webplayback/1']) {
     const response = await get(p);
     assert.equal(response.status, 501, p);
@@ -244,12 +244,12 @@ test('without AM_HOOK_WRAPPER_URL the page is told to use a local wrapper-lite',
   assert.equal(await get('/https://music.apple.com/us/album/lover/1468058165'), null);
 });
 
-test('with AM_HOOK_WRAPPER_URL the wrapper-lite endpoints are relayed', async () => {
-  assert.deepEqual(wrapperConfig({ AM_HOOK_WRAPPER_URL: ' https://w.test/base/ ', AM_HOOK_WRAPPER_AUTH: 'abc' }), { base: 'https://w.test/base', auth: 'Bearer abc' });
-  assert.deepEqual(wrapperConfig({ AM_HOOK_WRAPPER_URL: 'https://user:p%40ss@w.test' }), { base: 'https://w.test', auth: `Basic ${btoa('user:p@ss')}` });
+test('with FANTASTIC_WRAPPER_URL the wrapper-lite endpoints are relayed', async () => {
+  assert.deepEqual(wrapperConfig({ FANTASTIC_WRAPPER_URL: ' https://w.test/base/ ', FANTASTIC_WRAPPER_AUTH: 'abc' }), { base: 'https://w.test/base', auth: 'Bearer abc' });
+  assert.deepEqual(wrapperConfig({ FANTASTIC_WRAPPER_URL: 'https://user:p%40ss@w.test' }), { base: 'https://w.test', auth: `Basic ${btoa('user:p@ss')}` });
   assert.equal(wrapperConfig({}), null);
 
-  const env = { AM_HOOK_WRAPPER_URL: 'https://w.test', AM_HOOK_WRAPPER_AUTH: 'Basic dXNlcjpwYXNz' };
+  const env = { FANTASTIC_WRAPPER_URL: 'https://w.test', FANTASTIC_WRAPPER_AUTH: 'Basic dXNlcjpwYXNz' };
   const master = 'https://play.itunes.apple.com/master.m3u8';
   const calls = stub((url) => {
     const u = new URL(url);
@@ -267,7 +267,7 @@ test('with AM_HOOK_WRAPPER_URL the wrapper-lite endpoints are relayed', async ()
     }
   });
 
-  assert.equal(await (await get('/assets/host.js', env)).text(), 'window.AM_HOOK_HOST = {"serverWrapper":true};\n');
+  assert.equal(await (await get('/assets/host.js', env)).text(), 'window.FANTASTIC_HOST = {"serverWrapper":true};\n');
   const status = await get('/status', env);
   assert.deepEqual(await status.json(), { code: 0, msg: 'SUCCESS', regions: ['jp', 'us'] });
   assert.equal(calls.at(-1).headers.authorization, 'Basic dXNlcjpwYXNz');
@@ -383,7 +383,7 @@ test('Vercel entry: handles the original URL and the rewritten /api/handler?__pa
 });
 
 test('build-static lays out src/ui the way src/assets.rs serves it', () => {
-  const out = fs.mkdtempSync(path.join(os.tmpdir(), 'am-hook-dist-'));
+  const out = fs.mkdtempSync(path.join(os.tmpdir(), 'fantastic-dist-'));
   try {
     execFileSync(process.execPath, [path.join(root, 'scripts/build-static.mjs'), out], { stdio: 'pipe' });
     const read = (file) => fs.readFileSync(path.join(out, file));

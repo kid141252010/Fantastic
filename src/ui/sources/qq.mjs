@@ -3,7 +3,7 @@ import { trackKey, withIdentity } from './track.mjs';
 import { playbackQualityChain } from '../playback-quality.mjs';
 export { trackKey } from './track.mjs';
 const MID = /^[0-9A-Za-z]{1,32}$/;
-export const enabled = () => globalThis.window?.AM_HOOK_HOST?.qqEnabled === true;
+export const enabled = () => globalThis.window?.FANTASTIC_HOST?.qqEnabled === true;
 const mid = (id) => { if (!['string', 'number'].includes(typeof id) || !MID.test(String(id))) throw new Error('Invalid QQ ID'); return String(id); };
 const FALLBACK_CAPABILITIES = [
   ['MP3128', 'mp3', 'audio/mpeg', 'native', 'size_128mp3'],

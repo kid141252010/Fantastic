@@ -1,5 +1,5 @@
 // Run with: node tests/app_ui.cjs <path-to-playwright-package> [base]
-// Live: needs a running am-hook with access to music.apple.com / amp-api and an online wrapper-lite
+// Live: needs a running fantastic with access to music.apple.com / amp-api and an online wrapper-lite
 // (default http://127.0.0.1:8888).
 // Covers the single-page app (src/ui/app.html + app.mjs, same as music.apple.com): every page URL gets the app,
 // in-site links switch views without reloading the document, playback and the queue survive navigation,
@@ -9,7 +9,7 @@ const assert = require('node:assert/strict');
 const { chromium } = require(process.argv[2] || 'playwright');
 const { openPage } = require('./app.cjs');
 
-const base = (process.argv[3] || process.env.AM_HOOK_URL || 'http://127.0.0.1:8888').replace(/\/$/, '');
+const base = (process.argv[3] || process.env.FANTASTIC_URL || 'http://127.0.0.1:8888').replace(/\/$/, '');
 const albumPath = '/https://music.apple.com/cn/album/justice-triple-chucks-deluxe-deluxe-video-version/1561058084';
 
 /** 常驻播放器的状态 */

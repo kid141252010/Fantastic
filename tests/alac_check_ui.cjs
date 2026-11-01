@@ -1,5 +1,5 @@
 // Run with: node tests/alac_check_ui.cjs <path-to-playwright-package> [base]
-// Live: needs a running am-hook with access to amp-api and the Apple CDN (default http://127.0.0.1:8888); wrapper-lite is not used.
+// Live: needs a running fantastic with access to amp-api and the Apple CDN (default http://127.0.0.1:8888); wrapper-lite is not used.
 // Covers the album page's ALAC check: the escape frames of "Shadows In The Night (AJSE Extended Remix)" listed in
 // AppleMusicDecrypt#136 (frame 2287 keeps a valid END tag over garbage padding, frame 2288 lost its END tag), the
 // packaging date, the decoded first segment, no /key request at all, and the copied report.
@@ -8,7 +8,7 @@ const path = require('node:path');
 const { chromium } = require(process.argv[2] || 'playwright');
 const { openPage } = require('./app.cjs');
 
-const base = (process.argv[3] || process.env.AM_HOOK_URL || 'http://127.0.0.1:8888').replace(/\/$/, '');
+const base = (process.argv[3] || process.env.FANTASTIC_URL || 'http://127.0.0.1:8888').replace(/\/$/, '');
 const shots = process.env.ALAC_CHECK_SHOTS;
 const albumPath = '/https://music.apple.com/us/album/shadows-in-the-night-ajse-extended-remix/1896269091';
 
