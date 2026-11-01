@@ -67,7 +67,7 @@ export function mount({ root, url, signal, player, onLangChange, toast }) {
       node.classList.toggle('playing', current);
       node.classList.toggle('paused', current && !playing());
       const button = node.querySelector('button');
-      if (button) button.textContent = t(current && playing() ? 'qq.pauseQuality' : 'qq.playQuality');
+      if (button) button.textContent = t(current && playing() ? 'player.pause' : 'qq.playQuality');
     }
   }
 

@@ -162,7 +162,7 @@ The "wrapper-lite" setting at the bottom of the navigation switches between two 
 
 ### QQ music source (optional)
 
-Configure `--qq-api https://example.invalid/api/web` or `AM_HOOK_QQ_API` on the Rust server. Use `--qq-proxy <URL>` or `AM_HOOK_QQ_PROXY` for the server-side QQ API, AMLL, cover and media requests; proxy credentials stay on the server. Playback returns a `302` to the allowlisted QQ CDN and the browser connects to the CDN directly, so the proxy does not proxy playback bytes. QQ search, playback, covers, lyrics, downloads and browser-local favorites are supported. Lyrics accept plaintext QRC or a `LyricContent`-wrapped QRC; there is no decryption step. Apple and QQ use separate playback queues.
+Configure `--qq-api https://example.invalid/api/web` or `AM_HOOK_QQ_API` on the Rust server. See [QQ source validation](docs/qq-source-validation.md) for proxy behavior, request paths, playback redirects and lyric formats. Apple and QQ use separate playback queues.
 
 QQ has no client-side rate or concurrency limit; upstream services remain responsible for handling aggressive traffic.
 

@@ -162,7 +162,7 @@ am-hook --listen 0.0.0.0:8888 --wrapper-url http://127.0.0.1:12340
 
 ### QQ 音源（可选）
 
-在 Rust 服务端设置 `--qq-api https://example.invalid/api/web` 或 `AM_HOOK_QQ_API`。可用 `--qq-proxy <URL>` 或 `AM_HOOK_QQ_PROXY` 设置只供服务端 QQ API、AMLL、封面和媒体请求使用的代理，代理凭据不会发送到页面。播放接口返回 302，浏览器随后直连白名单内的 QQ CDN，因此代理不转发播放字节。支持 QQ 搜索、播放、封面、歌词、下载与浏览器本地收藏。歌词接受明文 QRC 或 `LyricContent` 包装的 QRC，不包含解密逻辑。Apple 与 QQ 使用独立的播放队列。
+在 Rust 服务端设置 `--qq-api https://example.invalid/api/web` 或 `AM_HOOK_QQ_API`。代理行为、请求路径、播放跳转和歌词格式见 [QQ 音源规格](docs/qq-source-validation.md)。Apple 与 QQ 使用独立的播放队列。
 
 QQ 不设置客户端限流；激进流量由上游服务自行处理。
 

@@ -165,11 +165,15 @@
     return g.includes('he-') ? 3 : 2;
   }
 
+  const qqQualityLabel = (quality) => {
+    const key = `qq.quality.${quality}.label`;
+    const localized = t(key);
+    return `QQ · ${localized && localized !== key ? localized : quality}`;
+  };
+
   function variantLabel(v) {
     if (v.source === 'qq') {
-      const key = `qq.quality.${v.quality}.label`;
-      const localized = t(key);
-      return `QQ · ${localized && localized !== key ? localized : v.quality}`;
+      return qqQualityLabel(v.quality);
     }
     const g = v.group_id.toLowerCase();
     if (g.includes('alac')) {
@@ -1831,12 +1835,12 @@
       this.listeners = new Set();
       this.unsupportedListeners = new Set();
       this.playToken = 0;
-      /** 播放队列：{ entries, pos }，entries 见 resolveEntry；pendingTrack 为正在解析的曲目 */
+      /** 播放队列：{ entries, pos }，entries 见 resolveEntry */
       this.queue = null;
       this.source = 'apple';
       this.sourceContexts = new Map();
       this.queueSerial = 0;
-      this.pendingTrack = this.pendingKey = null;
+      this.pendingKey = null;
       /** 随机播放（true / false）与重复播放（off / all / one），与 Apple Music 相同，下次打开时保留 */
       this.shuffle = false;
       this.repeat = 'off';
@@ -1920,9 +1924,7 @@
       const c = this.current;
       if (c.source === 'qq') {
         const quality = c.quality || 'HQ';
-        const key = `qq.quality.${quality}.label`;
-        const localized = t(key);
-        return `QQ · ${localized && localized !== key ? localized : quality}`;
+        return qqQualityLabel(quality);
       }
       if (c.mode === 'joc2') return `E-AC-3 → ${t('player.jocSpeaker')}`;
       if (c.mode === 'jocbin') return `E-AC-3 → ${t('player.jocBinaural', { dataset: this.pcm ? this.pcm.dataset : jocSettings().dataset })}`;
@@ -2749,7 +2751,6 @@
       };
       return {
         get current() { return player.current; },
-        get pendingTrack() { return player.pendingTrack; },
         get pendingKey() { return player.pendingKey; },
         get source() { return player.source || 'apple'; },
         switchSource: (source) => player.switchSource(source),
@@ -2789,7 +2790,7 @@
       this.nextSerial++;
       clearTimeout(this.nextRetry);
       this.nextEntry = null;
-      this.pendingTrack = this.pendingKey = null;
+      this.pendingKey = null;
       this.teardown();
       this.source = source;
       try { localStorage.setItem('am-hook:source', source); } catch {}
@@ -2820,7 +2821,7 @@
       // Use the existing queue resolution guard so it cannot replace/toggle it.
       if (this.pendingKey === trackKey(item)) {
         this.queueSerial++;
-        this.pendingTrack = this.pendingKey = null;
+        this.pendingKey = null;
       }
       // 单独播放另一首歌时结束队列；同一首歌切换音质时保留
       if (this.queue && trackKey(item) !== trackKey(this.queue.entries[this.queue.pos])) this.clearQueue();
@@ -2915,7 +2916,7 @@
     clearQueue() {
       this.queue = null;
       this.queueSerial++;
-      this.pendingTrack = this.pendingKey = null;
+      this.pendingKey = null;
       this.prepareNext();
     }
 
@@ -2973,7 +2974,7 @@
       if (pos >= 0) q.pos = pos;
       this.nextEntry = null;
       this.queueSerial++;
-      this.pendingTrack = this.pendingKey = null;
+      this.pendingKey = null;
       this.current = { ...item, duration: this.mse.playlist.duration };
       this.showError('');
       this.renderTrackText();
@@ -2992,17 +2993,16 @@
       this.queue.pos = pos;
       this.extendQueue();
       const serial = ++this.queueSerial;
-      this.pendingTrack = entry.track;
       this.pendingKey = trackKey(entry);
       this.emit();
       try {
         const item = await resolveEntry(entry);
         if (serial !== this.queueSerial) return;
-        this.pendingTrack = this.pendingKey = null;
+        this.pendingKey = null;
         await this.start(item);
       } catch (err) {
         if (serial !== this.queueSerial) return;
-        this.pendingTrack = this.pendingKey = null;
+        this.pendingKey = null;
         this.showError(() => (err.noPlayable ? err.message : t('album.trackFailed', { name: entry.name, msg: err.message })));
       }
       this.emit();

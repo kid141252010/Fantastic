@@ -55,20 +55,6 @@ AC-4 的三个档位使用中性的 `playbackClass: "ac-4-probe"`。浏览器能
 
 `/qq/song/:mid/qualities?basic=1` uses the cached `/extra/music/info` `file` object and never probes unknown tiers. The full endpoint may query `/extra/music/url` for tiers without a verified size mapping; probes use a separate semaphore and short negative cache. `/play` returns a 302 for any available URL. Native rows use `/play`; DAEAC3 JOC uses `/download?quality=DAEAC3` and the existing browser JOC pipeline; download-only rows remain download actions.
 
-## Lyrics and cache
-
-Lyrics are fetched concurrently from configured AMLL (`qqMusicId`), upstream `/lyric/ttml`, and `/lyric/new`. The latter can expose QRC, translated QRC, romanized QRC, LRC and translated LRC fields in either plain or `data`-wrapped responses. Candidate priority is AMLL, TTML, QRC, then LRC. Each translation and romanization track is aligned independently with a monotone dynamic program: matching an auxiliary row to a main/BG row costs the absolute start-time difference in milliseconds, skipping an auxiliary row costs 700, and pairs beyond 1000 ms are forbidden; unmatched main rows are free. Equal-cost matches prefer the smaller time difference and then the earlier main row, while a main row takes precedence over a competing BG row. Cold requests fetch the song DTO in the same operation so title/artist metadata filters apply before QRC/LRC candidates are cached.
-
-The cache keeps raw QRC fields and converted candidates together. A normal successful result has a 7-day TTL, an all-empty result has a 1-hour TTL, and any partial source failure has a 5-minute TTL. When every source fails, the endpoint returns 502 and stores no result.
-
-## Safety constraints
-
-Quality is an enum and unknown query values are rejected before an upstream request. Song DTOs expose no upstream private fields or audio URLs. Playback `Location` and download redirects accept only HTTPS QQ CDN hosts without ports or credentials; the download stream forwards only safe media headers. TTML is rebuilt with an allowlist, rejects DOCTYPE/ENTITY and oversized input, and QRC accepts plaintext or `LyricContent` wrappers without any decryption step.
-
-## F22 首页来源与播放来源
-
-已复现 `/?source=qq` 搜索后播放 Apple 歌曲再后退回首页的旧路径：`applySource` 调用 `player.switchSource('qq')` 会进入 `teardown` 并暂停 Apple。现状已把首页来源限定为搜索 UI 状态；播放来源只由 `play` / `playQueue` 改变，因此后退只刷新搜索，不会拆掉正在播放的 Apple 条目。回归断言在 `tests/qq_source.mjs`。
-
 ## Validation
 
 The Rust unit suite checks the generated JSON, every quality mapping, QRC/LRC conversion, TTML allowlisting, cache states and URL restrictions. `tests/qq_upstream.rs` adds local axum upstream integration coverage. Browser tests cover capabilities fallback/consumption, shared MIME detection, favorites caching, fixed HQ fallback, source navigation, and JOC download progress.

@@ -15,7 +15,7 @@ use serde_json::{json, Value};
 use std::{
     collections::HashSet,
     num::NonZeroUsize,
-    sync::{Arc, Mutex, OnceLock},
+    sync::{Arc, LazyLock, Mutex},
     time::{Duration, Instant},
 };
 
@@ -266,11 +266,10 @@ impl Qq {
             .or_else(|| {
                 let pic = album.get("picUrl")?.as_str()?;
                 cdn_url(pic)?;
-                static RE: OnceLock<Regex> = OnceLock::new();
-                RE.get_or_init(|| {
+                static RE: LazyLock<Regex> = LazyLock::new(|| {
                     Regex::new(r"T002(?:R\d+x\d+)?M000([0-9A-Za-z]{1,32})(?:_\d+)?\.").unwrap()
-                })
-                .captures(pic)
+                });
+                RE.captures(pic)
                 .map(|c| c[1].to_owned())
             })
             .or_else(|| album.get("id").map(string).filter(|s| valid_mid(s)))
@@ -283,9 +282,9 @@ impl Qq {
                 .and_then(Value::as_str)
                 .filter(|url| cdn_url(url).is_some())
                 .map(|url| {
-                    static RE: OnceLock<Regex> = OnceLock::new();
-                    RE.get_or_init(|| Regex::new(r"T002(?:R\d+x\d+)?M000").unwrap())
-                        .replace(url, "T002R{w}x{h}M000")
+                    static RE: LazyLock<Regex> =
+                        LazyLock::new(|| Regex::new(r"T002(?:R\d+x\d+)?M000").unwrap());
+                    RE.replace(url, "T002R{w}x{h}M000")
                         .into_owned()
                 })
                 .unwrap_or_else(|| {
@@ -375,15 +374,7 @@ impl Qq {
             return Ok(audio);
         }
         let data = self
-            .request(
-                "/extra/music/url",
-                &[
-                    ("platform", "qq".into()),
-                    ("mid", mid.into()),
-                    ("music_quality", quality.name().into()),
-                    ("audio_api", "2".into()),
-                ],
-            )
+            .request("/extra/music/url", &url_params(mid, quality))
             .await?;
         let audio = Audio::from_response(&data)?;
         self.audio.put(key, audio.clone());
@@ -411,15 +402,7 @@ impl Qq {
             return Err(unavailable());
         }
         let data = self
-            .request_with_status(
-                "/extra/music/url",
-                &[
-                    ("platform", "qq".into()),
-                    ("mid", mid.into()),
-                    ("music_quality", quality.name().into()),
-                    ("audio_api", "2".into()),
-                ],
-            )
+            .request_with_status("/extra/music/url", &url_params(mid, quality))
             .await
             .map_err(RequestError::api)?;
         let audio = match Audio::from_response(&data) {
@@ -445,11 +428,7 @@ impl Qq {
                 .filter(|quality| !basic || quality.size_field().is_some())
                 .map(|quality| async move {
                     if basic {
-                        return QualityRow::from_size(
-                            quality,
-                            quality.info_size(file),
-                            quality.format(),
-                        );
+                        return QualityRow::from_info(quality, file);
                     }
                     if !quality.needs_probe(file) {
                         // Verified info mappings avoid unnecessary URL requests. Cached
@@ -458,11 +437,7 @@ impl Qq {
                             Some(audio) if audio.size_bytes.is_some() => {
                                 QualityRow::from_audio(quality, file, Some(&audio))
                             }
-                            _ => QualityRow::from_size(
-                                quality,
-                                quality.info_size(file),
-                                quality.format(),
-                            ),
+                            _ => QualityRow::from_info(quality, file),
                         }
                     } else {
                         // Unmapped tiers are probed separately, through the same short-lived
@@ -475,6 +450,14 @@ impl Qq {
         .await;
         Ok(Qualities { qualities })
     }
+}
+fn url_params(mid: &str, quality: Quality) -> [(&'static str, String); 4] {
+    [
+        ("platform", "qq".into()),
+        ("mid", mid.into()),
+        ("music_quality", quality.name().into()),
+        ("audio_api", "2".into()),
+    ]
 }
 fn track_info<'a>(mid: &str, data: &'a Value) -> &'a Value {
     // Both the normalized search dialect and QQ's native track_info dialect.
@@ -776,113 +759,42 @@ struct ExtensionInfo {
     content_type: &'static str,
     download_content_type: &'static str,
 }
+const fn ext(
+    extension: &'static str,
+    codec: Codec,
+    content_type: &'static str,
+    download_content_type: &'static str,
+) -> ExtensionInfo {
+    ExtensionInfo {
+        extension,
+        codec,
+        content_type,
+        download_content_type,
+    }
+}
 
 // The playback MIME and the attachment MIME intentionally remain separate:
 // browsers need codec parameters while downloaded files should retain their
 // conventional raw-media type (for example .aac and .ac4).
+#[rustfmt::skip]
 const EXTENSION_INFO: &[ExtensionInfo] = &[
-    ExtensionInfo {
-        extension: "mp3",
-        codec: Codec::Mp3,
-        content_type: "audio/mpeg",
-        download_content_type: "audio/mpeg",
-    },
-    ExtensionInfo {
-        extension: "flac",
-        codec: Codec::Flac,
-        content_type: "audio/flac",
-        download_content_type: "audio/flac",
-    },
-    ExtensionInfo {
-        extension: "m4a",
-        codec: Codec::Aac,
-        content_type: "audio/mp4; codecs=\"mp4a.40.2\"",
-        download_content_type: "audio/mp4",
-    },
-    ExtensionInfo {
-        extension: "mp4",
-        codec: Codec::Unknown,
-        content_type: "application/octet-stream",
-        download_content_type: "audio/mp4",
-    },
-    ExtensionInfo {
-        extension: "aac",
-        codec: Codec::Aac,
-        content_type: "audio/aac",
-        download_content_type: "audio/aac",
-    },
-    ExtensionInfo {
-        extension: "ogg",
-        codec: Codec::Ogg,
-        content_type: "audio/ogg; codecs=\"vorbis\"",
-        download_content_type: "audio/ogg",
-    },
-    ExtensionInfo {
-        extension: "opus",
-        codec: Codec::Opus,
-        content_type: "audio/ogg; codecs=\"opus\"",
-        download_content_type: "audio/ogg",
-    },
-    ExtensionInfo {
-        extension: "wav",
-        codec: Codec::Wav,
-        content_type: "audio/wav",
-        download_content_type: "audio/wav",
-    },
-    ExtensionInfo {
-        extension: "ape",
-        codec: Codec::Ape,
-        content_type: "audio/x-ape",
-        download_content_type: "audio/x-ape",
-    },
-    ExtensionInfo {
-        extension: "eac3",
-        codec: Codec::Ec3,
-        content_type: "audio/mp4; codecs=\"ec-3\"",
-        download_content_type: "audio/eac3",
-    },
-    ExtensionInfo {
-        extension: "ec3",
-        codec: Codec::Ec3,
-        content_type: "audio/mp4; codecs=\"ec-3\"",
-        download_content_type: "audio/eac3",
-    },
-    ExtensionInfo {
-        extension: "joc",
-        codec: Codec::Ec3,
-        content_type: "audio/mp4; codecs=\"ec-3\"",
-        download_content_type: "audio/eac3",
-    },
-    ExtensionInfo {
-        extension: "ac3",
-        codec: Codec::Ac3,
-        content_type: "audio/mp4; codecs=\"ac-3\"",
-        download_content_type: "audio/ac3",
-    },
-    ExtensionInfo {
-        extension: "ac4",
-        codec: Codec::Ac4,
-        content_type: "audio/mp4; codecs=\"ac-4\"",
-        download_content_type: "audio/ac4",
-    },
-    ExtensionInfo {
-        extension: "dts",
-        codec: Codec::Dts,
-        content_type: "audio/vnd.dts",
-        download_content_type: "audio/vnd.dts",
-    },
-    ExtensionInfo {
-        extension: "dtsx",
-        codec: Codec::Dtsx,
-        content_type: "audio/vnd.dts.hd; codecs=\"dtsx\"",
-        download_content_type: "audio/vnd.dts.hd",
-    },
-    ExtensionInfo {
-        extension: "nac",
-        codec: Codec::Nac,
-        content_type: "audio/x-nac",
-        download_content_type: "application/octet-stream",
-    },
+    ext("mp3", Codec::Mp3, "audio/mpeg", "audio/mpeg"),
+    ext("flac", Codec::Flac, "audio/flac", "audio/flac"),
+    ext("m4a", Codec::Aac, "audio/mp4; codecs=\"mp4a.40.2\"", "audio/mp4"),
+    ext("mp4", Codec::Unknown, "application/octet-stream", "audio/mp4"),
+    ext("aac", Codec::Aac, "audio/aac", "audio/aac"),
+    ext("ogg", Codec::Ogg, "audio/ogg; codecs=\"vorbis\"", "audio/ogg"),
+    ext("opus", Codec::Opus, "audio/ogg; codecs=\"opus\"", "audio/ogg"),
+    ext("wav", Codec::Wav, "audio/wav", "audio/wav"),
+    ext("ape", Codec::Ape, "audio/x-ape", "audio/x-ape"),
+    ext("eac3", Codec::Ec3, "audio/mp4; codecs=\"ec-3\"", "audio/eac3"),
+    ext("ec3", Codec::Ec3, "audio/mp4; codecs=\"ec-3\"", "audio/eac3"),
+    ext("joc", Codec::Ec3, "audio/mp4; codecs=\"ec-3\"", "audio/eac3"),
+    ext("ac3", Codec::Ac3, "audio/mp4; codecs=\"ac-3\"", "audio/ac3"),
+    ext("ac4", Codec::Ac4, "audio/mp4; codecs=\"ac-4\"", "audio/ac4"),
+    ext("dts", Codec::Dts, "audio/vnd.dts", "audio/vnd.dts"),
+    ext("dtsx", Codec::Dtsx, "audio/vnd.dts.hd; codecs=\"dtsx\"", "audio/vnd.dts.hd"),
+    ext("nac", Codec::Nac, "audio/x-nac", "application/octet-stream"),
 ];
 
 fn extension_info(extension: &str) -> Option<ExtensionInfo> {
@@ -934,13 +846,7 @@ impl Audio {
         if let Some(codec) = self.codec_hint {
             return codec;
         }
-        let extension = self
-            .url
-            .path()
-            .rsplit('.')
-            .next()
-            .unwrap_or("")
-            .to_ascii_lowercase();
+        let extension = url_extension(&self.url);
         extension_info(&extension)
             .map(|info| info.codec)
             .or_else(|| Codec::from_name(&extension))
@@ -948,13 +854,7 @@ impl Audio {
     }
     fn content_type(&self, quality: Quality) -> &'static str {
         let codec = self.codec(quality);
-        let extension = self
-            .url
-            .path()
-            .rsplit('.')
-            .next()
-            .unwrap_or("")
-            .to_ascii_lowercase();
+        let extension = url_extension(&self.url);
         extension_info(&extension)
             .filter(|info| info.codec == codec)
             .map(|info| info.content_type)
@@ -986,6 +886,10 @@ impl Audio {
         codec.format()
     }
 }
+/// Lowercased last path extension; empty when the URL has no path segment.
+fn url_extension(url: &reqwest::Url) -> String {
+    url.path().rsplit('.').next().unwrap_or("").to_ascii_lowercase()
+}
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct QualityRow {
@@ -1010,6 +914,9 @@ impl QualityRow {
             codec: codec.name(),
             content_type: codec.content_type(),
         }
+    }
+    fn from_info(quality: Quality, file: &Value) -> Self {
+        Self::from_size(quality, quality.info_size(file), quality.format())
     }
     fn from_audio(quality: Quality, file: &Value, audio: Option<&Audio>) -> Self {
         let audio = audio.filter(|audio| audio.size_bytes.is_some());
@@ -1126,16 +1033,20 @@ fn cover_response(response: reqwest::Response) -> ApiResult<Response> {
     if !response.status().is_success() {
         return Err(unavailable());
     }
-    use futures::TryStreamExt;
     Ok(Response::builder()
         .header(header::CONTENT_TYPE, "image/jpeg")
         .header(header::CACHE_CONTROL, "public, max-age=86400")
-        .body(Body::from_stream(
-            response
-                .bytes_stream()
-                .map_err(|e| std::io::Error::other(e.without_url())),
-        ))
+        .body(stream_body(response))
         .unwrap())
+}
+/// Upstream stream errors carry URLs; strip them before they reach body diagnostics.
+fn stream_body(response: reqwest::Response) -> Body {
+    use futures::TryStreamExt;
+    Body::from_stream(
+        response
+            .bytes_stream()
+            .map_err(|e| std::io::Error::other(e.without_url())),
+    )
 }
 async fn capabilities(State(state): State<Arc<AppState>>) -> ApiResult<Json<Value>> {
     adapter(&state)?;
@@ -1232,13 +1143,7 @@ fn download_disposition(song: &Song, url: &reqwest::Url) -> String {
     attachment(&safe_basename(song), ext)
 }
 fn download_content_type(url: &reqwest::Url) -> &'static str {
-    let extension = url
-        .path()
-        .rsplit('.')
-        .next()
-        .unwrap_or("")
-        .to_ascii_lowercase();
-    extension_info(&extension)
+    extension_info(&url_extension(url))
         .map(|info| info.download_content_type)
         .unwrap_or("application/octet-stream")
 }
@@ -1273,31 +1178,12 @@ fn safe_basename(song: &Song) -> String {
     if base.is_empty() {
         base = song.id.clone();
     }
-    if matches!(
-        base.to_ascii_uppercase().as_str(),
-        "CON"
-            | "PRN"
-            | "AUX"
-            | "NUL"
-            | "COM1"
-            | "COM2"
-            | "COM3"
-            | "COM4"
-            | "COM5"
-            | "COM6"
-            | "COM7"
-            | "COM8"
-            | "COM9"
-            | "LPT1"
-            | "LPT2"
-            | "LPT3"
-            | "LPT4"
-            | "LPT5"
-            | "LPT6"
-            | "LPT7"
-            | "LPT8"
-            | "LPT9"
-    ) {
+    #[rustfmt::skip]
+    const RESERVED: &[&str] = &[
+        "CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8",
+        "COM9", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
+    ];
+    if RESERVED.contains(&base.to_ascii_uppercase().as_str()) {
         base.push('_');
     }
     base
@@ -1345,15 +1231,7 @@ async fn download(
     if let Some(size) = response.headers().get(header::CONTENT_LENGTH) {
         out = out.header(header::CONTENT_LENGTH, size);
     }
-    // Keep upstream errors (which carry URLs) out of streaming body diagnostics too.
-    use futures::TryStreamExt;
-    Ok(out
-        .body(Body::from_stream(
-            response
-                .bytes_stream()
-                .map_err(|e| std::io::Error::other(e.without_url())),
-        ))
-        .unwrap())
+    Ok(out.body(stream_body(response)).unwrap())
 }
 fn xml(text: &str) -> String {
     text.replace('&', "&amp;")
@@ -1362,10 +1240,8 @@ fn xml(text: &str) -> String {
         .replace('"', "&quot;")
 }
 fn clean_text(text: &str) -> String {
-    static RE_URL: OnceLock<Regex> = OnceLock::new();
-    RE_URL
-        .get_or_init(|| Regex::new(r#"(?i)https?://[^\s<>"']+"#).unwrap())
-        .replace_all(text, "")
+    static RE_URL: LazyLock<Regex> = LazyLock::new(|| Regex::new(r#"(?i)https?://[^\s<>"']+"#).unwrap());
+    RE_URL.replace_all(text, "")
         .into_owned()
 }
 fn wrap(body: &str, word: bool) -> String {
@@ -1374,31 +1250,22 @@ fn wrap(body: &str, word: bool) -> String {
 /// Rebuild the renderable body with a strict tag / attribute allowlist. No credit
 /// comments, external entities, URLs, credit metadata, styles or external resources.
 fn clean_ttml(text: &str) -> Option<String> {
-    static UNSAFE: OnceLock<Regex> = OnceLock::new();
-    if text.len() > 2_000_000
-        || UNSAFE
-            .get_or_init(|| Regex::new(r"(?i)<!DOCTYPE|<!ENTITY").unwrap())
-            .is_match(text)
-    {
+    static UNSAFE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)<!DOCTYPE|<!ENTITY").unwrap());
+    if text.len() > 2_000_000 || UNSAFE.is_match(text) {
         return None;
     }
-    static COMMENTS: OnceLock<Regex> = OnceLock::new();
-    let text = COMMENTS
-        .get_or_init(|| Regex::new(r"(?s)<!--.*?-->").unwrap())
-        .replace_all(text, "");
-    static BODY: OnceLock<Regex> = OnceLock::new();
-    let body = BODY
-        .get_or_init(|| Regex::new(r"(?s)<body\b[^>]*>.*?</body>").unwrap())
-        .find(&text)?
-        .as_str();
-    static TAGS: OnceLock<Regex> = OnceLock::new();
-    let tags = TAGS.get_or_init(|| Regex::new(r"(?s)<[^>]*>|[^<]+").unwrap());
-    static TAG: OnceLock<Regex> = OnceLock::new();
-    let tag = TAG.get_or_init(|| Regex::new(r"^<(/?)(body|div|p|span|br)\b([^>]*)>$").unwrap());
-    static ATTRS: OnceLock<Regex> = OnceLock::new();
-    let attrs = ATTRS.get_or_init(|| Regex::new(r#"([\w:]+)\s*=\s*["']([^"']*)["']"#).unwrap());
-    static TIME: OnceLock<Regex> = OnceLock::new();
-    let time = TIME.get_or_init(|| Regex::new(r"^\d+(?::\d+){0,2}(?:\.\d+)?$").unwrap());
+    static COMMENTS: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?s)<!--.*?-->").unwrap());
+    let text = COMMENTS.replace_all(text, "");
+    static BODY: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?s)<body\b[^>]*>.*?</body>").unwrap());
+    let body = BODY.find(&text)?.as_str();
+    static TAGS: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?s)<[^>]*>|[^<]+").unwrap());
+    let tags = &*TAGS;
+    static TAG: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^<(/?)(body|div|p|span|br)\b([^>]*)>$").unwrap());
+    let tag = &*TAG;
+    static ATTRS: LazyLock<Regex> = LazyLock::new(|| Regex::new(r#"([\w:]+)\s*=\s*["']([^"']*)["']"#).unwrap());
+    let attrs = &*ATTRS;
+    static TIME: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\d+(?::\d+){0,2}(?:\.\d+)?$").unwrap());
+    let time = &*TIME;
     let mut out = String::new();
     for token in tags.find_iter(body) {
         let token = token.as_str();
@@ -1432,14 +1299,12 @@ fn clean_ttml(text: &str) -> Option<String> {
     if !out.contains("<p ") {
         return None;
     }
-    static WORD: OnceLock<Regex> = OnceLock::new();
-    let word = WORD
-        .get_or_init(|| Regex::new(r#"<span\b[^>]*\bbegin="#).unwrap())
-        .is_match(&out);
+    static WORD: LazyLock<Regex> = LazyLock::new(|| Regex::new(r#"<span\b[^>]*\bbegin="#).unwrap());
+    let word = WORD.is_match(&out);
     let mut result = wrap(&out, word);
     // Agent types affect duet layout; keep those declarations without names/credits.
-    static AGENTS: OnceLock<Regex> = OnceLock::new();
-    let agents = AGENTS.get_or_init(|| Regex::new(r#"<(?:ttm:)?agent\b[^>]*>"#).unwrap());
+    static AGENTS: LazyLock<Regex> = LazyLock::new(|| Regex::new(r#"<(?:ttm:)?agent\b[^>]*>"#).unwrap());
+    let agents = &*AGENTS;
     let mut head = String::new();
     for agent in agents.find_iter(&text) {
         let mut id = None;
@@ -1466,11 +1331,8 @@ fn clean_ttml(text: &str) -> Option<String> {
             1,
         );
     }
-    static LANG: OnceLock<Regex> = OnceLock::new();
-    if let Some(lang) = LANG
-        .get_or_init(|| Regex::new(r#"<tt\b[^>]*\bxml:lang=["']([A-Za-z0-9-]{1,35})["']"#).unwrap())
-        .captures(&text)
-    {
+    static LANG: LazyLock<Regex> = LazyLock::new(|| Regex::new(r#"<tt\b[^>]*\bxml:lang=["']([A-Za-z0-9-]{1,35})["']"#).unwrap());
+    if let Some(lang) = LANG.captures(&text) {
         result = result.replacen("<tt ", &format!("<tt xml:lang=\"{}\" ", &lang[1]), 1);
     }
     Some(result)
@@ -1493,11 +1355,10 @@ struct LyricLine {
     is_bg: bool,
 }
 fn lrc_lines(text: &str) -> Vec<LyricLine> {
-    static STAMP: OnceLock<Regex> = OnceLock::new();
-    let stamp = STAMP.get_or_init(|| Regex::new(r"\[(\d+):(\d+(?:\.\d+)?)\]").unwrap());
-    static OFFSET: OnceLock<Regex> = OnceLock::new();
+    static STAMP: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\[(\d+):(\d+(?:\.\d+)?)\]").unwrap());
+    let stamp = &*STAMP;
+    static OFFSET: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\[offset:([+-]?\d+)\]").unwrap());
     let offset = OFFSET
-        .get_or_init(|| Regex::new(r"\[offset:([+-]?\d+)\]").unwrap())
         .captures(text)
         .and_then(|c| c[1].parse::<f64>().ok())
         .unwrap_or(0.0);
@@ -1534,10 +1395,10 @@ fn qrc_content(text: &str) -> String {
     // QQ leaves quotes inside LyricContent unescaped. Only a matching quote
     // followed by optional whitespace and /> ends the value, across newlines.
     // Clipped responses may omit that delimiter; retain their available content.
-    static ENVELOPE: OnceLock<Regex> = OnceLock::new();
-    let envelope = ENVELOPE.get_or_init(|| {
+    static ENVELOPE: LazyLock<Regex> = LazyLock::new(|| {
         Regex::new(r#"(?s)\bLyricContent\s*=\s*(?:"(.*?)(?:"\s*/>|$)|'(.*?)(?:'\s*/>|$))"#).unwrap()
     });
+    let envelope = &*ENVELOPE;
     let content = envelope.captures(text);
     content
         .as_ref()
@@ -1557,10 +1418,10 @@ fn qrc_lines(text: &str) -> Vec<LyricLine> {
     // parentheses, commas, and spaces. That is important for nested translations
     // such as `you((123,4)字(127,4))`.
     let text = qrc_content(text);
-    static LINE: OnceLock<Regex> = OnceLock::new();
-    let line = LINE.get_or_init(|| Regex::new(r"^\[(\d+),(\d+)\]").unwrap());
-    static WORD: OnceLock<Regex> = OnceLock::new();
-    let word = WORD.get_or_init(|| Regex::new(r"(.*?)\((\d+),(\d+)\)").unwrap());
+    static LINE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\[(\d+),(\d+)\]").unwrap());
+    let line = &*LINE;
+    static WORD: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(.*?)\((\d+),(\d+)\)").unwrap());
+    let word = &*WORD;
     let mut lines = Vec::new();
     for raw_line in text.split('\n') {
         let line_text = raw_line.trim();
@@ -1597,20 +1458,10 @@ fn qrc_lines(text: &str) -> Vec<LyricLine> {
                 .last()
                 .is_some_and(|word| word.text.ends_with(')') || word.text.ends_with('）')));
         if is_bg {
-            if let Some(first) = words.first_mut() {
-                if let Some(text) = first.text.strip_prefix('(') {
-                    first.text = text.to_owned();
-                } else if let Some(text) = first.text.strip_prefix('（') {
-                    first.text = text.to_owned();
-                }
-            }
-            if let Some(last) = words.last_mut() {
-                if let Some(text) = last.text.strip_suffix(')') {
-                    last.text = text.to_owned();
-                } else if let Some(text) = last.text.strip_suffix('）') {
-                    last.text = text.to_owned();
-                }
-            }
+            let first = &mut words[0].text;
+            *first = first.strip_prefix(['(', '（']).unwrap_or(first).to_owned();
+            let last = &mut words.last_mut().unwrap().text;
+            *last = last.strip_suffix([')', '）']).unwrap_or(last).to_owned();
         }
 
         lines.push(LyricLine {
@@ -1967,9 +1818,8 @@ fn is_role_label(text: &str) -> bool {
 }
 
 fn copyright_info(text: &str) -> bool {
-    static RE: OnceLock<Regex> = OnceLock::new();
-    RE.get_or_init(|| Regex::new(r"未[经經].*[许許]可.*(?:不得|禁止)").unwrap())
-        .is_match(text)
+    static RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"未[经經].*[许許]可.*(?:不得|禁止)").unwrap());
+    RE.is_match(text)
 }
 
 fn is_prefix_info(text: &str) -> bool {
@@ -2032,9 +1882,8 @@ fn is_info_line(line: &LyricLine, first_nonempty: bool, context: Option<LyricCon
 }
 
 fn pure_music_line(text: &str) -> bool {
-    static RE: OnceLock<Regex> = OnceLock::new();
-    RE.get_or_init(|| Regex::new(r"纯音乐[，,]?\s*请(您)?欣赏").unwrap())
-        .is_match(text)
+    static RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"纯音乐[，,]?\s*请(您)?欣赏").unwrap());
+    RE.is_match(text)
 }
 
 fn filter_info_lines(lines: Vec<LyricLine>, context: Option<LyricContext<'_>>) -> Vec<LyricLine> {
@@ -2125,42 +1974,31 @@ fn render_lyrics(
     }
     let translations = align_auxiliary(&lines, translations);
     let pronunciations = align_auxiliary(&lines, pronunciations);
-    let mut out = String::from("<body><div>");
-    for (index, line) in lines.iter().enumerate() {
-        if line.is_bg {
-            if !standalone_bg[index] {
-                continue;
-            }
-            out.push_str(&format!(
-                "<p begin=\"{:.3}\" end=\"{:.3}\">",
-                line.start as f64 / 1000.0,
-                line.end as f64 / 1000.0
-            ));
-            render_words(line, &mut out);
-            render_role(&mut out, "x-translation", translations[index].as_deref());
-            render_role(&mut out, "x-roman", pronunciations[index].as_deref());
-            out.push_str("</p>");
-            continue;
-        }
-
-        out.push_str(&format!(
-            "<p begin=\"{:.3}\" end=\"{:.3}\">",
+    let timing = |line: &LyricLine| {
+        format!(
+            "begin=\"{:.3}\" end=\"{:.3}\"",
             line.start as f64 / 1000.0,
             line.end as f64 / 1000.0
-        ));
+        )
+    };
+    let roles = |index: usize, out: &mut String| {
+        render_role(out, "x-translation", translations[index].as_deref());
+        render_role(out, "x-roman", pronunciations[index].as_deref());
+    };
+    let mut out = String::from("<body><div>");
+    for (index, line) in lines.iter().enumerate() {
+        // Attached BG rows render inside their parent; bg_parent never returns a BG row.
+        if line.is_bg && !standalone_bg[index] {
+            continue;
+        }
+        out.push_str(&format!("<p {}>", timing(line)));
         render_words(line, &mut out);
-        render_role(&mut out, "x-translation", translations[index].as_deref());
-        render_role(&mut out, "x-roman", pronunciations[index].as_deref());
+        roles(index, &mut out);
         for &bg_index in &attached_bg[index] {
             let bg = &lines[bg_index];
-            out.push_str(&format!(
-                "<span ttm:role=\"x-bg\" begin=\"{:.3}\" end=\"{:.3}\">",
-                bg.start as f64 / 1000.0,
-                bg.end as f64 / 1000.0
-            ));
+            out.push_str(&format!("<span ttm:role=\"x-bg\" {}>", timing(bg)));
             render_words(bg, &mut out);
-            render_role(&mut out, "x-translation", translations[bg_index].as_deref());
-            render_role(&mut out, "x-roman", pronunciations[bg_index].as_deref());
+            roles(bg_index, &mut out);
             out.push_str("</span>");
         }
         out.push_str("</p>");
@@ -2203,29 +2041,20 @@ fn qrc_ttml_filtered(
 }
 fn converted_lyrics_with_context(raw: &Value, context: Option<LyricContext<'_>>) -> Vec<Lyric> {
     let raw = raw.get("data").unwrap_or(raw);
-    let mut candidates = Vec::new();
-    if let Some(text) = field_text(raw, "qrc").and_then(|text| {
+    let qrc = field_text(raw, "qrc").and_then(|text| {
         qrc_ttml_filtered(
             text,
             field_text(raw, "qrctrans"),
             field_text(raw, "qrcroma"),
             context,
         )
-    }) {
-        candidates.push(Lyric {
-            source: "qrc",
-            text,
-        });
-    }
-    if let Some(text) = field_text(raw, "lrc")
-        .and_then(|text| lrc_ttml_filtered(text, field_text(raw, "lrctrans"), context))
-    {
-        candidates.push(Lyric {
-            source: "lrc",
-            text,
-        });
-    }
-    candidates
+    });
+    let lrc = field_text(raw, "lrc")
+        .and_then(|text| lrc_ttml_filtered(text, field_text(raw, "lrctrans"), context));
+    [("qrc", qrc), ("lrc", lrc)]
+        .into_iter()
+        .filter_map(|(source, text)| Some(Lyric { source, text: text? }))
+        .collect()
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -2237,6 +2066,26 @@ enum LyricsSourceState {
 struct LyricsSource<T> {
     state: LyricsSourceState,
     value: Option<T>,
+}
+impl<T> LyricsSource<T> {
+    fn none() -> Self {
+        Self {
+            state: LyricsSourceState::None,
+            value: None,
+        }
+    }
+    fn failed() -> Self {
+        Self {
+            state: LyricsSourceState::Failed,
+            value: None,
+        }
+    }
+    fn found(value: T) -> Self {
+        Self {
+            state: LyricsSourceState::Success,
+            value: Some(value),
+        }
+    }
 }
 
 async fn fetch_amll_lyrics(qq: &Qq, mid: &str) -> LyricsSource<String> {
@@ -2250,51 +2099,27 @@ async fn fetch_amll_lyrics(qq: &Qq, mid: &str) -> LyricsSource<String> {
         Ok(response) => response,
         Err(error) => {
             tracing::debug!(error = %error.without_url(), "qq AMLL lyrics source failed");
-            return LyricsSource {
-                state: LyricsSourceState::Failed,
-                value: None,
-            };
+            return LyricsSource::failed();
         }
     };
     if response.status() == StatusCode::NOT_FOUND || response.status() == StatusCode::NO_CONTENT {
-        return LyricsSource {
-            state: LyricsSourceState::None,
-            value: None,
-        };
+        return LyricsSource::none();
     }
     if !response.status().is_success() {
         tracing::debug!(status = %response.status(), "qq AMLL lyrics source failed");
-        return LyricsSource {
-            state: LyricsSourceState::Failed,
-            value: None,
-        };
+        return LyricsSource::failed();
     }
     let raw = match response.json::<Value>().await {
         Ok(raw) => raw,
         Err(error) => {
             tracing::debug!(error = %error, "qq AMLL lyrics response decode failed");
-            return LyricsSource {
-                state: LyricsSourceState::Failed,
-                value: None,
-            };
+            return LyricsSource::failed();
         }
     };
-    let Some(raw) = raw.pointer("/data/lyrics").and_then(Value::as_str) else {
-        return LyricsSource {
-            state: LyricsSourceState::None,
-            value: None,
-        };
-    };
-    let Some(text) = clean_ttml(raw) else {
-        return LyricsSource {
-            state: LyricsSourceState::None,
-            value: None,
-        };
-    };
-    LyricsSource {
-        state: LyricsSourceState::Success,
-        value: Some(text),
-    }
+    raw.pointer("/data/lyrics")
+        .and_then(Value::as_str)
+        .and_then(clean_ttml)
+        .map_or_else(LyricsSource::none, LyricsSource::found)
 }
 
 async fn fetch_ttml_lyrics(qq: &Qq, mid: &str) -> LyricsSource<String> {
@@ -2307,35 +2132,17 @@ async fn fetch_ttml_lyrics(qq: &Qq, mid: &str) -> LyricsSource<String> {
     {
         Ok(raw) => raw,
         Err(RequestError::Upstream(StatusCode::NOT_FOUND)) => {
-            return LyricsSource {
-                state: LyricsSourceState::None,
-                value: None,
-            };
+            return LyricsSource::none();
         }
         Err(_) => {
             tracing::debug!("qq TTML lyrics source failed");
-            return LyricsSource {
-                state: LyricsSourceState::Failed,
-                value: None,
-            };
+            return LyricsSource::failed();
         }
     };
-    let Some(content) = raw.get("content").and_then(Value::as_str) else {
-        return LyricsSource {
-            state: LyricsSourceState::None,
-            value: None,
-        };
-    };
-    let Some(text) = clean_ttml(content) else {
-        return LyricsSource {
-            state: LyricsSourceState::None,
-            value: None,
-        };
-    };
-    LyricsSource {
-        state: LyricsSourceState::Success,
-        value: Some(text),
-    }
+    raw.get("content")
+        .and_then(Value::as_str)
+        .and_then(clean_ttml)
+        .map_or_else(LyricsSource::none, LyricsSource::found)
 }
 
 async fn fetch_new_lyrics(qq: &Qq, mid: &str) -> LyricsSource<Value> {
@@ -2348,30 +2155,21 @@ async fn fetch_new_lyrics(qq: &Qq, mid: &str) -> LyricsSource<Value> {
     {
         Ok(raw) => raw,
         Err(RequestError::Upstream(StatusCode::NOT_FOUND)) => {
-            return LyricsSource {
-                state: LyricsSourceState::None,
-                value: None,
-            };
+            return LyricsSource::none();
         }
         Err(_) => {
             tracing::debug!("qq QRC lyrics source failed");
-            return LyricsSource {
-                state: LyricsSourceState::Failed,
-                value: None,
-            };
+            return LyricsSource::failed();
         }
     };
     let raw = raw.get("data").cloned().unwrap_or(raw);
     let has_lyrics = ["qrc", "qrctrans", "qrcroma", "lrc", "lrctrans"]
         .iter()
         .any(|key| field_text(&raw, key).is_some_and(|text| !text.trim().is_empty()));
-    LyricsSource {
-        state: if has_lyrics {
-            LyricsSourceState::Success
-        } else {
-            LyricsSourceState::None
-        },
-        value: has_lyrics.then_some(raw),
+    if has_lyrics {
+        LyricsSource::found(raw)
+    } else {
+        LyricsSource::none()
     }
 }
 
@@ -2397,21 +2195,12 @@ async fn fetch_lyrics(qq: &Qq, mid: &str) -> ApiResult<(Lyrics, Duration)> {
         fetch_new_lyrics(qq, mid),
         context,
     );
-    let mut candidates = Vec::new();
+    let mut candidates: Vec<_> = [("amll", amll.value), ("ttml", ttml.value)]
+        .into_iter()
+        .filter_map(|(source, text)| Some(Lyric { source, text: text? }))
+        .collect();
     let mut raw_lyrics = RawLyrics::default();
     let mut context_failed_with_candidates = false;
-    if let Some(text) = amll.value {
-        candidates.push(Lyric {
-            source: "amll",
-            text,
-        });
-    }
-    if let Some(text) = ttml.value {
-        candidates.push(Lyric {
-            source: "ttml",
-            text,
-        });
-    }
     let mut new_state = new.state;
     if let Some(raw) = new.value {
         // Lyrics can be requested before the song details page has populated the

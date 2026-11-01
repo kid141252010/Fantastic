@@ -1570,56 +1570,16 @@ fn quality_whitelist_roundtrips_every_verified_code_in_group_order() {
 fn basic_aac_and_ogg_tiers_keep_verified_bitrates_and_native_classification() {
     let file = json!({"size_128mp3":1280,"size_48aac":480,"size_96aac":960,
         "size_192aac":1920,"size_96ogg":961,"size_192ogg":1921});
-    for (quality, size, extension, format, codec, content_type) in [
-        (
-            Quality::Mp3128,
-            1280,
-            "mp3",
-            "MP3 128 kbps",
-            "mp3",
-            "audio/mpeg",
-        ),
-        (
-            Quality::Aac48,
-            480,
-            "m4a",
-            "AAC 48 kbps",
-            "aac",
-            "audio/mp4; codecs=\"mp4a.40.2\"",
-        ),
-        (
-            Quality::Web,
-            960,
-            "m4a",
-            "AAC 96 kbps",
-            "aac",
-            "audio/mp4; codecs=\"mp4a.40.2\"",
-        ),
-        (
-            Quality::Aac192,
-            1920,
-            "AAC",
-            "AAC 192 kbps",
-            "aac",
-            "audio/aac",
-        ),
-        (
-            Quality::Ogg96,
-            961,
-            "ogg",
-            "Ogg 96 kbps",
-            "vorbis",
-            "audio/ogg; codecs=\"vorbis\"",
-        ),
-        (
-            Quality::Ogg192,
-            1921,
-            "ogg",
-            "Ogg 192 kbps",
-            "vorbis",
-            "audio/ogg; codecs=\"vorbis\"",
-        ),
-    ] {
+    #[rustfmt::skip]
+    let cases = [
+        (Quality::Mp3128, 1280, "mp3", "MP3 128 kbps", "mp3", "audio/mpeg"),
+        (Quality::Aac48, 480, "m4a", "AAC 48 kbps", "aac", "audio/mp4; codecs=\"mp4a.40.2\""),
+        (Quality::Web, 960, "m4a", "AAC 96 kbps", "aac", "audio/mp4; codecs=\"mp4a.40.2\""),
+        (Quality::Aac192, 1920, "AAC", "AAC 192 kbps", "aac", "audio/aac"),
+        (Quality::Ogg96, 961, "ogg", "Ogg 96 kbps", "vorbis", "audio/ogg; codecs=\"vorbis\""),
+        (Quality::Ogg192, 1921, "ogg", "Ogg 192 kbps", "vorbis", "audio/ogg; codecs=\"vorbis\""),
+    ];
+    for (quality, size, extension, format, codec, content_type) in cases {
         let source = audio(quality, Some(size), extension);
         let row = QualityRow::from_audio(quality, &file, Some(&source));
         assert_eq!(row.playback, Playback::Native, "{quality:?}");
@@ -1636,36 +1596,14 @@ fn basic_aac_and_ogg_tiers_keep_verified_bitrates_and_native_classification() {
 #[test]
 fn dolby_tiers_follow_verified_wet_sample_entries() {
     let file = json!({"size_dolby":5112212,"size_new":[8936764,29870162]});
-    for (quality, size, codec, playback, format) in [
-        (
-            Quality::Da,
-            5112212,
-            Codec::Ac4,
-            Playback::Native,
-            "AC-4 Dolby Atmos",
-        ),
-        (
-            Quality::Da448,
-            8936764,
-            Codec::Ac4,
-            Playback::Native,
-            "AC-4 A-JOC 448 kbps",
-        ),
-        (
-            Quality::Da1500,
-            29870162,
-            Codec::Ac4,
-            Playback::Native,
-            "AC-4 A-JOC 1500 kbps",
-        ),
-        (
-            Quality::Daeac3,
-            5112212,
-            Codec::Ec3,
-            Playback::Joc,
-            "E-AC-3 JOC",
-        ),
-    ] {
+    #[rustfmt::skip]
+    let cases = [
+        (Quality::Da, 5112212, Codec::Ac4, Playback::Native, "AC-4 Dolby Atmos"),
+        (Quality::Da448, 8936764, Codec::Ac4, Playback::Native, "AC-4 A-JOC 448 kbps"),
+        (Quality::Da1500, 29870162, Codec::Ac4, Playback::Native, "AC-4 A-JOC 1500 kbps"),
+        (Quality::Daeac3, 5112212, Codec::Ec3, Playback::Joc, "E-AC-3 JOC"),
+    ];
+    for (quality, size, codec, playback, format) in cases {
         let info_row = QualityRow::from_size(quality, Some(size), quality.format());
         assert_eq!(info_row.playback, playback, "{quality:?}");
         assert_eq!(info_row.codec, codec.name());
@@ -1913,41 +1851,14 @@ async fn qualities_endpoint_returns_all_tiers_and_uses_shared_cached_probes() {
             "Q360V1", "Q360V2", "RA360", "DTS", "DTSX", "DA", "DAEAC3", "DA448", "DA1500"
         ]
     );
-    for (quality, available, size, format, playback, codec) in [
-        (
-            "MP3128",
-            true,
-            Some(4317292),
-            "MP3 128 kbps",
-            "native",
-            "mp3",
-        ),
+    #[rustfmt::skip]
+    let cases = [
+        ("MP3128", true, Some(4317292), "MP3 128 kbps", "native", "mp3"),
         ("AAC48", true, Some(1600000), "AAC 48 kbps", "native", "aac"),
         ("WEB", true, Some(3259882), "AAC 96 kbps", "native", "aac"),
-        (
-            "AAC192",
-            true,
-            Some(6519764),
-            "AAC 192 kbps",
-            "native",
-            "aac",
-        ),
-        (
-            "OGG96",
-            true,
-            Some(3200000),
-            "Ogg 96 kbps",
-            "native",
-            "vorbis",
-        ),
-        (
-            "OGG192",
-            true,
-            Some(6400000),
-            "Ogg 192 kbps",
-            "native",
-            "vorbis",
-        ),
+        ("AAC192", true, Some(6519764), "AAC 192 kbps", "native", "aac"),
+        ("OGG96", true, Some(3200000), "Ogg 96 kbps", "native", "vorbis"),
+        ("OGG192", true, Some(6400000), "Ogg 192 kbps", "native", "vorbis"),
         ("HQ", true, Some(10792943), "MP3 320 kbps", "native", "mp3"),
         ("NAC", false, None, "AICodec", "download", "nac"),
         ("SQ", true, Some(55397039), "FLAC", "native", "flac"),
@@ -1955,42 +1866,15 @@ async fn qualities_endpoint_returns_all_tiers_and_uses_shared_cached_probes() {
         ("QAI", true, Some(186980254), "FLAC", "native", "flac"),
         ("Q360V1", true, Some(58805051), "FLAC", "native", "flac"),
         ("Q360V2", true, Some(80437198), "FLAC", "native", "flac"),
-        (
-            "RA360",
-            false,
-            None,
-            "360 Reality Audio",
-            "download",
-            "unknown",
-        ),
+        ("RA360", false, None, "360 Reality Audio", "download", "unknown"),
         ("DTS", false, None, "DTS", "download", "dts"),
         ("DTSX", false, None, "DTS:X", "download", "dtsx"),
-        (
-            "DA",
-            true,
-            Some(5112212),
-            "AC-4 Dolby Atmos",
-            "native",
-            "ac-4",
-        ),
+        ("DA", true, Some(5112212), "AC-4 Dolby Atmos", "native", "ac-4"),
         ("DAEAC3", true, Some(5112212), "E-AC-3 JOC", "joc", "ec-3"),
-        (
-            "DA448",
-            true,
-            Some(8936764),
-            "AC-4 A-JOC 448 kbps",
-            "native",
-            "ac-4",
-        ),
-        (
-            "DA1500",
-            true,
-            Some(29870162),
-            "AC-4 A-JOC 1500 kbps",
-            "native",
-            "ac-4",
-        ),
-    ] {
+        ("DA448", true, Some(8936764), "AC-4 A-JOC 448 kbps", "native", "ac-4"),
+        ("DA1500", true, Some(29870162), "AC-4 A-JOC 1500 kbps", "native", "ac-4"),
+    ];
+    for (quality, available, size, format, playback, codec) in cases {
         let row = rows.iter().find(|row| row["quality"] == quality).unwrap();
         assert_eq!(row["available"], available, "{quality}");
         assert_eq!(row["sizeBytes"], json!(size), "{quality}");
