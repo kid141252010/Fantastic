@@ -19,11 +19,9 @@ export function mount({ root, signal, player, navigate, onLangChange, toast, loa
   let source = 'apple';
   try { source = qq.enabled() && (new URL(location.href).searchParams.get('source') || localStorage.getItem('am-hook:source')) === 'qq' ? 'qq' : 'apple'; } catch {}
   let qqRows = [], qqTracks = [];
-  const favoritesView = () => source === 'qq' && new URL(location.href).searchParams.get('qq') === 'favorites';
   function applySource() {
     $('source-switch').hidden = !qq.enabled();
     $('source-select').value = source;
-    $('qq-favorites').hidden = source !== 'qq';
     $('storefront').hidden = source === 'qq';
     for (const node of root.querySelectorAll('.examples, .formats')) node.hidden = source === 'qq';
     input.dataset.i18nAttr = source === 'qq' ? 'placeholder=qq.placeholder' : 'placeholder=home.placeholder';
@@ -36,7 +34,7 @@ export function mount({ root, signal, player, navigate, onLangChange, toast, loa
     source = $('source-select').value === 'qq' ? 'qq' : 'apple';
     closeSuggest();
     const url = new URL(location.href);
-    url.searchParams.set('source', source); url.searchParams.delete('qq');
+    url.searchParams.set('source', source);
     window.history.pushState(null, '', url);
     applySource(); renderDetect();
     if (input.value.trim()) runSearch(input.value.trim(), 'replace'); else closeResults();
@@ -51,25 +49,7 @@ export function mount({ root, signal, player, navigate, onLangChange, toast, loa
     resultsBody.replaceChildren(...(qqRows.length ? [list] : [statusNode(t('search.none'))]));
     syncTrackRows(qqRows, player);
   }
-  function showFavorites() {
-    if (search.controller) search.controller.abort();
-    search.controller = null;
-    search.term = '';
-    resultsEl.hidden = false;
-    $('results-title').textContent = t('qq.favorites');
-    $('results-tabs').hidden = true;
-    qqTracks = qq.favorites(); renderQQTracks();
-  }
   player.onChange(() => syncTrackRows(qqRows, player));
-  signal.addEventListener('abort', qq.onFavoritesChange(() => {
-    if (source !== 'qq') return;
-    if (favoritesView()) showFavorites(); else {
-      if (!resultsBody.querySelector('.qq-tracks')) return;
-      const more = resultsBody.querySelector('.load-more');
-      renderQQTracks();
-      if (more) resultsBody.append(more);
-    }
-  }), { once: true });
 
   /** 把各种输入规整为页面路径：/https://music.apple.com/{cc}/(song|music-video|album|playlist|artist)/{slug}/{id} */
   function toSongLink(raw) {
@@ -410,7 +390,6 @@ export function mount({ root, signal, player, navigate, onLangChange, toast, loa
     if (history) {
       const url = new URL(location.href);
       url.searchParams.set('q', term);
-      url.searchParams.delete('qq');
       if (qq.enabled()) url.searchParams.set('source', source);
       if (url.href !== location.href) {
         if (history === 'push') window.history.pushState(null, '', url);
@@ -638,9 +617,8 @@ export function mount({ root, signal, player, navigate, onLangChange, toast, loa
     resultsEl.hidden = true;
     resultsBody.replaceChildren();
     const url = new URL(location.href);
-    if (url.searchParams.has('q') || url.searchParams.has('qq')) {
+    if (url.searchParams.has('q')) {
       url.searchParams.delete('q');
-      url.searchParams.delete('qq');
       history.replaceState(history.state, '', url);
     }
   }
@@ -653,7 +631,6 @@ export function mount({ root, signal, player, navigate, onLangChange, toast, loa
     const nextSource = qq.enabled() && params.get('source') === 'qq' ? 'qq' : params.has('source') ? 'apple' : source;
     const changed = source !== nextSource;
     source = nextSource; applySource();
-    if (favoritesView()) { showFavorites(); return; }
     const q = (params.get('q') || '').trim();
     if (!q) {
       if (search.term || !resultsEl.hidden) closeResults();
@@ -670,7 +647,7 @@ export function mount({ root, signal, player, navigate, onLangChange, toast, loa
     closeSuggest();
     if (!errorEl.hidden && errorKey) errorEl.textContent = t(errorKey);
     applySource();
-    if (favoritesView()) showFavorites(); else if (search.term) runSearch(search.term);
+    if (search.term) runSearch(search.term);
     renderRecent();
   });
 

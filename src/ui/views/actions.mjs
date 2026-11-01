@@ -318,7 +318,6 @@ function libraryKey(target) {
  * 喜爱用的键：本地歌单为 { local: true, id }，艺人为 { kind: 'artist', id }，其余与 libraryKey 相同；不能喜爱时为 null
  */
 function favoriteKey(target) {
-  if (target.track?.source === 'qq') return { qq: true, id: target.track.id };
   if (target.kind === 'library-playlist') return target.playlistId ? { local: true, id: target.playlistId } : null;
   if (target.kind === 'artist') {
     const id = target.resource ? target.resource.id : ((target.href || '').match(/\/(\d+)$/) || [])[1];
@@ -546,16 +545,14 @@ export function createActions({ signal, player, navigate, toast }) {
     }
   }
 
-  const favoriteOf = (key) => !!key && (key.qq ? qq.isFavorite({ source: 'qq', id: key.id }) : key.local ? !!(library.playlist(key.id) || {}).favorite : library.isFavorite(key.kind, key.id));
+  const favoriteOf = (key) => !!key && (key.local ? !!(library.playlist(key.id) || {}).favorite : library.isFavorite(key.kind, key.id));
 
   /** 喜爱 / 取消喜爱（与 Apple Music 相同，喜爱时同时加入资料库）；busy 为请求曲目期间显示忙碌的按钮 */
   async function toggleFavorite(target, busy) {
     const key = favoriteKey(target);
     if (!key) return;
     const on = !favoriteOf(key);
-    if (key.qq) {
-      try { qq.toggleFavorite(target.track); } catch { toast(t('qq.storageFailed')); return; }
-    } else if (key.local) {
+    if (key.local) {
       library.setPlaylistFavorite(key.id, on);
     } else {
       if (busy) busy.classList.add('busy');
@@ -617,8 +614,6 @@ export function createActions({ signal, player, navigate, toast }) {
     if (target.track?.source === 'qq') return [
       ...(!target.noPlay ? [{ icon: ICON.play, label: t('action.play'), onSelect: () => play(target, button) }] : []),
       { icon: ICON.download, label: t('qq.download'), onSelect: () => qq.download(target.track) },
-      { icon: qq.isFavorite(target.track) ? LIB_ICON.star : LIB_ICON.starFilled,
-        label: t(qq.isFavorite(target.track) ? 'library.unfavorite' : 'library.favorite'), onSelect: () => toggleFavorite(target, button) },
     ];
     const items = [];
     if (target.kind === 'music-video') items.push({ icon: ICON.video, label: t('action.playMv'), onSelect: () => navigate(target.href) });
@@ -753,7 +748,6 @@ export function createActions({ signal, player, navigate, toast }) {
       if (target) toggleFavorite(target, button);
     });
     signal.addEventListener('abort', library.onChange(refresh), { once: true });
-    signal.addEventListener('abort', qq.onFavoritesChange(refresh), { once: true });
     refresh();
     return { button, refresh };
   }

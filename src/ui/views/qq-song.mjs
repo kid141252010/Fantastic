@@ -30,13 +30,6 @@ export function mount({ root, url, signal, player, onLangChange, toast }) {
   const defaultQuality = () => qq.pickDefaultQuality(rows, prefs.get('playback').quality);
   const currentTrack = () => !!track && trackKey(player.current) === track.key;
 
-  function renderFavorite() {
-    const saved = track && qq.isFavorite(track);
-    $('favorite').disabled = !track;
-    $('favorite').textContent = t(saved ? 'library.unfavorite' : 'library.favorite');
-    $('favorite').setAttribute('aria-pressed', String(!!saved));
-  }
-
   function renderHeader() {
     document.title = `${track?.name || t('qq.songTitle')} · am-hook`;
     if (!track) return;
@@ -48,7 +41,6 @@ export function mount({ root, url, signal, player, onLangChange, toast }) {
     header({ cover: track.artwork, attrs: {}, alt: t('song.coverAlt', { title: track.name }) });
     $('enqueue').disabled = false;
     $('enqueue').textContent = t('qq.addQueue');
-    renderFavorite();
     syncPlaying();
   }
 
@@ -138,17 +130,12 @@ export function mount({ root, url, signal, player, onLangChange, toast }) {
     const row = defaultQuality();
     if (row) playQuality(row.quality);
   });
-  $('favorite').addEventListener('click', () => {
-    if (!track) return;
-    try { qq.toggleFavorite(track); } catch { toast(t('qq.storageFailed')); }
-  });
   $('enqueue').addEventListener('click', () => {
     if (!track) return;
     player.appendQueue(qq.entryOf(track));
     toast(t('qq.queued'));
   });
   player.onChange(syncPlaying);
-  signal.addEventListener('abort', qq.onFavoritesChange(renderFavorite), { once: true });
   signal.addEventListener('abort', prefs.onChange((section) => { if (section === 'playback') syncPlaying(); }), { once: true });
   onLangChange(render);
   render();
