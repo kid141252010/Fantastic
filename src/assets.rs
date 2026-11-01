@@ -410,7 +410,7 @@ mod tests {
     /// serverless 部署（scripts/build-static.mjs）与二进制提供同样的哈希地址与内容；没有 node 时跳过
     #[test]
     fn build_static_matches() {
-        let out = std::env::temp_dir().join(format!("am-hook-dist-{}", std::process::id()));
+        let out = std::env::temp_dir().join(format!("fantastic-dist-{}", std::process::id()));
         let script = concat!(env!("CARGO_MANIFEST_DIR"), "/scripts/build-static.mjs");
         match std::process::Command::new("node").arg(script).arg(&out).output() {
             Ok(result) => assert!(result.status.success(), "{}", String::from_utf8_lossy(&result.stderr)),

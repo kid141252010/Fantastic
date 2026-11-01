@@ -1,10 +1,10 @@
-// Live regression: start am-hook with the default wrapper-lite, then run:
+// Live regression: start fantastic with the default wrapper-lite, then run:
 // node tests/alac_recovery.cjs <path-to-playwright-package>
-// AM_HOOK_URL optionally overrides http://127.0.0.1:8888.
+// FANTASTIC_URL optionally overrides http://127.0.0.1:8888.
 // Uses the server's embedded WASM and the browser's CDN/decryption/MSE path.
 const assert = require('node:assert/strict');
 const { chromium } = require(process.argv[2] || 'playwright');
-const origin = process.env.AM_HOOK_URL || 'http://127.0.0.1:8888';
+const origin = process.env.FANTASTIC_URL || 'http://127.0.0.1:8888';
 
 (async () => {
   const browser = await chromium.launch({

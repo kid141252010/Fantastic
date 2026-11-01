@@ -6,7 +6,7 @@ use clap::Parser;
 use crate::state::Config;
 
 #[derive(Parser, Debug, Clone)]
-#[command(name = "am-hook", author, version, about = "Apple Music FairPlay HLS decryption in the browser")]
+#[command(name = "fantastic", author, version, about = "Apple Music FairPlay HLS decryption in the browser")]
 pub struct Cli {
     /// Listen address (e.g. 0.0.0.0:8888 or 127.0.0.1:8888)
     #[arg(short, long, default_value = "0.0.0.0:8888")]
@@ -23,14 +23,14 @@ pub struct Cli {
 
     /// Do not relay wrapper-lite requests: pages only use a wrapper-lite the browser
     /// connects to directly (Settings > wrapper-lite > Local), like a serverless deployment
-    /// without AM_HOOK_WRAPPER_URL. --wrapper-url / --wrapper-rate / --wrapper-concurrency
+    /// without FANTASTIC_WRAPPER_URL. --wrapper-url / --wrapper-rate / --wrapper-concurrency
     /// become the page defaults; --wrapper-auth is not used
     #[arg(long)]
     pub local_wrapper_only: bool,
 
     /// Note shown above the local wrapper-lite settings in the page, e.g. where to get a
     /// token for a public wrapper-lite. URLs in it become links
-    #[arg(long, env = "AM_HOOK_WRAPPER_HINT")]
+    #[arg(long, env = "FANTASTIC_WRAPPER_HINT")]
     pub wrapper_hint: Option<String>,
 
     /// Max requests per second sent to wrapper-lite (any 1-second window); 0 = unlimited
@@ -44,20 +44,20 @@ pub struct Cli {
     /// Authorization header for wrapper-lite requests. A bare token is sent as
     /// "Bearer <token>"; a value with a scheme ("Bearer ...", "Basic ...") is sent as is.
     /// Not sent by default
-    #[arg(long, env = "AM_HOOK_WRAPPER_AUTH", hide_env_values = true)]
+    #[arg(long, env = "FANTASTIC_WRAPPER_AUTH", hide_env_values = true)]
     pub wrapper_auth: Option<String>,
 
     /// HTTP API address of AMLL TTML DB. The browser connects directly to it to fetch
     /// lyrics when the page lyrics source is set to the AMLL lyrics library
-    #[arg(long, env = "AM_HOOK_AMLL_API", default_value = "https://api.amll.dev")]
+    #[arg(long, env = "FANTASTIC_AMLL_API", default_value = "https://api.amll.dev")]
     pub amll_api: String,
 
     /// Server-only QQ API base URL (e.g. https://example.invalid/api/web)
-    #[arg(long, env = "AM_HOOK_QQ_API", hide_env_values = true)]
+    #[arg(long, env = "FANTASTIC_QQ_API", hide_env_values = true)]
     pub qq_api: Option<String>,
 
     /// Server-only outbound proxy for QQ API and media requests (HTTP or SOCKS5)
-    #[arg(long, env = "AM_HOOK_QQ_PROXY", hide_env_values = true)]
+    #[arg(long, env = "FANTASTIC_QQ_PROXY", hide_env_values = true)]
     pub qq_proxy: Option<String>,
 
     /// Max wrapper-lite requests relayed per client IP in any 60 seconds (/status not

@@ -2,7 +2,7 @@
 // Uses installed Chrome and local fixtures; no wrapper or Apple CDN required.
 // Covers the local wrapper-lite mode (src/ui/wrapper.js + the wrapper-lite panel in settings.mjs): the browser
 // sends wrapper-lite requests itself with Authorization and its own rate / concurrency limits, parses the song
-// master m3u8 itself, and still has am-hook fetch the MV master (User-Agent: AM).
+// master m3u8 itself, and still has fantastic fetch the MV master (User-Agent: AM).
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -137,7 +137,7 @@ const cors = { 'access-control-allow-origin': '*', 'access-control-allow-headers
     assert.equal(wrapperRequests.find((r) => r.path.startsWith('/lyrics')).path, '/lyrics?adamId=123&language=en-US');
     assert(wrapperRequests.every((r) => r.auth === 'Bearer secret-token'));
     assert.deepEqual(JSON.parse(wrapperRequests[4].body), { adamId: '5', uri: 'data:;base64,Yg==', challenge: 'YQ==', 'drm-type': 'pr' });
-    // The MV master is still fetched by am-hook
+    // The MV master is still fetched by fantastic
     assert.deepEqual(serverRequests, ['/parse/mv-master?url=https%3A%2F%2Fplay.itunes.apple.com%2FWebObjects%2FMZPlay.woa%2Fhls%2Fmaster.m3u8']);
 
     // Rate (3/s) and concurrency (2) limits apply to the local wrapper-lite
@@ -194,12 +194,12 @@ const cors = { 'access-control-allow-origin': '*', 'access-control-allow-headers
     assert.equal(await page.locator('[data-setting-value="wrapper"]').textContent(), 'Server');
     assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('am-hook-wrapper')).local), false);
 
-    // am-hook --local-wrapper-only (host.js from the server): only Local, the operator's defaults and hint
+    // fantastic --local-wrapper-only (host.js from the server): only Local, the operator's defaults and hint
     const hosted = await context.newPage();
     hosted.on('pageerror', (e) => errors.push(e.message));
     await hosted.addInitScript(() => localStorage.removeItem('am-hook-wrapper'));
     const host = { serverWrapper: false, wrapper: { url: WRAPPER, rate: 4, concurrency: 1 }, hint: 'Get a token at https://token.test/apply.\nThen paste it below.' };
-    await hosted.route('**/assets/host.js', (route) => route.fulfill({ contentType: 'text/javascript', body: `window.AM_HOOK_HOST = ${JSON.stringify(host)};\n` }));
+    await hosted.route('**/assets/host.js', (route) => route.fulfill({ contentType: 'text/javascript', body: `window.FANTASTIC_HOST = ${JSON.stringify(host)};\n` }));
     serverRequests.length = 0;
     await hosted.goto('http://am.test/');
     await hosted.locator('#nav-status.ok').waitFor();
@@ -215,7 +215,7 @@ const cors = { 'access-control-allow-origin': '*', 'access-control-allow-headers
     await hosted.close();
 
     assert.deepEqual(errors, []);
-    console.log('Passed local wrapper-lite: panel validation, persistence, direct requests with Authorization, limits, song master parsing, MV master via am-hook, local-only host with defaults and hint.');
+    console.log('Passed local wrapper-lite: panel validation, persistence, direct requests with Authorization, limits, song master parsing, MV master via fantastic, local-only host with defaults and hint.');
   } finally {
     await browser.close();
   }

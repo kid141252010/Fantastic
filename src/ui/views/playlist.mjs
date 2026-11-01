@@ -154,7 +154,7 @@ export function mount({ root, url, signal, player, navigate, onLangChange, toast
   /* ---------- 渲染 ---------- */
   function renderHero() {
     const a = playlist.attributes;
-    document.title = `${a.name} · am-hook`;
+    document.title = `${a.name} · Fantastic`;
     $('title').classList.remove('skeleton');
     $('title').textContent = a.name;
 

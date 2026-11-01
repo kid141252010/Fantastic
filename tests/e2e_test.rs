@@ -1,5 +1,5 @@
 //! 在线端到端测试默认忽略：cargo test --test e2e_test -- --ignored
-//! 需要 wrapper-lite（默认 http://127.0.0.1:12340，可用 AM_HOOK_WRAPPER 覆盖）
+//! 需要 wrapper-lite（默认 http://127.0.0.1:12340，可用 FANTASTIC_WRAPPER 覆盖）
 
 use std::sync::Arc;
 
@@ -7,10 +7,10 @@ use axum::body::to_bytes;
 use axum::http::StatusCode;
 use axum::response::Response;
 
-use am_hook::state::AppState;
+use fantastic::state::AppState;
 
 fn new_state() -> Arc<AppState> {
-    let wrapper = std::env::var("AM_HOOK_WRAPPER").unwrap_or_else(|_| "http://127.0.0.1:12340".into());
+    let wrapper = std::env::var("FANTASTIC_WRAPPER").unwrap_or_else(|_| "http://127.0.0.1:12340".into());
     Arc::new(AppState::new(wrapper))
 }
 
@@ -22,7 +22,7 @@ async fn body(resp: Response) -> bytes::Bytes {
 #[ignore = "requires live wrapper-lite; run locally with --ignored"]
 async fn test_lyrics_e2e() {
     // wrapper-lite /lyrics 的 TTML 原样返回；没有歌词的歌曲为 404，非法 ID 为 400
-    use am_hook::ui::{lyrics_handler, LyricsQuery};
+    use fantastic::ui::{lyrics_handler, LyricsQuery};
     use axum::extract::{Path, Query, State};
     // 不传 language：由 wrapper-lite 按歌曲所在地区的默认语言返回
     let no_language = || Query(LyricsQuery { language: None });

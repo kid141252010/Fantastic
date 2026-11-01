@@ -86,7 +86,7 @@ export function mount(ctx) {
   const country = match ? match[1].toLowerCase() : 'us';
   const id = match ? match[2] : '';
   const $ = (name) => root.querySelector(`#${name}`);
-  document.title = `${t('station.pageTitle')} · am-hook`;
+  document.title = `${t('station.pageTitle')} · Fantastic`;
 
   /** 当前的子页面（tracks / stream），{ group, update(station) } */
   let view = null;
@@ -193,7 +193,7 @@ function mountTracks({ signal, player, navigate, toast }, $) {
 
   function renderHero() {
     const a = station.attributes;
-    document.title = `${a.name} · am-hook`;
+    document.title = `${a.name} · Fantastic`;
     $('eyebrow').textContent = kindLabel(station, kind);
     $('title').textContent = a.name || id;
     const notes = notesOf(a);
@@ -458,7 +458,7 @@ function mountStream({ signal, player: music }, $) {
   /* ---------- 电台信息 ---------- */
   function renderInfo() {
     const a = station.attributes;
-    document.title = `${a.name || id} · am-hook`;
+    document.title = `${a.name || id} · Fantastic`;
     $('eyebrow').textContent = kindLabel(station, kind).toUpperCase();
     $('kind-badge').textContent = kindLabel(station, kind);
     $('title').textContent = a.name || id;

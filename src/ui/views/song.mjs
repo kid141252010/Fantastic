@@ -443,7 +443,7 @@ export function mount({ root, url, signal, player, navigate, onLangChange, toast
     if (!metaLoaded) return;
     const a = song ? song.attributes : {};
     const title = a.name || t('song.fallbackTitle', { id: adamId });
-    document.title = `${title} · am-hook`;
+    document.title = `${title} · Fantastic`;
     $('title').classList.remove('skeleton');
     $('title').replaceChildren(title, a.contentRating === 'explicit' ? explicitBadge() : '');
     // 艺人名链接到本站艺人页

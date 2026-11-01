@@ -5,7 +5,7 @@
 //   主地区：先列出 wrapper-lite 账号所在地区（最佳体验），再列出收藏的地区（默认 us / cn / jp）；
 //          其余地区收在「更多地区」里，展开后可筛选，每个地区右侧的星标按钮收藏 / 取消收藏。
 //   曲库语言：只列出主地区在 /amp/v1/storefronts 里的 supportedLanguageTags，默认为地区的 defaultLanguageTag。
-//   wrapper-lite：服务端（经 am-hook 转发）或本地（浏览器直连，可设地址、限速、限并发与 Authorization），
+//   wrapper-lite：服务端（经 fantastic 转发）或本地（浏览器直连，可设地址、限速、限并发与 Authorization），
 //          设置由 wrapper.js 的 AmWrapper 保存；保存后由 app.mjs 重新检查状态，结果显示在面板里。
 
 const { AmI18n, AmWrapper } = window;

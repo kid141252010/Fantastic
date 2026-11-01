@@ -19,4 +19,4 @@ crate-type = ["rlib", "cdylib"]
 
 [dependencies]
 
-# 作为 am-hook 工作区成员时，profile 统一由根 Cargo.toml 配置
+# 作为 Fantastic 工作区成员时，profile 统一由根 Cargo.toml 配置

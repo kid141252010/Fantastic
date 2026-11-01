@@ -1,5 +1,5 @@
 //! Offline checks for MV control-plane relays and server-side master fetching.
-use am_hook::{state::AppState, ui};
+use fantastic::{state::AppState, ui};
 use axum::{
     body::to_bytes,
     extract::{Path, State},
@@ -141,7 +141,7 @@ async fn parses_mv_master_with_fixed_user_agent() {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let app_addr = listener.local_addr().unwrap();
     let app = tokio::spawn(async move {
-        axum::serve(listener, am_hook::router(state)).await.unwrap();
+        axum::serve(listener, fantastic::router(state)).await.unwrap();
     });
     let client = reqwest::Client::new();
     let response = client

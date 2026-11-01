@@ -19,7 +19,7 @@ struct GithubRelease {
 
 fn client() -> Result<reqwest::Client, Error> {
     Ok(reqwest::Client::builder()
-        .user_agent("am-hook-updater")
+        .user_agent("fantastic-updater")
         .connect_timeout(CONNECT_TIMEOUT)
         .build()?)
 }
@@ -84,7 +84,7 @@ pub async fn download_and_update(tag: &str) -> Result<(), Error> {
     // 获取当前可执行文件路径
     let current_exe = env::current_exe()?;
     let current_dir = current_exe.parent().ok_or("Cannot get exe directory")?;
-    let temp_path = current_dir.join(format!("am-hook-new{}", env::consts::EXE_SUFFIX));
+    let temp_path = current_dir.join(format!("fantastic-new{}", env::consts::EXE_SUFFIX));
 
     // 写入临时文件
     fs::write(&temp_path, &bytes)?;
@@ -94,19 +94,19 @@ pub async fn download_and_update(tag: &str) -> Result<(), Error> {
     {
         // Windows 无法替换正在运行的 exe，需要使用 self-replace crate 或提示重启
         warn!("Update downloaded to: {:?}", temp_path);
-        warn!("Please restart am-hook to complete the update");
+        warn!("Please restart fantastic to complete the update");
         warn!("Manual steps:");
-        warn!("  1. Stop am-hook");
+        warn!("  1. Stop fantastic");
         warn!("  2. Rename {:?} to a backup name", current_exe.file_name().unwrap_or_default());
         warn!("  3. Rename {:?} to {:?}", temp_path.file_name().unwrap_or_default(), current_exe.file_name().unwrap_or_default());
-        warn!("  4. Restart am-hook");
+        warn!("  4. Restart fantastic");
     }
 
     #[cfg(not(windows))]
     {
         use std::os::unix::fs::PermissionsExt;
 
-        let backup_path = current_dir.join("am-hook-backup");
+        let backup_path = current_dir.join("fantastic-backup");
         let replace = || -> std::io::Result<()> {
             fs::set_permissions(&temp_path, fs::Permissions::from_mode(0o755))?;
             // 先复制备份，再用 rename 原子覆盖；任一步失败时当前可执行文件保持不变
@@ -117,7 +117,7 @@ pub async fn download_and_update(tag: &str) -> Result<(), Error> {
             let _ = fs::remove_file(&temp_path);
             return Err(e.into());
         }
-        info!("Update complete! Please restart am-hook");
+        info!("Update complete! Please restart fantastic");
         info!("Backup saved to: {:?}", backup_path);
     }
 

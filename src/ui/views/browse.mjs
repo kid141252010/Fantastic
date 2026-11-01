@@ -738,7 +738,7 @@ export function mount({ root, url, signal, player, navigate, onLangChange, toast
     const title = model ? model.title : '';
     $('title').classList.toggle('skeleton', !model);
     $('title').textContent = title || ' ';
-    document.title = title ? `${title} · am-hook` : 'am-hook';
+    document.title = title ? `${title} · Fantastic` : 'Fantastic';
     $('notes').hidden = !(model && model.notes);
     $('notes').textContent = (model && model.notes) || '';
     const banner = $('banner');

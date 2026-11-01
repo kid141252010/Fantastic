@@ -1,5 +1,5 @@
 /*
- * am-hook 浏览器端解密
+ * fantastic 浏览器端解密
  *
  * wrapper-lite 只提供 master m3u8 地址与轨道解密模板（经 wrapper.js，服务端转发或直连本地 wrapper-lite），其余全部在浏览器完成：
  *   - media m3u8 与分片直接从 Apple CDN 获取（aod.itunes.apple.com 允许跨域 + Range）；
@@ -516,7 +516,7 @@
       try {
         return await OpfsSink.open(size);
       } catch (err) {
-        console.warn('[am-hook] OPFS 不可用，改用内存缓存下载', err);
+        console.warn('[fantastic] OPFS 不可用，改用内存缓存下载', err);
       }
     }
     return new MemorySink();

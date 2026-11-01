@@ -2,7 +2,7 @@
 //!
 //! 每个请求在响应后输出一行：`状态码 方法 分类 要点 · 备注 · 耗时`。
 //! 高频且无信息量的请求（静态资源、页面轮询的 /status、输入联想）降为 debug，
-//! 需要时用 `RUST_LOG=am_hook=debug` 查看。
+//! 需要时用 `RUST_LOG=fantastic=debug` 查看。
 //! 请求因 wrapper-lite 限速 / 限并发排队时，该行附上排队时间；排队期间每秒另有一行队列状态。
 
 use std::cell::Cell;
@@ -26,7 +26,7 @@ use crate::wrapper::{QueueWait, QUEUED_MIN, QUEUE_WAIT};
 
 pub fn init() {
     tracing_subscriber::registry()
-        .with(EnvFilter::try_from_default_env().unwrap_or_else(|_| "am_hook=info".into()))
+        .with(EnvFilter::try_from_default_env().unwrap_or_else(|_| "fantastic=info".into()))
         .with(
             tracing_subscriber::fmt::layer()
                 .with_target(false)
@@ -278,7 +278,7 @@ pub(crate) fn format_elapsed(elapsed: Duration) -> String {
 
 /// 启动摘要：访问地址、wrapper-lite 与功能入口
 pub fn print_banner(listen: SocketAddr, config: &Config) {
-    let mut lines = vec![format!("am-hook v{}", env!("CARGO_PKG_VERSION"))];
+    let mut lines = vec![format!("fantastic v{}", env!("CARGO_PKG_VERSION"))];
     let urls = access_urls(listen);
     lines.push(format!("  Web UI        {}", urls[0]));
     for url in &urls[1..] {
@@ -317,7 +317,7 @@ pub fn print_banner(listen: SocketAddr, config: &Config) {
     lines.push("  Pages         home & search · new · top charts · radio · song · album · playlist · artist".into());
     lines.push("                music video · post · station · room · multi-room · grouping · curator".into());
     lines.push("  Features      lyrics · motion artwork · ALAC / FLAC / Dolby Atmos (EC-3) · MV PlayReady".into());
-    lines.push("  Verbose log   RUST_LOG=am_hook=debug (assets, status, suggestions)".into());
+    lines.push("  Verbose log   RUST_LOG=fantastic=debug (assets, status, suggestions)".into());
     let width = lines.iter().map(|l| l.chars().count()).max().unwrap_or(0);
     let rule = "─".repeat(width + 2);
     println!("{rule}");

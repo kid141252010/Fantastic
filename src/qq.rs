@@ -216,12 +216,12 @@ impl Qq {
         let proxy = outbound_proxy(proxy)?;
         let mut api = reqwest::Client::builder()
             .http1_only()
-            .user_agent("am-hook")
+            .user_agent("fantastic")
             .connect_timeout(Duration::from_secs(5))
             .timeout(Duration::from_secs(15));
         let mut media = reqwest::Client::builder()
             .http1_only()
-            .user_agent("am-hook")
+            .user_agent("fantastic")
             .connect_timeout(Duration::from_secs(5))
             .read_timeout(Duration::from_secs(30))
             .redirect(reqwest::redirect::Policy::custom(|a| {
@@ -234,7 +234,7 @@ impl Qq {
         // Artwork accepts exactly cover_url's template, including across redirects.
         let mut cover = reqwest::Client::builder()
             .http1_only()
-            .user_agent("am-hook")
+            .user_agent("fantastic")
             .connect_timeout(Duration::from_secs(5))
             .timeout(Duration::from_secs(15))
             .redirect(reqwest::redirect::Policy::none());

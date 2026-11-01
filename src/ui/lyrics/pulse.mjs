@@ -113,7 +113,7 @@ export class BeatPulse {
       if (typeof AudioNode !== 'undefined' && source instanceof AudioNode) this.tap = this.makeTap(source.context, source);
       else if (typeof source.captureStream === 'function') this.tap = this.capture(source);
     } catch (error) {
-      console.warn('[am-hook] 节拍律动取样失败', error);
+      console.warn('[fantastic] 节拍律动取样失败', error);
     }
     // 截取用的上下文不用时挂起，不空转输出设备
     const context = this.captureContext;

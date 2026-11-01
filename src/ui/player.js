@@ -1,5 +1,5 @@
 /*
- * am-hook 简易在线播放器
+ * fantastic 简易在线播放器
  *
  * 播放方式按优先级：
  *   1. MSE：浏览器直接从 Apple CDN 获取 media m3u8 与分段，在 Worker 中用 wasm 解密（decrypt.js）
@@ -2908,7 +2908,7 @@
           this.renderModes();
           this.prepareNext();
         })
-        .catch((err) => console.warn('[am-hook] 取不到电台的下一批歌曲', err))
+        .catch((err) => console.warn('[fantastic] 取不到电台的下一批歌曲', err))
         .finally(() => { q.extending = false; });
     }
 
@@ -3100,7 +3100,7 @@
           lastError = err;
           // 双耳不可用时退回 Speaker 2.0，音质详情里说明原因
           if (mode === 'jocbin') this.jocFallback = true;
-          console.warn(`[am-hook] ${mode} 播放失败，尝试下一种方式`, err);
+          console.warn(`[fantastic] ${mode} 播放失败，尝试下一种方式`, err);
         }
       }
 

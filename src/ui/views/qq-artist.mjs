@@ -36,7 +36,7 @@ export function mount({ root, url, signal, player, navigate, onLangChange, toast
 
   function renderHero() {
     if (!artist) return;
-    document.title = `${artist.name || t('artist.pageTitle')} · am-hook`;
+    document.title = `${artist.name || t('artist.pageTitle')} · Fantastic`;
     $('name').classList.remove('skeleton');
     $('name').textContent = artist.name || '';
     image($('portrait'), artist.avatar || artist.cover, t('artist.portraitAlt', { name: artist.name }));

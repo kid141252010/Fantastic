@@ -150,7 +150,7 @@ export function mountMotionArt(container, { src }) {
     // 首次可见时才开始下载
     if (!loading) {
       loading = load().catch((err) => {
-        if (!destroyed && err.name !== 'AbortError') console.warn('[am-hook] 动态封面不可用', err);
+        if (!destroyed && err.name !== 'AbortError') console.warn('[fantastic] 动态封面不可用', err);
         video.remove();
       });
     }

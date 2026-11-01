@@ -239,7 +239,7 @@ function savePrefs(prefs) {
 }
 
 /** AMLL TTML DB（https://amll.dev/reference/http-api/native）：地址可由部署配置；按 Apple Music 歌曲 ID 取 TTML，未收录时为 null */
-const HOST = window.AM_HOOK_HOST || {};
+const HOST = window.FANTASTIC_HOST || {};
 const AMLL_API = typeof HOST.amllApi === 'string' && HOST.amllApi ? HOST.amllApi : 'https://api.amll.dev';
 async function fetchAmll(adamId) {
   const response = await fetch(`${AMLL_API}/v1/lyrics/get?appleMusicId=${encodeURIComponent(adamId)}`);
@@ -373,7 +373,7 @@ export function mountLyrics({ root, toggle, bar, player, getMeta, t, notify, onL
           };
         } catch (error) {
           try { render?.pause(); render?.getRenderer?.().disconnectResizeObserver?.(); } catch { /* 初始化失败时可能还没有可清理的资源 */ }
-          console.warn(`[am-hook] AMLL ${prefs.backdrop} 背景不可用，尝试下一个渲染器`, error);
+          console.warn(`[fantastic] AMLL ${prefs.backdrop} 背景不可用，尝试下一个渲染器`, error);
         }
       }
     }
@@ -390,7 +390,7 @@ export function mountLyrics({ root, toggle, bar, player, getMeta, t, notify, onL
         dispose: () => { artwork.destroy(); artwork.canvas.remove(); },
       };
     } catch (error) {
-      console.warn('[am-hook] 歌词背景不可用', error);
+      console.warn('[fantastic] 歌词背景不可用', error);
       return null;
     }
   }
@@ -772,7 +772,7 @@ export function mountLyrics({ root, toggle, bar, player, getMeta, t, notify, onL
         root.classList.add('has-backdrop');
         if (open && !covered) target.resume(); else target.pause();
       })
-      .catch((error) => { if (!controller.signal.aborted) console.warn('[am-hook] 歌词背景加载失败', error); });
+      .catch((error) => { if (!controller.signal.aborted) console.warn('[fantastic] 歌词背景加载失败', error); });
   }
 
   function setLines() {
@@ -1094,7 +1094,7 @@ export function mountLyrics({ root, toggle, bar, player, getMeta, t, notify, onL
         if (found) return { ...found, amllStatus: status };
         status = 'missing';
       } catch (error) {
-        console.warn('[am-hook] AMLL 歌词库请求失败', error);
+        console.warn('[fantastic] AMLL 歌词库请求失败', error);
         status = 'failed';
       }
     }
@@ -1148,7 +1148,7 @@ export function mountLyrics({ root, toggle, bar, player, getMeta, t, notify, onL
         .catch((error) => {
           if (stale()) return;
           request = null;
-          console.warn('[am-hook] 歌词加载失败', error);
+          console.warn('[fantastic] 歌词加载失败', error);
           notify(t('lyrics.failed'));
         })
         .finally(() => { if (!stale()) toggle.removeAttribute('aria-busy'); });

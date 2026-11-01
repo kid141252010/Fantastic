@@ -1,5 +1,5 @@
 // Run with: node tests/download_ui.cjs <path-to-playwright-package> [base]
-// Live: needs a running am-hook, wrapper-lite with the cn region and access to the Apple CDN (default http://127.0.0.1:8888).
+// Live: needs a running fantastic, wrapper-lite with the cn region and access to the Apple CDN (default http://127.0.0.1:8888).
 // Covers batch downloads: settings page, album download dialog → ZIP with iTunes tags / cover / lyrics, folder mode
 // (the directory picker is replaced by an OPFS directory), playlist numbering and .m3u8, the song page, the More menu,
 // music videos in an album (tagged .mp4, tracks one after another), the More menu on a music video,
@@ -8,7 +8,7 @@ const assert = require('node:assert/strict');
 const { chromium } = require(process.argv[2] || 'playwright');
 const { openPage } = require('./app.cjs');
 
-const base = (process.argv[3] || process.env.AM_HOOK_URL || 'http://127.0.0.1:8888').replace(/\/$/, '');
+const base = (process.argv[3] || process.env.FANTASTIC_URL || 'http://127.0.0.1:8888').replace(/\/$/, '');
 const ALBUM = '/https://music.apple.com/cn/album/1989-taylors-version-deluxe/1713845538';
 const PLAYLIST = '/https://music.apple.com/cn/playlist/x/pl.d467987f72384448b2bebe52c0b212d6';
 // 第 23 首是 MV（96 秒）

@@ -1,4 +1,4 @@
-// Opt-in browser integration test. Requires am-hook, wrapper-lite and Apple CDN access.
+// Opt-in browser integration test. Requires fantastic, wrapper-lite and Apple CDN access.
 // node tests/mv_live.cjs <playwright-package-path> [http://127.0.0.1:18888]
 const assert = require('node:assert/strict');
 const { chromium } = require(process.argv[2] || 'playwright');
