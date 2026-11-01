@@ -153,7 +153,7 @@ export function mount({ root, url, signal, player, navigate, toast, onLangChange
   function renderHead() {
     const dir = folderId ? library.folder(folderId) : null;
     const title = section === 'playlist-folder' ? (dir ? folderName(dir) : t('library.folderNotFound')) : t(`library.${section}`);
-    document.title = `${title} · am-hook`;
+    document.title = `${title} · Fantastic`;
     $('title').textContent = title;
     // 文件夹页：「所有歌单 › 上级文件夹 ›」
     $('crumbs').hidden = !dir;

@@ -112,6 +112,6 @@ export function createDetailHeader({ $, signal, artUrl, rerender }) {
     if (!key) return;
     import('/assets/motion-art.mjs')
       .then(({ mountMotionArt }) => { if (motionKey === key) motion = mountMotionArt(tall ? $('tall-art') : $('art'), { src: source.video }); })
-      .catch((err) => console.warn('[am-hook] 动态封面加载失败', err));
+      .catch((err) => console.warn('[fantastic] 动态封面加载失败', err));
   };
 }

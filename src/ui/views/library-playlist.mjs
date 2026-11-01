@@ -49,7 +49,7 @@ export function mount({ root, url, signal, player, navigate, toast, onLangChange
 
   /* ---------- 头部 ---------- */
   function renderHero(list) {
-    document.title = `${playlistName(list)} · am-hook`;
+    document.title = `${playlistName(list)} · Fantastic`;
     $('title').textContent = playlistName(list);
     // 副标题：所在文件夹（链接到文件夹页）
     const dir = list.folderId ? library.folder(list.folderId) : null;

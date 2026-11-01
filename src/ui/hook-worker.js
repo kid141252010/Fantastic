@@ -1,5 +1,5 @@
 /*
- * am-hook 浏览器端 Worker（由 decrypt.js 管理），消息格式 { id, op, ... } -> { id, ok, result | error }
+ * fantastic 浏览器端 Worker（由 decrypt.js 管理），消息格式 { id, op, ... } -> { id, ok, result | error }
  *
  *   decrypt     用 hook.wasm 原地处理一段数据并以 transfer 方式交回：
  *               kind=init 改写 init segment；kind=frag 用预取模板（key=prefetch）或轨道模板解密 fragment，

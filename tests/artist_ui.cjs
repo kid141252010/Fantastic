@@ -1,5 +1,5 @@
 // Run with: node tests/artist_ui.cjs <path-to-playwright-package> [base]
-// Live: needs a running am-hook with access to music.apple.com / amp-api (default http://127.0.0.1:8888).
+// Live: needs a running fantastic with access to music.apple.com / amp-api (default http://127.0.0.1:8888).
 // In-page playback is checked too when wrapper-lite is online.
 // Covers the artist page: the three header styles (circular portrait, wide image, motion video), latest release,
 // top songs, shelves with See All, the about section, language refetch, playback, links from other pages and mobile.
@@ -8,7 +8,7 @@ const path = require('node:path');
 const { chromium } = require(process.argv[2] || 'playwright');
 const { openPage } = require('./app.cjs');
 
-const base = (process.argv[3] || process.env.AM_HOOK_URL || 'http://127.0.0.1:8888').replace(/\/$/, '');
+const base = (process.argv[3] || process.env.FANTASTIC_URL || 'http://127.0.0.1:8888').replace(/\/$/, '');
 const shots = process.env.ARTIST_UI_SHOTS;
 // Header styles follow the catalog data, as on music.apple.com:
 // Taylor Swift (cn) has only a portrait, The Weeknd (us) a centeredFullscreenBackground, Billie Eilish (us) a motionArtistWide16x9 video

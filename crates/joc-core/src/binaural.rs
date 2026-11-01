@@ -24,7 +24,7 @@ pub struct Scene {
     pub levels: [f64; SOURCE_COUNT],
 }
 
-/// Interactive controls (an am-hook extension, not in the reference); the defaults render exactly
+/// Interactive controls (a Fantastic extension, not in the reference); the defaults render exactly
 /// as the reference does.
 #[derive(Clone, Copy, PartialEq)]
 pub struct Controls {

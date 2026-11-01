@@ -97,7 +97,7 @@ Download a prebuilt binary for Windows, Linux or macOS from [Releases](https://g
 cargo build --release
 
 # The browser decrypts; the server only serves playlists, templates and licenses
-am-hook --listen 0.0.0.0:8888 --wrapper-url http://127.0.0.1:12340
+fantastic --listen 0.0.0.0:8888 --wrapper-url http://127.0.0.1:12340
 ```
 
 Then open `http://127.0.0.1:8888/` and paste a link or search.
@@ -150,12 +150,12 @@ Alternatively the function can relay to a publicly reachable wrapper-lite, set t
 
 | Variable | Description |
 |---|---|
-| `AM_HOOK_WRAPPER_URL` | wrapper-lite URL. When set, pages default to the "Server" mode, like the binary; it may carry credentials (`https://<token>@host`) |
-| `AM_HOOK_WRAPPER_AUTH` | Optional `Authorization` for wrapper-lite requests, same rules as `--wrapper-auth` |
-| `AM_HOOK_WRAPPER_HINT` | Optional note above the local wrapper-lite settings, same as `--wrapper-hint` |
+| `FANTASTIC_WRAPPER_URL` | wrapper-lite URL. When set, pages default to the "Server" mode, like the binary; it may carry credentials (`https://<token>@host`) |
+| `FANTASTIC_WRAPPER_AUTH` | Optional `Authorization` for wrapper-lite requests, same rules as `--wrapper-auth` |
+| `FANTASTIC_WRAPPER_HINT` | Optional note above the local wrapper-lite settings, same as `--wrapper-hint` |
 
 > [!WARNING]
-> With `AM_HOOK_WRAPPER_URL` set, anyone who can open the site can use your wrapper-lite, that is, your Apple account. Restrict access with the platform's access control (Vercel Deployment Protection, Cloudflare Access). Function instances share no state, so there is no equivalent of `--wrapper-rate` / `--wrapper-concurrency` here.
+> With `FANTASTIC_WRAPPER_URL` set, anyone who can open the site can use your wrapper-lite, that is, your Apple account. Restrict access with the platform's access control (Vercel Deployment Protection, Cloudflare Access). Function instances share no state, so there is no equivalent of `--wrapper-rate` / `--wrapper-concurrency` here.
 
 Other differences from the binary:
 
@@ -167,14 +167,14 @@ Other differences from the binary:
 
 The "wrapper-lite" setting at the bottom of the navigation switches between two modes (saved in the browser):
 
-- **Server** (default): wrapper-lite requests are relayed by Fantastic; rate, concurrency and `Authorization` come from the `--wrapper-*` options. Not offered on a [serverless deployment](#serverless-deployment-vercel--cloudflare) without `AM_HOOK_WRAPPER_URL`, or by a binary started with `--local-wrapper-only`.
+- **Server** (default): wrapper-lite requests are relayed by Fantastic; rate, concurrency and `Authorization` come from the `--wrapper-*` options. Not offered on a [serverless deployment](#serverless-deployment-vercel--cloudflare) without `FANTASTIC_WRAPPER_URL`, or by a binary started with `--local-wrapper-only`.
 - **Local**: the browser requests your own wrapper-lite directly (`/status`, `/m3u8`, `/key`, `/lyrics`, `/webplayback`, `/license`). The panel sets its URL, max requests per second, max concurrent requests and `Authorization` (same rules as `--wrapper-auth`). The limits apply to the current page only. The URL may carry credentials (such as `https://<token>@host`); as with `--wrapper-url`, they are sent as `Authorization: Basic …`, and a separately set `Authorization` takes precedence.
   - The requests are cross-origin: the wrapper-lite must allow CORS (send `Access-Control-Allow-Origin`, and allow the `Authorization` header in preflights if one is set), or install a browser extension that lifts CORS restrictions.
   - MV master playlists are still fetched by Fantastic with `User-Agent: AM`; the other MV requests (`/webplayback`, `/license`) go to the local wrapper-lite.
 
 ### QQ music source (optional)
 
-Configure `--qq-api https://example.invalid/api/web` or `AM_HOOK_QQ_API` on the Rust server. See [QQ source validation](docs/qq-source-validation.md) for proxy behavior, request paths, playback redirects and lyric formats. Apple and QQ use separate playback queues.
+Configure `--qq-api https://example.invalid/api/web` or `FANTASTIC_QQ_API` on the Rust server. See [QQ source validation](docs/qq-source-validation.md) for proxy behavior, request paths, playback redirects and lyric formats. Apple and QQ use separate playback queues.
 
 QQ has no client-side rate or concurrency limit; upstream services remain responsible for handling aggressive traffic.
 
@@ -186,7 +186,7 @@ QQ has no client-side rate or concurrency limit; upstream services remain respon
 - Settings at the bottom of the navigation, saved in localStorage with no expiry:
   - Primary storefront: used for search (and future features). The wrapper-lite account's storefronts are listed first as the best experience, then favorite storefronts (US / CN / JP by default); every other storefront sits under "More storefronts" with a filter, and the star next to each one adds or removes it from favorites. Defaults to the first wrapper-lite storefront.
   - Catalog language (amp-api `l`, independent of the UI language): defaults to each storefront's default language; the choices are only that storefront's `supportedLanguageTags` from `/amp/v1/storefronts`. Chosen per storefront, and also used for lyrics.
-- The home page shows wrapper-lite status and your recent searches (click to search again, or remove them one by one); its footer links to this GitHub repository and credits the projects am-hook builds on.
+- The home page shows wrapper-lite status and your recent searches (click to search again, or remove them one by one); its footer links to this GitHub repository and credits the projects Fantastic builds on.
 - Search: the home input takes either a link or keywords (the same amp-api requests as music.apple.com). Typing shows suggested terms and direct results; results are grouped into top results, artists, albums, songs, playlists and music videos, with "Load more". Search uses the primary storefront, which can also be changed from the button next to the results. `/` focuses the input; the term is kept in the address bar as `?q=`, so Back / Forward and sharing work. Search lives only on the home page; other pages have a Back button at the top instead, which returns to the previous page (or to the home page when the page was opened directly from a link).
 - The address bar, page title and browser Back / Forward follow the current page, so links can be shared and a reload stays on the same page.
 - How it works: like music.apple.com, the site is a single-page app. Every page URL gets `app.html`, which owns the player bar, audio, decryption workers and lyrics view; a client-side router (`app.mjs`) takes over in-site links, changes the address with `history.pushState` and swaps page views (`src/ui/views/`) without reloading the document. It relies on no request headers, so it works the same over `http://<LAN IP>`.
@@ -387,20 +387,20 @@ Some songs (for example `1569279827`) have no master m3u8: wrapper-lite `/m3u8` 
 | `-l, --listen <ADDR>` | `0.0.0.0:8888` | Listen address |
 | `-p, --port <PORT>` | optional | Overrides the port in `--listen` when set |
 | `-w, --wrapper-url <URL>` | `http://127.0.0.1:12340` | wrapper-lite key server base URL |
-| `--qq-api <URL>` | unset | Server-only QQ API base URL; also `AM_HOOK_QQ_API` |
-| `--qq-proxy <URL>` | unset | Server-only HTTP/SOCKS proxy for QQ API, AMLL, covers and media; also `AM_HOOK_QQ_PROXY` |
+| `--qq-api <URL>` | unset | Server-only QQ API base URL; also `FANTASTIC_QQ_API` |
+| `--qq-proxy <URL>` | unset | Server-only HTTP/SOCKS proxy for QQ API, AMLL, covers and media; also `FANTASTIC_QQ_PROXY` |
 | `--wrapper-rate <N>` | `24` | Max requests per second to wrapper-lite (any 1-second window; extra requests wait in order). 0 = unlimited |
 | `--wrapper-concurrency <N>` | `24` | Max concurrent requests to wrapper-lite. 0 = unlimited. Lower it (e.g. `8`) if wrapper-lite runs in QEMU and requests time out under load |
-| `--wrapper-auth <VALUE>` | not sent | `Authorization` header for wrapper-lite requests. A bare token is sent as `Bearer <token>`; a value with a scheme (`Bearer …`, `Basic …`) is sent as is. Also read from `AM_HOOK_WRAPPER_AUTH` (keeps it out of the process list). These three apply to server relaying only; a page switched to a local wrapper-lite sets its own |
+| `--wrapper-auth <VALUE>` | not sent | `Authorization` header for wrapper-lite requests. A bare token is sent as `Bearer <token>`; a value with a scheme (`Bearer …`, `Basic …`) is sent as is. Also read from `FANTASTIC_WRAPPER_AUTH` (keeps it out of the process list). These three apply to server relaying only; a page switched to a local wrapper-lite sets its own |
 | `--client-rate <N>` | `0` | Max relayed wrapper-lite requests per client IP in any 60 seconds (`/status` not counted: it is shared by all clients and asks wrapper-lite at most once per 10 s), so one visitor cannot use up a shared wrapper-lite; further requests get HTTP 429 with `Retry-After`. A played song takes about 3 (master, key, lyrics). 0 = unlimited |
 | `--client-concurrency <N>` | `0` | Max wrapper-lite requests relayed at once per client IP (`/status` not counted); further requests wait instead of failing, so one visitor's burst cannot hold every `--wrapper-concurrency` permit and stall everyone else. A played song needs 3 at once (master, key, lyrics). 0 = unlimited |
 | `--client-ip-header <NAME>` | TCP peer | Header holding the client IP, set by the reverse proxy in front (e.g. `X-Real-IP`, `CF-Connecting-IP`; the first entry of a list is used). Needed behind a proxy, where every peer is the proxy. Only set it when all requests pass through that proxy, otherwise clients can spoof it |
-| `--local-wrapper-only` | off | Never relay wrapper-lite requests: pages only offer the local mode, as on a serverless deployment without `AM_HOOK_WRAPPER_URL`, and the relaying endpoints return 501. `--wrapper-url`, `--wrapper-rate` and `--wrapper-concurrency` become the page defaults for visitors who have not saved their own; `--wrapper-auth` is not used and never sent to pages |
-| `--wrapper-hint <TEXT>` | none | Note shown above the local wrapper-lite settings, e.g. where to get a token for a public wrapper-lite. URLs in it become links. Also read from `AM_HOOK_WRAPPER_HINT` |
+| `--local-wrapper-only` | off | Never relay wrapper-lite requests: pages only offer the local mode, as on a serverless deployment without `FANTASTIC_WRAPPER_URL`, and the relaying endpoints return 501. `--wrapper-url`, `--wrapper-rate` and `--wrapper-concurrency` become the page defaults for visitors who have not saved their own; `--wrapper-auth` is not used and never sent to pages |
+| `--wrapper-hint <TEXT>` | none | Note shown above the local wrapper-lite settings, e.g. where to get a token for a public wrapper-lite. URLs in it become links. Also read from `FANTASTIC_WRAPPER_HINT` |
 | `--amp-keepalive <SECONDS>` | `30` | Keeps the amp-api connection warm: after this long idle, sends a tiny request (0 disables). The token is fetched and the connection opened at startup either way |
 | `--amp-cache-mb <MB>` | `32` | amp-api response cache (catalog 5 min, storefronts 24 h; 0 disables). Identical concurrent requests always share one upstream request |
 | `--check-update` | off | Checks GitHub Releases for a newer version at startup and logs it |
-| `--auto-update` | off | Like `--check-update`, and also downloads the new binary for this platform and replaces the current one (the old one is kept as a backup); restart am-hook afterwards. On Windows the running exe cannot be replaced, so the log lists the manual steps |
+| `--auto-update` | off | Like `--check-update`, and also downloads the new binary for this platform and replaces the current one (the old one is kept as a backup); restart Fantastic afterwards. On Windows the running exe cannot be replaced, so the log lists the manual steps |
 
 ### Server Endpoints
 
@@ -431,7 +431,7 @@ Page URLs (see [Pages](#pages)) all return the single-page app `app.html`. The A
 cargo build --release
 ```
 
-The binary is written to `target/release/am-hook` (`am-hook.exe` on Windows). All browser assets, including the prebuilt WASM modules, are committed under `src/ui/` and embedded into the binary, so a normal build needs only Rust. Rebuild the assets only after changing their sources:
+The binary is written to `target/release/fantastic` (`fantastic.exe` on Windows). All browser assets, including the prebuilt WASM modules, are committed under `src/ui/` and embedded into the binary, so a normal build needs only Rust. Rebuild the assets only after changing their sources:
 
 | Asset | Source | Rebuild |
 |---|---|---|
@@ -450,7 +450,7 @@ cargo clippy --workspace --all-targets -- -D warnings   # CI runs this too; the 
 
 Unit tests cover the browser media core (PlayReady and Widevine license decryption, CENC/CBCS including the length-preserving in-place path, caption repair, defragmentation), URL parsing, m3u8 parsing, MP4 box patching (including that the in-place wasm path matches the parallel path), cache deduplication and the MV endpoints. `crates/joc-core` checks the JOC renderer bit-exactly against am-hook-joc's reference digests on a fixture of real Atmos metadata (Speaker 2.0, binaural, reset, every HRTF field). Offline integration tests also check that Apple CDN URLs are not proxied.
 
-Tests that require the live Apple CDN or wrapper-lite are ignored by default and do not run in GitHub Actions. Run them locally with Apple CDN access and wrapper-lite available (default `http://127.0.0.1:12340`, override with `AM_HOOK_WRAPPER`):
+Tests that require the live Apple CDN or wrapper-lite are ignored by default and do not run in GitHub Actions. Run them locally with Apple CDN access and wrapper-lite available (default `http://127.0.0.1:12340`, override with `FANTASTIC_WRAPPER`):
 
 ```sh
 cargo test --test e2e_test -- --ignored
@@ -458,7 +458,7 @@ cargo test --test e2e_test -- --ignored
 
 These tests verify lyrics.
 
-Browser-side tests are plain Node scripts. `<playwright>` is the path to a Playwright package; when `[base]` is omitted, the MV and radio live tests default to `http://127.0.0.1:18888` and the others to `AM_HOOK_URL` or `http://127.0.0.1:8888` (the ALAC tests only read `AM_HOOK_URL`).
+Browser-side tests are plain Node scripts. `<playwright>` is the path to a Playwright package; when `[base]` is omitted, the MV and radio live tests default to `http://127.0.0.1:18888` and the others to `FANTASTIC_URL` or `http://127.0.0.1:8888` (the ALAC tests only read `FANTASTIC_URL`).
 
 <details>
 <summary><b>Offline, Node only</b></summary>
@@ -499,7 +499,7 @@ Browser-side tests are plain Node scripts. `<playwright>` is the path to a Playw
 | `node tests/search_ui.cjs <playwright> [base]`, `node tests/album_ui.cjs <playwright> [base]`, `node tests/playlist_ui.cjs <playwright> [base]`, `node tests/artist_ui.cjs <playwright> [base]`, `node tests/browse_ui.cjs <playwright> [base]` | Search, album, playlist, artist and browse pages (need access to music.apple.com) |
 | `node tests/app_ui.cjs <playwright> [base]` | Single-page app: playback across navigation, queue, Back / Forward, lyrics |
 | `node tests/download_ui.cjs <playwright> [base]` | Batch downloads: settings, album ZIP tags / cover / lyrics, folder mode, playlists and .m3u8, music videos, cancel / retry; needs wrapper-lite with the cn region |
-| `node tests/radio_live.cjs <playwright> [base] [token-file]` | Stations: needs a media-user-token from token-file, `AM_HOOK_MEDIA_USER_TOKEN` or `target/my-media-user-token.txt`; genre and personal stations, Widevine license / playback / seeking / M4A download of an episode from recently played radio, and live radio simulated over its segments |
+| `node tests/radio_live.cjs <playwright> [base] [token-file]` | Stations: needs a media-user-token from token-file, `FANTASTIC_MEDIA_USER_TOKEN` or `target/my-media-user-token.txt`; genre and personal stations, Widevine license / playback / seeking / M4A download of an episode from recently played radio, and live radio simulated over its segments |
 
 </details>
 

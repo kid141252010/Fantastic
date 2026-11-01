@@ -3,9 +3,9 @@ use std::sync::Arc;
 use clap::Parser;
 use tracing::info;
 
-use am_hook::cli::Cli;
-use am_hook::state::AppState;
-use am_hook::{amp, log, router, updater};
+use fantastic::cli::Cli;
+use fantastic::state::AppState;
+use fantastic::{amp, log, router, updater};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {

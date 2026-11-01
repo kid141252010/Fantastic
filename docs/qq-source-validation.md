@@ -4,7 +4,7 @@
 
 ## 配置与请求路径
 
-QQ 是可选服务端音源。设置 `--qq-api` / `AM_HOOK_QQ_API` 后启用；可选的 `--qq-proxy` / `AM_HOOK_QQ_PROXY` 只用于服务端 QQ API、AMLL、封面和媒体请求。代理地址和凭据不会进入页面配置。未设置 QQ API 时所有 `/qq/*` 路由返回 404。
+QQ 是可选服务端音源。设置 `--qq-api` / `FANTASTIC_QQ_API` 后启用；可选的 `--qq-proxy` / `FANTASTIC_QQ_PROXY` 只用于服务端 QQ API、AMLL、封面和媒体请求。代理地址和凭据不会进入页面配置。未设置 QQ API 时所有 `/qq/*` 路由返回 404。
 
 主要接口如下：
 

@@ -33,7 +33,7 @@ export class ArtworkBackdrop {
         else this.settle(data.id,data.shown,data.error);
       };
       this.worker.onerror=event=>{
-        console.warn('[am-hook] 歌词背景 worker 出错',event.message);
+        console.warn('[fantastic] 歌词背景 worker 出错',event.message);
         this.fail(event.message||'worker error');
       };
       this.worker.postMessage({type:'init',canvas:offscreen,reducedMotion:this.motion.matches,...box},[offscreen]);

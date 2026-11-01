@@ -28,7 +28,7 @@ To rebuild from the pinned AMLL source:
     cd /tmp/amll-build-input
     npm init -y
     npm install --legacy-peer-deps /path/to/applemusic-like-lyrics/packages/core/applemusic-like-lyrics-core-0.6.0.tgz esbuild
-    node /path/to/am-hook/scripts/build-amll.cjs /tmp/amll-build-input/node_modules
+    node /path/to/fantastic/scripts/build-amll.cjs /tmp/amll-build-input/node_modules
 
 The last command regenerates the two checked-in files in `src/ui/lyrics/`.
 

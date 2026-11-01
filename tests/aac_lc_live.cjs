@@ -1,14 +1,14 @@
 // Live test for songs without a master m3u8 (only AAC-LC 256 through /webplayback, Widevine).
-// Start am-hook with the default wrapper-lite (cn region), then run:
+// Start fantastic with the default wrapper-lite (cn region), then run:
 // node tests/aac_lc_live.cjs <path-to-playwright-package> [base]
-// [base] defaults to AM_HOOK_URL or http://127.0.0.1:8888. Checks the song page (variant, playback,
+// [base] defaults to FANTASTIC_URL or http://127.0.0.1:8888. Checks the song page (variant, playback,
 // seeking) in server and local wrapper-lite modes, and writes the downloaded file to target/aac-lc-<id>.m4a
 // (verify with ffprobe / ffmpeg).
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const { chromium } = require(process.argv[2] || 'playwright');
-const origin = process.argv[3] || process.env.AM_HOOK_URL || 'http://127.0.0.1:8888';
+const origin = process.argv[3] || process.env.FANTASTIC_URL || 'http://127.0.0.1:8888';
 const ID = '1569279827'; // Stay With Me: wrapper-lite /m3u8 returns an .m4p, no master
 
 (async () => {

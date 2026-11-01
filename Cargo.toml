@@ -1,15 +1,15 @@
 [package]
-name = "am-hook"
+name = "fantastic"
 version = "0.6.5"
 edition = "2021"
 license = "AGPL-3.0-only"
 
 [lib]
-name = "am_hook"
+name = "fantastic"
 path = "src/lib.rs"
 
 [[bin]]
-name = "am-hook"
+name = "fantastic"
 path = "src/main.rs"
 
 [dependencies]

@@ -54,7 +54,7 @@ pub async fn fallback_handler(uri: Uri, headers: HeaderMap) -> Response<Body> {
     log::note(response, "not found")
 }
 
-/// 部署环境（window.AM_HOOK_HOST，见 src/ui/host.js）：服务端是否转发 wrapper-lite、不转发时页面本地模式的默认值，
+/// 部署环境（window.FANTASTIC_HOST，见 src/ui/host.js）：服务端是否转发 wrapper-lite、不转发时页面本地模式的默认值，
 /// 以及本地设置上方的提示和 AMLL 歌词库 API 地址。`--wrapper-auth` 只用于服务端转发，从不交给页面
 pub async fn host_js_handler(State(state): State<Arc<AppState>>) -> Response<Body> {
     let config = &state.config;
@@ -73,11 +73,11 @@ pub async fn host_js_handler(State(state): State<Arc<AppState>>) -> Response<Bod
         .status(StatusCode::OK)
         .header(CONTENT_TYPE, "text/javascript; charset=utf-8")
         .header(axum::http::header::CACHE_CONTROL, "no-cache")
-        .body(Body::from(format!("window.AM_HOOK_HOST = {host};\n")))
+        .body(Body::from(format!("window.FANTASTIC_HOST = {host};\n")))
         .unwrap()
 }
 
-/// `--local-wrapper-only` 时转发 wrapper-lite 的接口一律返回 501（与 serverless 部署没有设置 AM_HOOK_WRAPPER_URL 时相同）
+/// `--local-wrapper-only` 时转发 wrapper-lite 的接口一律返回 501（与 serverless 部署没有设置 FANTASTIC_WRAPPER_URL 时相同）
 pub async fn require_relay(
     State(state): State<Arc<AppState>>,
     request: axum::extract::Request,

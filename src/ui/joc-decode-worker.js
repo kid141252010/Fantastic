@@ -1,6 +1,6 @@
 /*
  * E-AC-3 JOC（Dolby Atmos）解码与渲染 Worker（module Worker，由 player.js 的 JocDecoder 使用）。
- * 同一个线程里完成全部计算：am-hook 的 EC-3 解码器（ec3.wasm）输出 5.1/7.1 核心 PCM，
+ * 同一个线程里完成全部计算：fantastic 的 EC-3 解码器（ec3.wasm）输出 5.1/7.1 核心 PCM，
  * JOC 渲染器（joc.wasm，crates/joc-wasm）从同一批 syncframe 的 EMDF 中解析 JOC / OAMD 元数据，
  * 重建 15 个对象与 LFE，再渲染为 Speaker 2.0 或双耳立体声。
  *

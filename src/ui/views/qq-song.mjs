@@ -31,7 +31,7 @@ export function mount({ root, url, signal, player, onLangChange, toast }) {
   const currentTrack = () => !!track && trackKey(player.current) === track.key;
 
   function renderHeader() {
-    document.title = `${track?.name || t('qq.songTitle')} · am-hook`;
+    document.title = `${track?.name || t('qq.songTitle')} · Fantastic`;
     if (!track) return;
     $('title').textContent = track.name;
     const subtitle = $('subtitle');

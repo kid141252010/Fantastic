@@ -193,7 +193,7 @@ export function mount({ root, url, signal, player, navigate, onLangChange, toast
 
   function renderHero() {
     const a = artist.attributes;
-    document.title = `${a.name} · am-hook`;
+    document.title = `${a.name} · Fantastic`;
     $('name').classList.remove('skeleton');
     $('name').textContent = a.name;
     // 字标：官网 artwork profile artist-expression-header-logo（400 宽、3:1、bb），透明背景所以取 webp 而不是 jpg
@@ -242,7 +242,7 @@ export function mount({ root, url, signal, player, navigate, onLangChange, toast
       if (key) {
         import('/assets/motion-art.mjs')
           .then(({ mountMotionArt }) => { if (motionKey === key) motion = mountMotionArt(media, { src: key }); })
-          .catch((err) => console.warn('[am-hook] 动态头像加载失败', err));
+          .catch((err) => console.warn('[fantastic] 动态头像加载失败', err));
       }
     }
   }

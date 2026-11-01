@@ -19,17 +19,17 @@ fn cli(args: &[&str]) -> crate::cli::Cli {
 fn proxy_environment_is_parsed_and_cli_takes_precedence() {
     use clap::{CommandFactory, Parser};
     const PROXY: &str = "socks5://127.0.0.1:11080";
-    const CHILD: &str = "AM_HOOK_QQ_PROXY_TEST_CHILD";
+    const CHILD: &str = "FANTASTIC_QQ_PROXY_TEST_CHILD";
     if std::env::var_os(CHILD).is_some() {
-        let cli = crate::cli::Cli::try_parse_from(["am-hook"]).unwrap();
+        let cli = crate::cli::Cli::try_parse_from(["fantastic"]).unwrap();
         assert_eq!(cli.qq_proxy.as_deref(), Some(PROXY));
         cli.config().unwrap();
         let cli =
-            crate::cli::Cli::try_parse_from(["am-hook", "--qq-proxy", "http://127.0.0.1:11081"])
+            crate::cli::Cli::try_parse_from(["fantastic", "--qq-proxy", "http://127.0.0.1:11081"])
                 .unwrap();
         assert_eq!(cli.qq_proxy.as_deref(), Some("http://127.0.0.1:11081"));
         let help = crate::cli::Cli::command().render_long_help().to_string();
-        assert!(help.contains("AM_HOOK_QQ_PROXY"));
+        assert!(help.contains("FANTASTIC_QQ_PROXY"));
         assert!(!help.contains(PROXY));
         return;
     }
@@ -40,11 +40,11 @@ fn proxy_environment_is_parsed_and_cli_takes_precedence() {
             "qq::tests::proxy_environment_is_parsed_and_cli_takes_precedence",
         ])
         .env(CHILD, "1")
-        .env("AM_HOOK_QQ_PROXY", PROXY)
-        .env_remove("AM_HOOK_QQ_API")
-        .env_remove("AM_HOOK_WRAPPER_AUTH")
-        .env_remove("AM_HOOK_WRAPPER_HINT")
-        .env_remove("AM_HOOK_AMLL_API")
+        .env("FANTASTIC_QQ_PROXY", PROXY)
+        .env_remove("FANTASTIC_QQ_API")
+        .env_remove("FANTASTIC_WRAPPER_AUTH")
+        .env_remove("FANTASTIC_WRAPPER_HINT")
+        .env_remove("FANTASTIC_AMLL_API")
         .output()
         .unwrap();
     assert!(
@@ -60,7 +60,7 @@ fn proxy_cli_parameter_reaches_all_qq_clients_without_changing_other_clients() {
     let default = AppState::new("http://127.0.0.1:12340".into());
     for proxy in ["socks5://127.0.0.1:11080", "http://127.0.0.1:11080"] {
         let cli = cli(&[
-            "am-hook",
+            "fantastic",
             "--qq-api",
             "https://example.invalid/api/web",
             "--qq-proxy",
@@ -87,7 +87,7 @@ fn proxy_cli_parameter_reaches_all_qq_clients_without_changing_other_clients() {
 
 #[test]
 fn absent_or_blank_proxy_preserves_default_clients() {
-    let cli = cli(&["am-hook", "--qq-api", "https://example.invalid/api/web"]);
+    let cli = cli(&["fantastic", "--qq-api", "https://example.invalid/api/web"]);
     assert!(cli.qq_proxy.is_none());
     let default = AppState::with_config(cli.config().unwrap());
     let default = default.qq.as_ref().unwrap();
@@ -112,7 +112,7 @@ fn invalid_proxy_fails_at_startup_without_upstream_urls() {
         .expect("invalid proxy must fail before making any request");
         assert!(error.starts_with("Invalid QQ proxy:"));
         let cli = cli(&[
-            "am-hook",
+            "fantastic",
             "--qq-api",
             "https://example.invalid/private-api",
             "--qq-proxy",
@@ -126,7 +126,7 @@ fn invalid_proxy_fails_at_startup_without_upstream_urls() {
             assert!(!message.contains("private-amll"));
         }
         // Invalid proxy configuration is rejected even when QQ is disabled.
-        assert!(self::cli(&["am-hook", "--qq-proxy", proxy])
+        assert!(self::cli(&["fantastic", "--qq-proxy", proxy])
             .config()
             .is_err());
     }
@@ -1056,11 +1056,11 @@ async fn serve_local(app: Router) -> Option<(String, tokio::task::JoinHandle<()>
     let listener = match TcpListener::bind("127.0.0.1:0").await {
         Ok(listener) => listener,
         Err(error) => {
-            if std::env::var("AM_HOOK_TEST_SKIP_LOOPBACK").as_deref() == Ok("1") {
+            if std::env::var("FANTASTIC_TEST_SKIP_LOOPBACK").as_deref() == Ok("1") {
                 eprintln!("skipping loopback QQ mock: {error}");
                 return None;
             }
-            panic!("loopback QQ mock bind failed: {error}; set AM_HOOK_TEST_SKIP_LOOPBACK=1 to skip");
+            panic!("loopback QQ mock bind failed: {error}; set FANTASTIC_TEST_SKIP_LOOPBACK=1 to skip");
         }
     };
     let url = format!("http://{}", listener.local_addr().unwrap());
@@ -1085,7 +1085,7 @@ fn lyric_rows(text: &str) -> Vec<&str> {
 #[tokio::test]
 async fn proxy_is_not_exposed_in_capabilities_or_host_config() {
     let cli = cli(&[
-        "am-hook",
+        "fantastic",
         "--qq-api",
         "https://example.invalid/api/web",
         "--qq-proxy",

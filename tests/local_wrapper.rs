@@ -4,7 +4,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
-use am_hook::state::{AppState, Config};
+use fantastic::state::{AppState, Config};
 use axum::Router;
 
 async fn serve(app: Router) -> String {
@@ -42,13 +42,13 @@ async fn local_wrapper_only_never_relays() {
     }))
     .await;
 
-    let base = serve(am_hook::router(Arc::new(AppState::with_config(config(wrapper.clone(), false))))).await;
+    let base = serve(fantastic::router(Arc::new(AppState::with_config(config(wrapper.clone(), false))))).await;
     let client = reqwest::Client::new();
 
     let host = client.get(format!("{base}/assets/host.js")).send().await.unwrap();
     assert_eq!(host.headers()["content-type"], "text/javascript; charset=utf-8");
     let text = host.text().await.unwrap();
-    let json = text.strip_prefix("window.AM_HOOK_HOST = ").and_then(|s| s.strip_suffix(";\n")).unwrap();
+    let json = text.strip_prefix("window.FANTASTIC_HOST = ").and_then(|s| s.strip_suffix(";\n")).unwrap();
     let value: serde_json::Value = serde_json::from_str(json).unwrap();
     assert_eq!(
         value,
@@ -73,9 +73,9 @@ async fn local_wrapper_only_never_relays() {
     assert_eq!(calls.load(Ordering::SeqCst), 0, "wrapper-lite is never contacted");
 
     // 默认仍转发；host.js 不带本地模式默认值
-    let relay = serve(am_hook::router(Arc::new(AppState::with_config(config(wrapper, true))))).await;
+    let relay = serve(fantastic::router(Arc::new(AppState::with_config(config(wrapper, true))))).await;
     let text = client.get(format!("{relay}/assets/host.js")).send().await.unwrap().text().await.unwrap();
-    assert_eq!(text, "window.AM_HOOK_HOST = {\"amllApi\":\"https://api.amll.dev\",\"hint\":\"Get a token at https://token.test\",\"qqEnabled\":false,\"serverWrapper\":true};\n");
+    assert_eq!(text, "window.FANTASTIC_HOST = {\"amllApi\":\"https://api.amll.dev\",\"hint\":\"Get a token at https://token.test\",\"qqEnabled\":false,\"serverWrapper\":true};\n");
     assert_eq!(client.get(format!("{relay}/status")).send().await.unwrap().status(), 200);
     assert_eq!(calls.load(Ordering::SeqCst), 1);
 }
