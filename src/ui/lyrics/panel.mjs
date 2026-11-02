@@ -1076,7 +1076,12 @@ export function mountLyrics({ root, toggle, bar, player, getMeta, t, notify, onL
    * 选了 AMLL 歌词库时先查它，未收录、请求失败或解析不了时记下原因，改用 Apple Music 歌词。
    */
   async function loadLyrics(id) {
-    if (trackSource === 'qq') return qqLyrics(id, parseTTML);
+    const parseWithUiLanguage = (text) => {
+      const language = globalThis.AmI18n?.lang;
+      const prefLang = language === 'zh' || language === 'en' ? language : undefined;
+      return prefLang ? parseTTML(text, undefined, prefLang) : parseTTML(text);
+    };
+    if (trackSource === 'qq') return qqLyrics(id, parseWithUiLanguage);
     // 这首歌各来源的结果记在 sources 里，来回切换来源时不重复请求；AMLL 歌词库未收录时不记，下次选择时重新查
     const cache = sources;
     const remember = (source, fetcher) => (cache[source] ??= fetcher().then((result) => {
@@ -1084,7 +1089,7 @@ export function mountLyrics({ root, toggle, bar, player, getMeta, t, notify, onL
       return result;
     }, (error) => { delete cache[source]; throw error; }));
     const parse = (result) => {
-      const parsed = result && parseTTML(result.text);
+      const parsed = result && parseWithUiLanguage(result.text);
       return parsed?.lines.length ? { ...result, song: parsed } : null;
     };
     let status = null;
