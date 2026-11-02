@@ -474,6 +474,66 @@ fn qrc_parser_drops_invalid_rows_and_keeps_parenthesized_fragments() {
 }
 
 #[test]
+fn qrc_conversion_deduplicates_repeated_rows_for_main_and_romanization() {
+    let source = concat!(
+        "[0,100]alpha(0,50)beta(50,50)\n",
+        "[1000,100]chorus(1000,100)\n",
+        "[1505,100]title(1505,100)\n",
+        "[0,100]alpha(0,50)beta(50,50)\n",
+        "[1000,100]chorus(1000,100)\n",
+        "[1505,100]title(1505,100)\n",
+        "[0,100]alpha(0,50)beta(50,50)\n",
+        "[1000,100]chorus(1000,100)\n",
+        "[1505,100]title(1505,100)\n",
+        "[2000,100]after(2000,100)"
+    );
+    let romanization = concat!(
+        "[0,100]alpha roman(0,100)\n",
+        "[0,100]alpha roman(0,100)\n",
+        "[1000,100]chorus roman(1000,100)\n",
+        "[1000,100]chorus roman(1000,100)"
+    );
+
+    let lines = qrc_lines(source);
+    assert_eq!(lines.len(), 4);
+    let rendered = qrc_ttml_filtered(source, None, Some(romanization), None).unwrap();
+    assert_eq!(rendered.matches("<p ").count(), 4);
+    assert_eq!(
+        rendered
+            .matches(
+                "<p begin=\"0.000\" end=\"0.100\"><span begin=\"0.000\" end=\"0.050\">alpha</span><span begin=\"0.050\" end=\"0.100\">beta</span>"
+            )
+            .count(),
+        1
+    );
+    assert_eq!(rendered.matches("<p begin=\"1.000\"").count(), 1);
+    assert_eq!(rendered.matches("<p begin=\"1.505\"").count(), 1);
+    assert_eq!(rendered.matches("<p begin=\"2.000\"").count(), 1);
+    assert_eq!(rendered.matches("ttm:role=\"x-roman\"").count(), 2);
+}
+
+#[test]
+fn qrc_parser_keeps_same_text_at_different_times() {
+    let source = "[0,100]chorus(0,100)\n[1000,100]chorus(1000,100)";
+    let lines = qrc_lines(source);
+    assert_eq!(lines.len(), 2);
+    let rendered = qrc_ttml_filtered(source, None, None, None).unwrap();
+    assert_eq!(rendered.matches(">chorus</span>").count(), 2);
+    assert_eq!(rendered.matches("<p ").count(), 2);
+}
+
+#[test]
+fn qrc_parser_keeps_different_text_at_the_same_time() {
+    let source = "[0,100]first(0,100)\n[0,100]second(0,100)";
+    let lines = qrc_lines(source);
+    assert_eq!(lines.len(), 2);
+    let rendered = qrc_ttml_filtered(source, None, None, None).unwrap();
+    assert!(rendered.contains(">first</span>"));
+    assert!(rendered.contains(">second</span>"));
+    assert_eq!(rendered.matches("<p ").count(), 2);
+}
+
+#[test]
 fn qrc_background_rows_attach_with_nested_roles_or_stand_alone() {
     let rendered = qrc_ttml_filtered(
         "[0,100]main(0,100)\n[1000,1000](bg(1000,500))(1500,500)",
