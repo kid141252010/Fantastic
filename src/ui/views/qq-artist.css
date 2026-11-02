@@ -1,6 +1,10 @@
 .qq-artist-page .qq-artist-hero { min-height: 370px; }
 .qq-artist-page .artist-hero-art img,
 .qq-artist-page .artist-portrait-glow img { width: 100%; height: 100%; object-fit: cover; }
+.qq-artist-page .artist-hero-art img {
+  filter: blur(52px) saturate(1.15);
+  transform: scale(1.3);
+}
 .qq-artist-page .qq-artist-counts { margin-top: 24px; color: var(--muted); font-size: 13px; text-align: center; }
 .qq-artist-page .qq-artist-bio { max-width: 640px; margin: 14px auto 0; white-space: pre-line; text-align: center; }
 .qq-artist-page .qq-artist-bio-text { -webkit-line-clamp: 3; }
