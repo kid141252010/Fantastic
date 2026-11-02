@@ -1,4 +1,4 @@
-// 歌词解析（对唱侧与本地化选择）：离线，只需 Node：
+// 歌词解析（对唱侧、本地化选择与时间轴推断）：离线，只需 Node：
 //   node --test tests/agent_duet.mjs
 // 按 parseTTML 的输出手工构造歌曲（只给 duetSides 用到的 agents 与每行的 agent），检查 src/ui/lyrics/ttml.mjs 的 duetSides
 // 照 AMLL（packages/ttml 的 amll-converter）逐行决定的显示侧：第一位主唱在主侧（type 为 other 时在对唱侧），同一位主唱不换侧，
@@ -53,7 +53,7 @@ test('歌曲没有 agents 时不报错，仍按 ttm:agent 的 id 交替', () => 
   assert.deepEqual(duetSides(song(['v2', 'v1', 'v1', 'v2'])), [false, true, true, false]);
 });
 
-// localization() 的离线 DOM：Node 没有内置 DOMParser，用最小的 TTML 树覆盖 parseTTML 的语言选择。
+// 离线 DOM：Node 没有内置 DOMParser，用最小的 TTML 树覆盖 parseTTML。
 const XML = 'http://www.w3.org/XML/1998/namespace';
 const APPLE = 'http://music.apple.com/lyric-ttml-internal';
 const META = 'http://www.w3.org/ns/ttml#metadata';
@@ -110,8 +110,11 @@ const localizationCases = [
   ['zh', ['zh-Hant', 'zh-Hans'], 'zh-Hans'],
   ['zh', ['en', 'zh-Hans-CN'], 'zh-Hans-CN'],
   ['zh', ['zh-CN', 'zh-Hant'], 'zh-CN'],
+  ['zh', ['zh-TW', 'zh-CN'], 'zh-CN'],
+  ['zh', ['zh-CN', 'zh-Hans'], 'zh-Hans'],
   ['zh', ['en-US'], 'en-US'],
   ['en', ['zh-Hans', 'en-US'], 'en-US'],
+  ['en', ['en-GB', 'en-US'], 'en-US'],
   ['en', ['en-GB', 'en'], 'en'],
 ];
 for (const [prefLang, languages, expected] of localizationCases) {
@@ -140,3 +143,91 @@ test('language matching ignores case and treats underscores as hyphens', () => {
   assert.equal(parsed.translation.language, 'ZH_hans_CN');
   assert.equal(parsed.pronunciation.language, 'ZH_hans_CN');
 });
+
+const parseDocument = (document, prefLang) => parseTTML('', class {
+  parseFromString() { return document; }
+}, prefLang);
+function parseLines(lines, { prefLang, timing } = {}) {
+  return parseDocument({
+    documentElement: element('tt', timing === undefined ? {} : { 'itunes:timing': timing }, [
+      element('body', {}, [element('div', {}, lines)]),
+    ]),
+    querySelector: () => null,
+  }, prefLang);
+}
+const inlineSpans = (role, languages) => languages.map((language, index) => element('span', {
+  'ttm:role': role, ...(language ? { 'xml:lang': language } : {}),
+}, [text(`${role} ${index}`)]));
+
+const inlineCases = [
+  ['pref=zh prefers CN', 'zh', ['de-DE', 'zh-TW', 'zh-CN'], 2],
+  ['pref=en prefers US', 'en', ['de-DE', 'en-GB', 'en-US'], 2],
+  ['exact language wins', 'zh', ['zh-CN', 'zh-Hans', 'zh'], 2],
+  ['script outranks region', 'zh', ['zh-CN', 'zh-Hans'], 1],
+  ['same primary language keeps document order', 'en', ['de-DE', 'en-GB', 'en-AU'], 1],
+  ['no matching language keeps the first span', 'en', ['de-DE', 'zh-CN'], 0],
+  ['no preference keeps the first span', undefined, ['de-DE', 'zh-TW', 'zh-CN'], 0],
+  ['unlabelled spans keep the first span', 'zh', [undefined, undefined], 0],
+  ['case and underscores are normalized', 'ZH', ['zh-TW', 'ZH_cn'], 1],
+];
+for (const [name, prefLang, languages, expected] of inlineCases) {
+  test(`inline translation and pronunciation: ${name}`, () => {
+    const voice = () => [text('source'), ...inlineSpans('x-translation', languages), ...inlineSpans('x-roman', languages)];
+    const parsed = parseLines([element('p', {}, [
+      ...voice(), element('span', { 'ttm:role': 'x-bg' }, voice()),
+    ])], { prefLang });
+    for (const part of [parsed.lines[0], parsed.lines[0].background]) {
+      assert.equal(part.translation, `x-translation ${expected}`);
+      assert.equal(part.pronunciation, `x-roman ${expected}`);
+    }
+  });
+}
+
+test('metadata localization takes precedence over inline fallback', () => {
+  const document = fixture(['zh-CN'], ['zh-CN']);
+  const line = document.documentElement.children[1].children[0].children[0];
+  line.children.push(...inlineSpans('x-translation', ['zh']), ...inlineSpans('x-roman', ['zh']));
+  const parsed = parseDocument(document, 'zh');
+  assert.equal(parsed.lines[0].translation, 'translation zh-CN');
+  assert.equal(parsed.lines[0].pronunciation, 'pronunciation zh-CN');
+});
+
+const timedWord = () => element('span', { begin: '00:14.760', end: '00:15.530' }, [text('word')]);
+test('missing timing infers Word when a later line has word tokens', () => {
+  const parsed = parseLines([
+    element('p', {}, [text('untimed')]),
+    element('p', { begin: '00:14.760', end: '00:15.530' }, [timedWord()]),
+  ]);
+  assert.equal(parsed.timing, 'Word');
+  assert.equal(parsed.lines[1].tokens[0].begin, 14760);
+  assert.equal(parsed.lines[1].tokens[0].end, 15530);
+});
+test('missing timing infers Word from background word tokens', () => {
+  const parsed = parseLines([element('p', {}, [
+    text('source'), element('span', { 'ttm:role': 'x-bg' }, [timedWord()]),
+  ])]);
+  assert.equal(parsed.timing, 'Word');
+});
+for (const attributes of [
+  { begin: '00:14.760', end: '00:15.530' },
+  { begin: '00:14.760', end: '0' },
+  { begin: '0', end: '00:15.530' },
+]) {
+  test(`missing timing infers Line from nonzero line times ${JSON.stringify(attributes)}`, () => {
+    const parsed = parseLines([element('p', {}, [text('untimed')]), element('p', attributes, [text('source')])]);
+    assert.equal(parsed.timing, 'Line');
+  });
+}
+test('missing timing infers None when all line times are zero', () => {
+  const parsed = parseLines([
+    element('p', {}, [text('no time attributes')]),
+    element('p', { begin: '0', end: '00:00.000' }, [text('zero times')]),
+  ]);
+  assert.equal(parsed.timing, 'None');
+});
+for (const timing of ['Line', 'None', 'Word']) {
+  test(`explicit timing=${timing} takes precedence over word tokens`, () => {
+    const parsed = parseLines([element('p', {}, [timedWord()])], { timing });
+    assert.equal(parsed.timing, timing);
+  });
+}
