@@ -367,40 +367,70 @@ fn caches_expire_and_are_bounded() {
     assert_eq!(qq().searches.ttl, Duration::from_secs(600));
     assert_eq!(qq().songs.ttl, Duration::from_secs(86400));
 }
-#[test]
-fn ttml_keeps_timing_translation_and_agents_but_removes_credits_and_urls() {
-    let text = r#"<tt><head><metadata><ttm:agent xml:id="v1" type="group"><ttm:name>private</ttm:name></ttm:agent><amll:meta key="author" value="https://example.invalid/private"/></metadata></head><!-- private --><body dur="3.000"><div><p begin="1.000" end="3.000" ttm:agent="v1" data-secret="private"><span begin="1.000" end="2.000">Hello</span><span ttm:role="x-translation">你好</span> https://example.invalid/private</p></div></body></tt>"#;
-    let cleaned = clean_ttml(text).unwrap();
-    for secret in [
-        "private",
-        "example.invalid",
-        "<!--",
-        "amll:meta",
-        "ttm:name",
-        "data-secret",
-    ] {
-        assert!(!cleaned.contains(secret), "{secret}");
+#[tokio::test]
+async fn ttml_fetch_preserves_upstream_documents_and_rejects_unsafe_documents() {
+    const RAW: &str = concat!(
+        r#"<tt xmlns:amll="https://github.com/Steve-xmh/amll-ttml-db" "#,
+        r#"xmlns:itunes="http://music.apple.com/lyric-ttml-internal"><head>"#,
+        r#"<iTunesMetadata><translations><translation itunes:key="en">"#,
+        r#"<text for="line-1">What are we to each other?</text></translation>"#,
+        r#"</translations></iTunesMetadata><amll:meta key="author" value="private"/>"#,
+        r#"</head><body><div><p itunes:key="line-1">我们之间到底算什么呢</p>"#,
+        r#"</div></body></tt>"#,
+    );
+    fn document(mid: &str) -> String {
+        match mid {
+            "raw" => RAW.to_owned(),
+            "doctype" => {
+                "<!dOcTyPe tt><tt><body><div><p>x</p></div></body></tt>".to_owned()
+            },
+            "entity" => {
+                "<!eNtItY secret SYSTEM \"file:///etc/passwd\"><tt><body><div><p>x</p></div></body></tt>"
+                    .to_owned()
+            },
+            "oversized" => "x".repeat(2_000_001),
+            _ => unreachable!(),
+        }
     }
-    assert!(cleaned.contains("itunes:timing=\"Word\""));
-    assert!(cleaned.contains("ttm:role=\"x-translation\""));
-    assert!(cleaned.contains("type=\"group\""));
-    assert!(cleaned.contains("begin=\"1.000\""));
-    assert!(
-        clean_ttml("<!DOCTYPE tt><tt><body><div><p begin=\"0\">x</p></div></body></tt>").is_none()
-    );
-    assert!(
-        clean_ttml("<!dOcTyPe tt><tt><body><div><p begin=\"0\">x</p></div></body></tt>").is_none()
-    );
-    let child_lang =
-        clean_ttml("<tt><head xml:lang=\"fr\"/><body><div><p begin=\"0\">x</p></div></body></tt>")
-            .unwrap();
-    assert!(!child_lang.contains("xml:lang=\"fr\""));
-    let root_lang =
-        clean_ttml("<tt xml:lang=\"en\"><body><div><p begin=\"0\">x</p></div></body></tt>")
-            .unwrap();
-    assert!(root_lang.contains("<tt xml:lang=\"en\""));
-    assert!(clean_ttml("not XML").is_none());
-    assert!(clean_ttml("<!ENTITY secret SYSTEM \"file:///etc/passwd\"><tt><body><p begin=\"0\">x</p></body></tt>").is_none());
+    let upstream = Router::new().fallback(any(|request: Request<Body>| async move {
+        let query = request.uri().query().unwrap_or_default();
+        let mid = query
+            .split('&')
+            .find_map(|part| {
+                part.strip_prefix("qqMusicId=")
+                    .or_else(|| part.strip_prefix("mid="))
+            })
+            .unwrap_or("raw");
+        let text = document(mid);
+        match request.uri().path() {
+            "/v1/lyrics/get" => Json(json!({"data": {"lyrics": text}})).into_response(),
+            "/lyric/ttml" => Json(json!({"content": text})).into_response(),
+            _ => StatusCode::NOT_FOUND.into_response(),
+        }
+    }));
+    let Some((base, task)) = serve_local(upstream).await else {
+        return;
+    };
+    let qq = Qq::new(&base, &base, None).unwrap();
+
+    let amll = fetch_amll_lyrics(&qq, "raw").await;
+    assert!(matches!(amll.state, LyricsSourceState::Success));
+    assert_eq!(amll.value.as_deref(), Some(RAW));
+    let ttml = fetch_ttml_lyrics(&qq, "raw").await;
+    assert!(matches!(ttml.state, LyricsSourceState::Success));
+    assert_eq!(ttml.value.as_deref(), Some(RAW));
+
+    for mid in ["doctype", "entity", "oversized"] {
+        assert!(
+            matches!(fetch_amll_lyrics(&qq, mid).await.state, LyricsSourceState::None),
+            "AMLL {mid}"
+        );
+        assert!(
+            matches!(fetch_ttml_lyrics(&qq, mid).await.state, LyricsSourceState::None),
+            "TTML {mid}"
+        );
+    }
+    task.abort();
 }
 #[test]
 fn lrc_fallback_handles_headers_offsets_repeated_stamps_and_xml_escaping() {

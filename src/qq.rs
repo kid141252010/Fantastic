@@ -1531,95 +1531,10 @@ fn clean_text(text: &str) -> String {
 fn wrap(body: &str, word: bool) -> String {
     format!("<tt xmlns=\"http://www.w3.org/ns/ttml\" xmlns:ttm=\"http://www.w3.org/ns/ttml#metadata\" xmlns:itunes=\"http://music.apple.com/lyric-ttml-internal\" itunes:timing=\"{}\">{body}</tt>", if word { "Word" } else { "Line" })
 }
-/// Rebuild the renderable body with a strict tag / attribute allowlist. No credit
-/// comments, external entities, URLs, credit metadata, styles or external resources.
-fn clean_ttml(text: &str) -> Option<String> {
+/// Reject oversized or entity-bearing upstream TTML without changing its contents.
+fn ttml_fetchable(text: &str) -> bool {
     static UNSAFE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)<!DOCTYPE|<!ENTITY").unwrap());
-    if text.len() > 2_000_000 || UNSAFE.is_match(text) {
-        return None;
-    }
-    static COMMENTS: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?s)<!--.*?-->").unwrap());
-    let text = COMMENTS.replace_all(text, "");
-    static BODY: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?s)<body\b[^>]*>.*?</body>").unwrap());
-    let body = BODY.find(&text)?.as_str();
-    static TAGS: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?s)<[^>]*>|[^<]+").unwrap());
-    let tags = &*TAGS;
-    static TAG: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^<(/?)(body|div|p|span|br)\b([^>]*)>$").unwrap());
-    let tag = &*TAG;
-    static ATTRS: LazyLock<Regex> = LazyLock::new(|| Regex::new(r#"([\w:]+)\s*=\s*["']([^"']*)["']"#).unwrap());
-    let attrs = &*ATTRS;
-    static TIME: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\d+(?::\d+){0,2}(?:\.\d+)?$").unwrap());
-    let time = &*TIME;
-    let mut out = String::new();
-    for token in tags.find_iter(body) {
-        let token = token.as_str();
-        if !token.starts_with('<') {
-            out.push_str(&clean_text(token));
-            continue;
-        }
-        let Some(c) = tag.captures(token) else {
-            continue;
-        };
-        if &c[1] == "/" {
-            out.push_str(&format!("</{}>", &c[2]));
-            continue;
-        }
-        out.push('<');
-        out.push_str(&c[2]);
-        for a in attrs.captures_iter(&c[3]) {
-            let (key, value) = (&a[1], &a[2]);
-            let allowed = match key {
-                "begin" | "end" | "dur" => time.is_match(value),
-                "ttm:role" => matches!(value, "x-bg" | "x-translation" | "x-roman"),
-                "ttm:agent" | "itunes:key" | "itunes:songPart" => valid_mid(value),
-                _ => false,
-            };
-            if allowed {
-                out.push_str(&format!(" {key}=\"{}\"", xml(value)));
-            }
-        }
-        out.push_str(if token.ends_with("/>") { "/>" } else { ">" });
-    }
-    if !out.contains("<p ") {
-        return None;
-    }
-    static WORD: LazyLock<Regex> = LazyLock::new(|| Regex::new(r#"<span\b[^>]*\bbegin="#).unwrap());
-    let word = WORD.is_match(&out);
-    let mut result = wrap(&out, word);
-    // Agent types affect duet layout; keep those declarations without names/credits.
-    static AGENTS: LazyLock<Regex> = LazyLock::new(|| Regex::new(r#"<(?:ttm:)?agent\b[^>]*>"#).unwrap());
-    let agents = &*AGENTS;
-    let mut head = String::new();
-    for agent in agents.find_iter(&text) {
-        let mut id = None;
-        let mut kind = None;
-        for a in attrs.captures_iter(agent.as_str()) {
-            if &a[1] == "xml:id" && valid_mid(&a[2]) {
-                id = Some(a[2].to_owned());
-            }
-            if &a[1] == "type" && matches!(&a[2], "person" | "group" | "other") {
-                kind = Some(a[2].to_owned());
-            }
-        }
-        if let Some(id) = id {
-            head.push_str(&format!(
-                "<ttm:agent xml:id=\"{id}\" type=\"{}\"/>",
-                kind.as_deref().unwrap_or("person")
-            ));
-        }
-    }
-    if !head.is_empty() {
-        result = result.replacen(
-            "<body",
-            &format!("<head><metadata>{head}</metadata></head><body"),
-            1,
-        );
-    }
-    static LANG: LazyLock<Regex> = LazyLock::new(|| Regex::new(r#"<tt\b[^>]*\bxml:lang=["']([A-Za-z0-9-]{1,35})["']"#).unwrap());
-    if let Some(lang) = LANG.captures(&text) {
-        result = result.replacen("<tt ", &format!("<tt xml:lang=\"{}\" ", &lang[1]), 1);
-    }
-    Some(result)
+    text.len() <= 2_000_000 && !UNSAFE.is_match(text)
 }
 fn field_text<'a>(value: &'a Value, key: &str) -> Option<&'a str> {
     let v = value.get(key)?;
@@ -2416,7 +2331,8 @@ async fn fetch_amll_lyrics(qq: &Qq, mid: &str) -> LyricsSource<String> {
     };
     raw.pointer("/data/lyrics")
         .and_then(Value::as_str)
-        .and_then(clean_ttml)
+        .filter(|text| ttml_fetchable(text))
+        .map(str::to_owned)
         .map_or_else(LyricsSource::none, LyricsSource::found)
 }
 
@@ -2439,7 +2355,8 @@ async fn fetch_ttml_lyrics(qq: &Qq, mid: &str) -> LyricsSource<String> {
     };
     raw.get("content")
         .and_then(Value::as_str)
-        .and_then(clean_ttml)
+        .filter(|text| ttml_fetchable(text))
+        .map(str::to_owned)
         .map_or_else(LyricsSource::none, LyricsSource::found)
 }
 
