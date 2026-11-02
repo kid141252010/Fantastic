@@ -50,6 +50,10 @@ const INVISIBLE = /[\p{Cf}\ufdd0-\ufdef\ufffe\uffff]|[\ud800-\udbff](?![\udc00-\
 const RESERVED = /^((con|prn|aux|nul|clock\$|(com|lpt)[0-9\u00b9\u00b2\u00b3])(\..*)?|desktop\.ini|thumbs\.db)$/i;
 // Chrome 拒绝扩展名为 .lnk、.local 或 .{…}（CLSID）的名字
 const SHELL_EXT = /\.(?=(lnk|local|\{.*\})$)/i;
+// Template-provided media extensions are kept as-is when downloads add their
+// audio/video suffix. Keep this list in one place for downloads and previews.
+export const MEDIA_EXTENSIONS = Object.freeze(['mp3', 'm4a', 'mp4', 'flac', 'ogg', 'oga', 'aac', 'wav', 'alac', 'aif', 'aiff', 'opus', 'm4v', 'mov', 'webm']);
+const MEDIA_EXT = new RegExp(`\\.(?:${MEDIA_EXTENSIONS.join('|')})$`, 'i');
 const MAX_SEGMENT = 180;
 // macOS / Linux 单个名字最长 255 字节（UTF-8），留出 .m4a、.ttml 等扩展名
 const MAX_BYTES = 240;
@@ -88,6 +92,12 @@ export function formatPath(template, vars) {
 
 export function formatName(template, vars) {
   return formatPath(template, vars).join(' - ');
+}
+
+/** Add the download container suffix unless the template already names a media file. */
+export function appendMediaExtension(name, mv = false) {
+  const value = String(name);
+  return MEDIA_EXT.test(value) ? value : `${value}${mv ? '.mp4' : '.m4a'}`;
 }
 
 // Windows 的完整路径（不含结尾 NUL）最长 259 个 UTF-16 单位，而网页拿不到所选文件夹本身的路径：

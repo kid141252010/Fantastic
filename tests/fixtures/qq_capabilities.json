@@ -16,7 +16,7 @@
   {"quality":"DTS","defaultCodec":"dts","contentType":"audio/vnd.dts","playbackClass":"download","sizeField":"size_dts","displayName":"DTS"},
   {"quality":"DTSX","defaultCodec":"dtsx","contentType":"audio/vnd.dts.hd; codecs=\"dtsx\"","playbackClass":"download","sizeField":null,"displayName":"DTS:X"},
   {"quality":"DA","defaultCodec":"ac-4","contentType":"audio/mp4; codecs=\"ac-4\"","playbackClass":"ac-4-probe","sizeField":"size_dolby","displayName":"AC-4 Dolby Atmos"},
-  {"quality":"DAEAC3","defaultCodec":"ec-3","contentType":"audio/mp4; codecs=\"ec-3\"","playbackClass":"joc","sizeField":"size_dolby","displayName":"E-AC-3 JOC"},
+  {"quality":"DAEAC3","defaultCodec":"ec-3","contentType":"audio/mp4; codecs=\"ec-3\"","playbackClass":"joc","sizeField":null,"displayName":"E-AC-3 JOC"},
   {"quality":"DA448","defaultCodec":"ac-4","contentType":"audio/mp4; codecs=\"ac-4\"","playbackClass":"ac-4-probe","sizeField":null,"displayName":"AC-4 A-JOC 448 kbps"},
   {"quality":"DA1500","defaultCodec":"ac-4","contentType":"audio/mp4; codecs=\"ac-4\"","playbackClass":"ac-4-probe","sizeField":null,"displayName":"AC-4 A-JOC 1500 kbps"}
 ]}

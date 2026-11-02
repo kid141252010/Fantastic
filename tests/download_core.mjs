@@ -4,7 +4,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { buildZip, zipParts, crc32, crc32Blob } from '../src/ui/zip.mjs';
 import { buildIlst } from '../src/ui/mp4-tags.mjs';
-import { formatPath, formatName, sanitize, fitFolder, fitFile } from '../src/ui/naming.mjs';
+import { appendMediaExtension, formatPath, formatName, MEDIA_EXTENSIONS, sanitize, fitFolder, fitFile } from '../src/ui/naming.mjs';
 import { pickMvVideo, pickMvAudio, mvQualityVars } from '../src/ui/mv-hls.mjs';
 // prefs.mjs 在加载时监听 storage 事件（其他标签页修改设置）；Node 中没有全局的 addEventListener
 globalThis.addEventListener ??= () => {};
@@ -188,6 +188,20 @@ test('file name templates: padding, subfolders, sanitizing', () => {
   assert.equal(sanitize('Thumbs.db'), '_Thumbs.db');
   assert.equal(sanitize('Live.Local'), 'Live_Local');
   assert.equal(sanitize('\u3000Title\u3000'), 'Title');
+});
+
+test('download media suffixes do not duplicate template extensions', () => {
+  const path = fitFile([], formatPath('Disc {disk}/{title}.mp4', { disk: 1, title: 'Track' }));
+  path[path.length - 1] = appendMediaExtension(path[path.length - 1]);
+  assert.deepEqual(path, ['Disc 1', 'Track.mp4']);
+  for (const extension of MEDIA_EXTENSIONS) {
+    const name = `track.${extension.toUpperCase()}`;
+    assert.equal(appendMediaExtension(name), name);
+    assert.equal(appendMediaExtension(name, true), name);
+  }
+  assert.equal(appendMediaExtension('track'), 'track.m4a');
+  assert.equal(appendMediaExtension('video', true), 'video.mp4');
+  assert.equal(appendMediaExtension('track.mp4.backup'), 'track.mp4.backup.m4a');
 });
 
 test('file name templates: total path length stays within the Windows limit', () => {
