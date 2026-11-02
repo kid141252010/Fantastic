@@ -8,6 +8,21 @@ import { prefs } from '../prefs.mjs';
 export const bodyClass = 'song-page qq-song-page';
 export const styles = ['/assets/views/song.css', '/assets/views/qq-song.css'];
 
+// Keep the quality row controls identical to the Apple Music song page.
+const ICON = {
+  play: '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7 4.5v15a1 1 0 0 0 1.5.86l12.5-7.5a1 1 0 0 0 0-1.72L8.5 3.64A1 1 0 0 0 7 4.5Z"/></svg>',
+  pause: '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg>',
+  download: '<svg class="dl-ring" viewBox="0 0 36 36" aria-hidden="true"><circle class="dl-ring-track" cx="18" cy="18" r="16"/><circle class="dl-ring-fill" cx="18" cy="18" r="16" pathLength="100"/></svg>'
+    + '<svg class="dl-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11"/><path d="m7 10 5 5 5-5"/><path d="M5 20h14"/></svg>'
+    + '<svg class="dl-stop" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="8" y="8" width="8" height="8" rx="1.5"/></svg>',
+};
+const CODEC_NAMES = new Set(['mp3', 'aac', 'flac', 'vorbis', 'opus', 'pcm', 'ape', 'ec-3', 'ac-3', 'ac-4', 'dts', 'dtsx', 'nac', 'unknown']);
+
+// actions.mjs is browser-only at module evaluation time. Load it when a menu
+// is first opened so the Node UI tests can still import this view module.
+let actionsPromise;
+const loadActions = () => (actionsPromise ||= import('./actions.mjs'));
+
 export function mount({ root, url, signal, player, onLangChange, toast }) {
   const { t } = window.AmI18n;
   const { formatTime } = window.AmHook;
@@ -68,8 +83,8 @@ export function mount({ root, url, signal, player, onLangChange, toast }) {
       const current = active(node.dataset.quality);
       node.classList.toggle('playing', current);
       node.classList.toggle('paused', current && !playing());
-      const button = node.querySelector('button');
-      if (button) button.textContent = t(current && playing() ? 'player.pause' : 'qq.playQuality');
+      const button = node.querySelector('.variant-play');
+      if (button) button.innerHTML = current && playing() ? ICON.pause : ICON.play;
     }
   }
 
@@ -77,29 +92,45 @@ export function mount({ root, url, signal, player, onLangChange, toast }) {
     $('quality-status').textContent = qualityState === 'loading' ? t('qq.qualitiesLoading')
       : qualityState === 'failed' ? t('qq.qualitiesFailed') : '';
     const renderRow = (row) => {
-      const format = row.format || t('qq.formatUnknown');
-      const spec = [format,
-        row.sizeBytes > 0 ? t('qq.sizeMb', { size: (row.sizeBytes / 1_000_000).toFixed(2) }) : ''].filter(Boolean).join(' · ');
+      const format = typeof row.format === 'string' ? row.format : '';
+      const rawCodec = typeof row.codec === 'string' ? row.codec.trim() : '';
+      const codec = rawCodec && CODEC_NAMES.has(rawCodec) ? rawCodec : (format || rawCodec || t('qq.formatUnknown'));
+      const size = row.sizeBytes > 0 ? t('qq.sizeMb', { size: (row.sizeBytes / 1_000_000).toFixed(2) }) : '';
       const label = t(`qq.quality.${row.quality}.label`);
-      const node = el('div', { className: `variant qq-quality${row.playable ? '' : ' unsupported'}` },
-        el('div', { className: 'variant-main' },
-          el('div', { className: 'variant-name' }, el('span', { textContent: label }),
-            ...(!row.playable ? [el('span', { className: 'variant-tag warn', textContent: t('row.downloadOnly'),
-              title: t('row.unsupportedTitle', { codecs: row.codec, hint: t('player.hintDownload') }) })] : [])),
-          el('div', { className: 'qq-quality-tip', textContent: t(`qq.quality.${row.quality}.tip`) }),
-          el('div', { className: 'variant-spec', textContent: spec })));
+      const unsupported = t('row.unsupportedTitle', { codecs: row.codec, hint: t('player.hintDownload') });
+      const play = el('button', { className: 'variant-play', type: 'button', innerHTML: ICON.play, disabled: !row.playable });
+      play.setAttribute('aria-label', row.playable ? t('qq.playQualityAria', { quality: label }) : t('row.unsupported'));
+      play.title = row.playable ? t('row.playTitle') : unsupported;
+      play.addEventListener('click', () => playQuality(row.quality));
+      const num = el('span', { className: 'variant-num' }, play,
+        el('span', { className: 'eq', ariaHidden: 'true' }, el('i'), el('i'), el('i'), el('i')));
+      const name = el('div', { className: 'variant-name' },
+        el('span', { className: 'variant-label', textContent: label }),
+        ...(!row.playable ? [el('span', { className: 'variant-tag warn', textContent: t('row.downloadOnly'), title: unsupported })] : []));
+      const spec = el('div', { className: 'variant-spec' },
+        [codec, size].filter(Boolean).join(' · ') + ' · ', el('code', { textContent: row.quality }));
+      const node = el('div', { className: `variant${row.playable ? '' : ' unsupported'}` }, num,
+        el('div', { className: 'variant-main' }, name, spec));
       node.dataset.quality = row.quality;
-      const actions = el('div', { className: 'qq-quality-actions' });
-      if (row.playable) {
-        const play = el('button', { className: 'song-reparse', type: 'button', disabled: !track, textContent: t('qq.playQuality') });
-        play.setAttribute('aria-label', t('qq.playQualityAria', { quality: label }));
-        play.addEventListener('click', () => playQuality(row.quality));
-        actions.append(play);
-      }
-      const download = el('a', { className: 'song-reparse qq-quality-download', href: row.downloadUrl, download: '', textContent: t('qq.downloadQuality') });
+      const download = el('a', { className: 'variant-dl', href: row.downloadUrl, download: '', innerHTML: ICON.download });
       download.setAttribute('aria-label', t('qq.downloadQualityAria', { quality: label }));
-      actions.append(download);
-      node.append(actions);
+      download.title = t('menu.download');
+      const more = el('button', { className: 'variant-more more-btn', type: 'button', title: t('row.more'), innerHTML: '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg>' });
+      more.setAttribute('aria-label', t('row.moreAria', { name: label }));
+      more.setAttribute('aria-haspopup', 'menu');
+      more.setAttribute('aria-expanded', 'false');
+      more.addEventListener('click', async (event) => {
+        event.stopPropagation();
+        const { openMenu, copyText, ICON: ACTION_ICON } = await loadActions();
+        openMenu(more, [
+          ...(row.playable ? [{ icon: ACTION_ICON.play, label: t('qq.playQuality'), onSelect: () => playQuality(row.quality) }] : []),
+          { icon: ACTION_ICON.download, label: t('menu.download'), onSelect: () => download.click() },
+          { icon: ACTION_ICON.link, label: t('qq.copyDownload'), title: row.downloadUrl,
+            onSelect: () => copyText(row.downloadUrl, () => toast(t('action.copied'))) },
+        ]);
+      });
+      node.append(download, more);
+      node.addEventListener('dblclick', (event) => { if (!event.target?.closest?.('a, button')) playQuality(row.quality); });
       return node;
     };
     const available = rows.filter((row) => row.available);
