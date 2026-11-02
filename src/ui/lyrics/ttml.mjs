@@ -34,8 +34,45 @@ function tokens(node) {
   }));
 }
 
-function localization(metadata, collection, element) {
-  const source = child(child(metadata, collection), element);
+const normalizeLanguage = (language) => String(language || '').trim().replaceAll('_', '-').toLowerCase();
+
+function localization(metadata, collection, element, prefLang) {
+  const candidates = children(child(metadata, collection), element);
+  const preferred = normalizeLanguage(prefLang);
+  if (!preferred) {
+    const source = candidates[0];
+    return {
+      language: attribute(source, XML, 'lang'),
+      automatic: source?.getAttribute('automaticallyCreated') === 'true',
+      type: source?.getAttribute('type') || '',
+      entries: new Map(children(source, 'text').map(text => [text.getAttribute('for'), text])),
+    };
+  }
+  const preferredParts = preferred.split('-').filter(Boolean);
+  const primary = preferredParts[0];
+  const preferredScript = primary === 'zh' ? 'hans' : '';
+  const preferredRegion = primary === 'zh' ? 'cn' : primary === 'en' ? 'us' : '';
+  const score = (source) => {
+    const language = normalizeLanguage(attribute(source, XML, 'lang'));
+    if (!language) return 0;
+    if (language === preferred) return 1000;
+    const parts = language.split('-').filter(Boolean);
+    if (parts[0] !== primary) return 0;
+    const script = parts.find(part => /^[a-z]{4}$/.test(part));
+    const region = parts.find(part => /^(?:[a-z]{2}|\d{3})$/.test(part));
+    if (script === preferredScript) return 300;
+    if (region === preferredRegion) return 200;
+    return 100;
+  };
+  let source = candidates[0];
+  let best = score(source);
+  for (const candidate of candidates.slice(1)) {
+    const candidateScore = score(candidate);
+    if (candidateScore > best) {
+      source = candidate;
+      best = candidateScore;
+    }
+  }
   return {
     language: attribute(source, XML, 'lang'),
     automatic: source?.getAttribute('automaticallyCreated') === 'true',
@@ -55,7 +92,7 @@ function readVoice(node, translation, pronunciation) {
   };
 }
 
-export function parseTTML(xml, Parser = globalThis.DOMParser) {
+export function parseTTML(xml, Parser = globalThis.DOMParser, prefLang) {
   if (!Parser) throw new Error('需要 DOMParser');
   const document = new Parser().parseFromString(xml, 'application/xml');
   if (document.querySelector('parsererror') || document.documentElement.localName !== 'tt') {
@@ -74,8 +111,8 @@ export function parseTTML(xml, Parser = globalThis.DOMParser) {
     return [[id, { id, ...(type ? { type } : {}), ...(name ? { name } : {}) }]];
   }));
   const amllMeta = key => children(head, 'meta').filter(meta => meta.getAttribute('key') === key).map(meta => meta.getAttribute('value'));
-  const translation = localization(metadata, 'translations', 'translation');
-  const pronunciation = localization(metadata, 'transliterations', 'transliteration');
+  const translation = localization(metadata, 'translations', 'translation', prefLang);
+  const pronunciation = localization(metadata, 'transliterations', 'transliteration', prefLang);
   const sections = children(body, 'div').map((section, sectionIndex) => ({
     begin: parseTime(section.getAttribute('begin') || '0'),
     end: parseTime(section.getAttribute('end') || '0'),
