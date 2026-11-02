@@ -58,10 +58,14 @@ test('QQ detail omits unavailable tiers while retaining runtime-playable and dow
     assert.deepEqual(list.children.map((group) => group.querySelector('.quality-group-title').textContent), ['q.atmos', 'MP3']);
     const rows = list.querySelectorAll('.variant');
     assert.deepEqual(rows.map((row) => row.dataset.quality), ['DA', 'HQ']);
-    assert.ok(rows[0].querySelector('button'));
-    assert.equal(rows[0].querySelector('a').href, '/qq/song/test/download?quality=DA');
-    assert.ok(rows[1].querySelector('button'));
-    assert.equal(rows[1].querySelector('a').href, '/qq/song/test/download?quality=HQ');
+    assert.ok(rows[0].querySelector('.variant-play'));
+    assert.ok(rows[0].querySelector('.variant-dl'));
+    assert.ok(rows[0].querySelector('.variant-more'));
+    assert.equal(rows[0].querySelector('.variant-dl').href, '/qq/song/test/download?quality=DA');
+    assert.ok(rows[1].querySelector('.variant-play'));
+    assert.equal(rows[1].querySelector('.variant-dl').href, '/qq/song/test/download?quality=HQ');
+    assert.match(rows[1].querySelector('.variant-spec').textContent, / · HQ$/);
+    assert.equal(rows[1].querySelector('.qq-quality-tip'), null);
     assert.equal(root.querySelector('#quality-status').textContent, '');
     rerender();
   }
@@ -96,8 +100,8 @@ test('QQ detail preserves unknown tiers in final groups titled by literal format
   const list = root.querySelector('#variant-list');
   assert.deepEqual(list.children.map((group) => group.querySelector('.quality-group-title').textContent), ['MP3', '<Future Format>', 'FUTURE']);
   assert.deepEqual(list.querySelectorAll('.variant').map((row) => row.dataset.quality), ['HQ', 'NEXT', 'FUTURE']);
-  assert.equal(list.children[1].querySelector('a').href, '/qq/song/test/download?quality=NEXT');
-  assert.equal(list.children[1].querySelector('button'), null);
+  assert.equal(list.children[1].querySelector('.variant-dl').href, '/qq/song/test/download?quality=NEXT');
+  assert.ok(list.children[1].querySelector('.variant-play').disabled);
 });
 
 test('QQ detail synchronizes playing and paused rows inside quality groups', async (t) => {
@@ -105,22 +109,30 @@ test('QQ detail synchronizes playing and paused rows inside quality groups', asy
   await new Promise(setImmediate);
   const list = root.querySelector('#variant-list');
   const rowFor = (quality) => list.querySelectorAll('.variant').find((row) => row.dataset.quality === quality);
-  await rowFor('HQ').querySelector('button').click();
+  await rowFor('HQ').querySelector('.variant-play').click();
   setPlaying(played[0]);
   for (let i = 0; i < 2; i++) {
     assert.match(rowFor('HQ').className, /\bplaying\b/);
     assert.doesNotMatch(rowFor('HQ').className, /\bpaused\b/);
-    assert.equal(rowFor('HQ').querySelector('button').textContent, 'player.pause');
+    assert.match(rowFor('HQ').querySelector('.variant-play').innerHTML, /<rect/);
     assert.doesNotMatch(rowFor('DA').className, /\bplaying\b/);
-    assert.equal(rowFor('DA').querySelector('button').textContent, 'qq.playQuality');
+    assert.match(rowFor('DA').querySelector('.variant-play').innerHTML, /<path/);
     assert.ok(list.children.every((group) => group.className === 'quality-group'));
     rerender();
   }
-  await rowFor('HQ').querySelector('button').click();
+  await rowFor('HQ').querySelector('.variant-play').click();
   assert.equal(played.length, 1);
   assert.match(rowFor('HQ').className, /\bpaused\b/);
-  assert.equal(rowFor('HQ').querySelector('button').textContent, 'qq.playQuality');
+  assert.match(rowFor('HQ').querySelector('.variant-play').innerHTML, /<path/);
   assert.equal(root.querySelector('#play-best').textContent, 'song.play');
+});
+
+test('QQ quality rows play on double click outside their controls', async (t) => {
+  const { root, played } = detailPage(t);
+  await new Promise(setImmediate);
+  const row = root.querySelector('#variant-list').querySelector('.variant');
+  row.events.dblclick[0]({ target: row });
+  assert.equal(played[0].quality, 'DA');
 });
 
 test('QQ detail header, radiosity, playback and queue use the fixed cover URL', async (t) => {
@@ -137,7 +149,7 @@ test('QQ detail header, radiosity, playback and queue use the fixed cover URL', 
   assert.equal(root.querySelector('#radiosity').querySelector('img').src, fixedCover);
   await root.querySelector('#enqueue').click();
   await root.querySelector('#play-best').click();
-  await root.querySelector('#variant-list').querySelector('.variant').querySelector('button').click();
+  await root.querySelector('#variant-list').querySelector('.variant').querySelector('.variant-play').click();
   assert.equal(queued[0].artwork, fixedCover);
   assert.deepEqual(played.map((item) => item.artwork), [fixedCover, fixedCover]);
 });
@@ -146,8 +158,9 @@ test('QQ detail retains available downloads when the browser cannot play any tie
   const { root } = detailPage(t, { nativeModes: [] });
   await new Promise(setImmediate);
   assert.deepEqual(root.querySelector('#variant-list').querySelectorAll('.variant').map((row) => row.dataset.quality), ['DA', 'HQ']);
-  assert.equal(root.querySelector('#variant-list').querySelectorAll('button').length, 0);
-  assert.equal(root.querySelector('#variant-list').querySelectorAll('a').length, 2);
+  assert.equal(root.querySelector('#variant-list').querySelectorAll('.variant-play').length, 2);
+  assert.ok(root.querySelector('#variant-list').querySelectorAll('.variant-play').every((button) => button.disabled));
+  assert.equal(root.querySelector('#variant-list').querySelectorAll('.variant-dl').length, 2);
   assert.equal(root.querySelector('#play-best').disabled, true);
 });
 
