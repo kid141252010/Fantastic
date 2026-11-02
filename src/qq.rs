@@ -1756,7 +1756,21 @@ fn qrc_lines(text: &str) -> Vec<LyricLine> {
             is_bg,
         });
     }
+    // QQ can repeat complete rows in one QRC payload. Compare parsed timing
+    // and text so later copies disappear while repeated lyrics at other times
+    // and distinct rows at the same time remain available to every consumer.
+    let mut seen = HashSet::new();
     lines
+        .into_iter()
+        .filter(|line| {
+            let words = line
+                .words
+                .iter()
+                .map(|word| (word.start, word.end, word.text.clone()))
+                .collect::<Vec<_>>();
+            seen.insert((line.start, line.text.clone(), words))
+        })
+        .collect()
 }
 const AUXILIARY_MAX_DISTANCE: u64 = 1000;
 // A skipped auxiliary row costs 700 ms.  This makes every allowed pair at
