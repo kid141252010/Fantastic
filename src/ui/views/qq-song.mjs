@@ -64,7 +64,7 @@ export function mount({ root, url, signal, player, onLangChange, toast }) {
   function syncPlaying() {
     $('play-best').disabled = !track || (!currentTrack() && !defaultQuality());
     $('play-best').textContent = t(currentTrack() && playing() ? 'song.pause' : 'song.play');
-    for (const node of $('variant-list').children) {
+    for (const node of $('variant-list').querySelectorAll('.variant')) {
       const current = active(node.dataset.quality);
       node.classList.toggle('playing', current);
       node.classList.toggle('paused', current && !playing());
@@ -76,7 +76,7 @@ export function mount({ root, url, signal, player, onLangChange, toast }) {
   function renderQualities() {
     $('quality-status').textContent = qualityState === 'loading' ? t('qq.qualitiesLoading')
       : qualityState === 'failed' ? t('qq.qualitiesFailed') : '';
-    $('variant-list').replaceChildren(...rows.filter((row) => row.available).map((row) => {
+    const renderRow = (row) => {
       const format = row.format || t('qq.formatUnknown');
       const spec = [format,
         row.sizeBytes > 0 ? t('qq.sizeMb', { size: (row.sizeBytes / 1_000_000).toFixed(2) }) : ''].filter(Boolean).join(' · ');
@@ -101,7 +101,35 @@ export function mount({ root, url, signal, player, onLangChange, toast }) {
       actions.append(download);
       node.append(actions);
       return node;
-    }));
+    };
+    const available = rows.filter((row) => row.available);
+    const groups = [];
+    for (const group of qq.QUALITY_GROUPS) {
+      const grouped = available.filter((row) => row.group === group.id);
+      if (!grouped.length) continue;
+      if (group.id === 'other') {
+        const fallback = new Map();
+        for (const row of grouped) {
+          const title = qq.qualityGroupTitle(group.id, row);
+          if (!fallback.has(title)) fallback.set(title, el('div', { className: 'quality-group' },
+            el('h3', { className: 'quality-group-title', textContent: title })));
+          fallback.get(title).append(renderRow(row));
+        }
+        groups.push(...fallback.values());
+        continue;
+      }
+      if (group.qualities.length) {
+        const order = new Map(group.qualities.map((quality, index) => [quality, index]));
+        grouped.sort((a, b) => (order.get(a.quality) ?? group.qualities.length)
+          - (order.get(b.quality) ?? group.qualities.length));
+      }
+      const title = group.titleKey ? t(group.title) : group.title;
+      const container = el('div', { className: 'quality-group' },
+        el('h3', { className: 'quality-group-title', textContent: title }),
+        ...grouped.map(renderRow));
+      groups.push(container);
+    }
+    $('variant-list').replaceChildren(...groups);
     syncPlaying();
   }
 

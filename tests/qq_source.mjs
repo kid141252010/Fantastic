@@ -99,13 +99,21 @@ test('QQ quality rows list all tiers, retain formats and sizes, and omit unavail
     { quality: 'unknown', available: true, sizeBytes: 42, format: 'ignored' },
   ] }, dto.id);
   assert.deepEqual(rows.map((row) => row.quality), ['MP3128', 'AAC48', 'WEB', 'AAC192', 'OGG96', 'OGG192', 'HQ', 'NAC',
-    'SQ', 'RS', 'QAI', 'Q360V1', 'Q360V2', 'RA360', 'DTS', 'DTSX', 'DA', 'DAEAC3', 'DA448', 'DA1500']);
+    'SQ', 'RS', 'QAI', 'Q360V1', 'Q360V2', 'RA360', 'DTS', 'DTSX', 'DA', 'DAEAC3', 'DA448', 'DA1500', 'unknown']);
+  assert.deepEqual(rows.map((row) => row.group), ['mp3', 'aac', 'aac', 'aac', 'ogg', 'ogg', 'mp3', 'mp3',
+    'lossless', 'lossless', 'spatial', 'spatial', 'spatial', 'spatial', 'dts', 'dts', 'atmos', 'atmos', 'atmos', 'atmos', 'other']);
+  assert.deepEqual(qq.QUALITY_GROUP_ORDER, ['lossless', 'atmos', 'spatial', 'dts', 'aac', 'ogg', 'mp3', 'other']);
   const byQuality = Object.fromEntries(rows.map((row) => [row.quality, row]));
+  assert.ok(rows.every((row) => typeof row.group === 'string'));
+  assert.equal(byQuality.SQ.group, 'lossless');
+  assert.equal(byQuality.NAC.group, 'mp3');
   assert.equal(byQuality.HQ.format, 'MP3 320 kbps');
   assert.equal(byQuality.HQ.sizeBytes, 10792943);
   assert.equal(byQuality.SQ.downloadUrl, `/qq/song/${dto.id}/download?quality=SQ`);
+  assert.equal(byQuality.unknown.group, 'other');
+  assert.equal(byQuality.unknown.downloadUrl, `/qq/song/${dto.id}/download?quality=unknown`);
   assert.equal(byQuality.SQ.playUrl, `/qq/song/${dto.id}/play?quality=SQ`);
-  for (const row of rows.filter((row) => !['HQ', 'SQ'].includes(row.quality))) {
+  for (const row of rows.filter((row) => !['HQ', 'SQ', 'unknown'].includes(row.quality))) {
     assert.equal(row.available, false);
     assert.equal(Object.hasOwn(row, 'playUrl'), false);
     assert.equal(Object.hasOwn(row, 'downloadUrl'), false);
@@ -117,6 +125,42 @@ test('QQ quality rows list all tiers, retain formats and sizes, and omit unavail
     assert.throws(() => qq.downloadUrl(dto.id, quality));
     assert.throws(() => qq.qualityEntry(qq.toTrack(dto), quality));
   }
+});
+
+test('QQ song groups cover all 20 WET tiers in a stable presentation order', () => {
+  const fixture = JSON.parse(fs.readFileSync(new URL('./fixtures/qq_capabilities.json', import.meta.url), 'utf8'));
+  const qualities = fixture.qualities.map(({ quality, displayName }) => ({ quality, format: displayName, available: true, sizeBytes: 1024 }));
+  const rows = qq.qualityRows({ qualities: qualities.toReversed() }, dto.id);
+  assert.equal(rows.length, 20);
+  assert.ok(rows.every((row) => row.group && row.group !== 'other'));
+  assert.deepEqual(rows.map((row) => row.quality), fixture.qualities.map((row) => row.quality));
+  assert.deepEqual(qq.QUALITY_GROUP_ORDER, ['lossless', 'atmos', 'spatial', 'dts', 'aac', 'ogg', 'mp3', 'other']);
+  assert.deepEqual(qq.QUALITY_GROUPS.map(({ id, qualities }) => [id,
+    qualities.filter((quality) => rows.some((row) => row.group === id && row.quality === quality))]), [
+    ['lossless', ['RS', 'SQ']],
+    ['atmos', ['DA', 'DA1500', 'DA448', 'DAEAC3']],
+    ['spatial', ['QAI', 'Q360V1', 'Q360V2', 'RA360']],
+    ['dts', ['DTSX', 'DTS']],
+    ['aac', ['AAC192', 'WEB', 'AAC48']],
+    ['ogg', ['OGG192', 'OGG96']],
+    ['mp3', ['HQ', 'MP3128', 'NAC']],
+    ['other', []],
+  ]);
+  assert.equal(qq.qualityGroupFor('AAC96'), 'aac');
+});
+
+test('QQ quality rows retain unknown tiers in the fallback group with literal titles', () => {
+  const rows = qq.qualityRows({ qualities: [
+    { quality: 'FUTURE', available: true, sizeBytes: 42, format: 'Future Format', playback: 'native' },
+    { quality: 'NEXT', available: true, sizeBytes: 84 },
+    { quality: 'FUTURE', available: true, sizeBytes: 999 },
+  ] }, dto.id);
+  const unknown = rows.filter((row) => row.group === 'other');
+  assert.deepEqual(unknown.map((row) => row.quality), ['FUTURE', 'NEXT']);
+  assert.deepEqual(unknown.map((row) => qq.qualityGroupTitle(row.group, row)), ['Future Format', 'NEXT']);
+  assert.ok(unknown.every((row) => row.available && !row.playable && row.downloadUrl));
+  assert.equal(unknown[0].downloadUrl, `/qq/song/${dto.id}/download?quality=FUTURE`);
+  assert.deepEqual(qq.qualityVariants(rows), []);
 });
 
 test('QQ consumes the complete capabilities table at module startup and keeps fallback on malformed data', async () => {

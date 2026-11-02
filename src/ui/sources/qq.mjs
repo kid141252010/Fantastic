@@ -30,6 +30,28 @@ const FALLBACK_CAPABILITIES = [
   ({ quality, defaultCodec, contentType, playbackClass, sizeField }));
 export const QUALITY_IDS = FALLBACK_CAPABILITIES.map(({ quality }) => quality);
 const FALLBACK_BY_QUALITY = new Map(FALLBACK_CAPABILITIES.map((entry) => [entry.quality, entry]));
+
+// Song detail quality groups. Keep the quality order here so every consumer
+// renders the same order even when the adapter returns rows in another order.
+export const QUALITY_GROUPS = Object.freeze([
+  Object.freeze({ id: 'lossless', title: 'q.lossless', titleKey: true, qualities: Object.freeze(['RS', 'SQ']) }),
+  Object.freeze({ id: 'atmos', title: 'q.atmos', titleKey: true, qualities: Object.freeze(['DA', 'DA1500', 'DA448', 'DAEAC3']) }),
+  Object.freeze({ id: 'spatial', title: 'qq.groupSpatial', titleKey: true, qualities: Object.freeze(['QAI', 'Q360V1', 'Q360V2', 'RA360']) }),
+  Object.freeze({ id: 'dts', title: 'DTS', titleKey: false, qualities: Object.freeze(['DTSX', 'DTS']) }),
+  Object.freeze({ id: 'aac', title: 'AAC', titleKey: false, qualities: Object.freeze(['AAC192', 'WEB', 'AAC96', 'AAC48']) }),
+  Object.freeze({ id: 'ogg', title: 'OGG', titleKey: false, qualities: Object.freeze(['OGG192', 'OGG96']) }),
+  Object.freeze({ id: 'mp3', title: 'MP3', titleKey: false, qualities: Object.freeze(['HQ', 'MP3128', 'NAC']) }),
+  Object.freeze({ id: 'other', title: '', titleKey: false, qualities: Object.freeze([]) }),
+]);
+export const QUALITY_GROUP_ORDER = Object.freeze(QUALITY_GROUPS.map(({ id }) => id));
+export const QUALITY_GROUPS_BY_ID = new Map(QUALITY_GROUPS.map((group) => [group.id, group]));
+const QUALITY_GROUP_BY_QUALITY = new Map(QUALITY_GROUPS.flatMap(({ id, qualities }) => qualities.map((quality) => [quality, id])));
+export function qualityGroupFor(quality) { return QUALITY_GROUP_BY_QUALITY.get(quality) || 'other'; }
+export function qualityGroupTitle(group, row = {}) {
+  if (group !== 'other') return QUALITY_GROUPS_BY_ID.get(group)?.title || group;
+  return row.format || row.quality || group;
+}
+
 let capabilityTable = FALLBACK_BY_QUALITY;
 
 function validCapabilities(data) {
@@ -194,14 +216,28 @@ export async function artist(id, signal) { return request(`/qq/artist/${mid(id)}
 export function qualityRows(data, id, detect, environment = globalThis) {
   const rows = Array.isArray(data?.qualities) ? data.qualities : [];
   detect ||= globalThis.window?.AmHook?.detectQqModes;
-  return QUALITY_IDS.map((quality) => {
-    const row = rows.find((item) => item?.quality === quality);
+  const supplied = new Map();
+  for (const row of rows) {
+    if (typeof row?.quality === 'string' && row.quality && !supplied.has(row.quality)) supplied.set(row.quality, row);
+  }
+  return [...new Set([...QUALITY_IDS, ...supplied.keys()])].map((quality) => {
+    const row = supplied.get(quality);
     const sizeBytes = Number.isSafeInteger(row?.sizeBytes) && row.sizeBytes >= 0 ? row.sizeBytes : null;
     const available = row?.available === true && sizeBytes > 0;
-    const info = playbackInfo(quality, row, environment);
+    const known = FALLBACK_BY_QUALITY.has(quality);
+    const info = known ? playbackInfo(quality, row, environment) : {
+      // Preserve new adapter tiers for display/download without putting an
+      // unsupported quality ID into the player's capability-based menu.
+      playback: 'download',
+      codec: typeof row?.codec === 'string' ? row.codec : '',
+      codecs: typeof row?.codec === 'string' ? row.codec : '',
+      contentType: typeof row?.contentType === 'string' ? row.contentType : 'application/octet-stream',
+    };
     const playable = available && info.playback !== 'download' && (!detect || detect(info).length > 0);
-    return { quality, available, playable, sizeBytes, ...info, format: typeof row?.format === 'string' ? row.format : '',
-      ...(available ? { downloadUrl: downloadUrl(id, quality) } : {}),
+    const group = qualityGroupFor(quality);
+    return { quality, group, available, playable, sizeBytes, ...info, format: typeof row?.format === 'string' ? row.format : '',
+      ...(available ? { downloadUrl: known ? downloadUrl(id, quality)
+        : `/qq/song/${mid(id)}/download?quality=${encodeURIComponent(quality)}` } : {}),
       ...(playable ? { playUrl: playUrl(id, quality) } : {}) };
   });
 }
