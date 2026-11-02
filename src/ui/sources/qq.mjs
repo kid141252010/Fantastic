@@ -23,7 +23,7 @@ const FALLBACK_CAPABILITIES = [
   ['DTS', 'dts', 'audio/vnd.dts', 'download', 'size_dts'],
   ['DTSX', 'dtsx', 'audio/vnd.dts.hd; codecs="dtsx"', 'download', null],
   ['DA', 'ac-4', 'audio/mp4; codecs="ac-4"', 'ac-4-probe', 'size_dolby'],
-  ['DAEAC3', 'ec-3', 'audio/mp4; codecs="ec-3"', 'joc', 'size_dolby'],
+  ['DAEAC3', 'ec-3', 'audio/mp4; codecs="ec-3"', 'joc', null],
   ['DA448', 'ac-4', 'audio/mp4; codecs="ac-4"', 'ac-4-probe', null],
   ['DA1500', 'ac-4', 'audio/mp4; codecs="ac-4"', 'ac-4-probe', null],
 ].map(([quality, defaultCodec, contentType, playbackClass, sizeField]) =>

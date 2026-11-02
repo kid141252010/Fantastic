@@ -2,7 +2,7 @@
 // 在线播放默认音质、JOC 对象渲染与下载设置保存在 prefs.mjs；默认音质只影响每首曲的初始选档，
 // JOC 修改会切换正在播放的曲目（player.js 的 jocChanged）；进行中的下载沿用开始时的设置。
 import { prefs, OPTIONS, CODEC_GROUPS, TAG_FIELDS, TAG_NAME, DEFAULTS, DEFAULT_FALLBACK } from '../prefs.mjs';
-import { formatPath, fitFolder, fitFile, templateIssues, TEMPLATE_VAR_GROUPS, TEMPLATE_SCOPES } from '../naming.mjs';
+import { appendMediaExtension, formatPath, fitFolder, fitFile, templateIssues, TEMPLATE_VAR_GROUPS, TEMPLATE_SCOPES } from '../naming.mjs';
 import { downloads } from '../downloads.mjs';
 import { userToken, askToken, onTokenChange } from '../station.mjs';
 
@@ -154,7 +154,8 @@ export function mount({ root, signal, onLangChange, toast }) {
       const value = input.value.trim() || DEFAULTS.download[key];
       const folder = () => fitFolder(formatPath(saved[folderKey] || DEFAULTS.download[folderKey], SAMPLE));
       const path = kind === 'file' ? fitFile(folder(), formatPath(value, SAMPLE)) : fitFolder(formatPath(value, SAMPLE));
-      preview.textContent = kind === 'file' ? `${path.join('/')}.m4a` : kind === 'zip' ? `${path.join(' - ')}.zip  ·  ${path.join('/')}/` : path.join('/');
+      if (kind === 'file') path[path.length - 1] = appendMediaExtension(path[path.length - 1]);
+      preview.textContent = kind === 'file' ? path.join('/') : kind === 'zip' ? `${path.join(' - ')}.zip  ·  ${path.join('/')}/` : path.join('/');
       const { unknown, outside } = templateIssues(key, value);
       const names = (list) => list.map((name) => `{${name}}`).join(' ');
       warn.replaceChildren(...[
