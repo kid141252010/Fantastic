@@ -19,7 +19,7 @@ const child = (node, name) => children(node, name)[0];
 const attribute = (node, ns, name, fallback = '') => node?.getAttributeNS(ns, name) || fallback;
 const role = node => attribute(node, META, 'role');
 const isBackground = node => role(node) === 'x-bg';
-const inline = (node, name) => children(node, 'span').find(span => role(span) === name);
+const inline = (node, name, prefLang) => selectLanguage(children(node, 'span').filter(span => role(span) === name), prefLang);
 // Text of the node itself, without background vocals or inline translations
 const cleanText = node => [...(node?.childNodes || [])]
   .filter(n => n.nodeType === 3 || (n.nodeType === 1 && !role(n)))
@@ -36,43 +36,39 @@ function tokens(node) {
 
 const normalizeLanguage = (language) => String(language || '').trim().replaceAll('_', '-').toLowerCase();
 
-function localization(metadata, collection, element, prefLang) {
-  const candidates = children(child(metadata, collection), element);
+function languageScore(language, prefLang) {
+  language = normalizeLanguage(language);
   const preferred = normalizeLanguage(prefLang);
-  if (!preferred) {
-    const source = candidates[0];
-    return {
-      language: attribute(source, XML, 'lang'),
-      automatic: source?.getAttribute('automaticallyCreated') === 'true',
-      type: source?.getAttribute('type') || '',
-      entries: new Map(children(source, 'text').map(text => [text.getAttribute('for'), text])),
-    };
-  }
+  if (!preferred || !language) return 0;
+  if (language === preferred) return 1000;
   const preferredParts = preferred.split('-').filter(Boolean);
   const primary = preferredParts[0];
   const preferredScript = primary === 'zh' ? 'hans' : '';
   const preferredRegion = primary === 'zh' ? 'cn' : primary === 'en' ? 'us' : '';
-  const score = (source) => {
-    const language = normalizeLanguage(attribute(source, XML, 'lang'));
-    if (!language) return 0;
-    if (language === preferred) return 1000;
-    const parts = language.split('-').filter(Boolean);
-    if (parts[0] !== primary) return 0;
-    const script = parts.find(part => /^[a-z]{4}$/.test(part));
-    const region = parts.find(part => /^(?:[a-z]{2}|\d{3})$/.test(part));
-    if (script === preferredScript) return 300;
-    if (region === preferredRegion) return 200;
-    return 100;
-  };
+  const parts = language.split('-').filter(Boolean);
+  if (parts[0] !== primary) return 0;
+  const script = parts.find(part => /^[a-z]{4}$/.test(part));
+  const region = parts.slice(1).find(part => /^(?:[a-z]{2}|\d{3})$/.test(part));
+  if (script === preferredScript) return 300;
+  if (region === preferredRegion) return 200;
+  return 100;
+}
+
+function selectLanguage(candidates, prefLang) {
   let source = candidates[0];
-  let best = score(source);
+  let best = languageScore(attribute(source, XML, 'lang'), prefLang);
   for (const candidate of candidates.slice(1)) {
-    const candidateScore = score(candidate);
+    const candidateScore = languageScore(attribute(candidate, XML, 'lang'), prefLang);
     if (candidateScore > best) {
       source = candidate;
       best = candidateScore;
     }
   }
+  return source;
+}
+
+function localization(metadata, collection, element, prefLang) {
+  const source = selectLanguage(children(child(metadata, collection), element), prefLang);
   return {
     language: attribute(source, XML, 'lang'),
     automatic: source?.getAttribute('automaticallyCreated') === 'true',
@@ -81,9 +77,9 @@ function localization(metadata, collection, element, prefLang) {
   };
 }
 
-function readVoice(node, translation, pronunciation) {
-  translation ||= inline(node, 'x-translation');
-  pronunciation ||= inline(node, 'x-roman');
+function readVoice(node, translation, pronunciation, prefLang) {
+  translation ||= inline(node, 'x-translation', prefLang);
+  pronunciation ||= inline(node, 'x-roman', prefLang);
   return {
     text: cleanText(node), tokens: tokens(node),
     translation: translation?.textContent.trim() || '',
@@ -124,8 +120,8 @@ export function parseTTML(xml, Parser = globalThis.DOMParser, prefLang) {
       const replacement = translation.type === 'replacement' ? translation.entries.get(key) : null;
       const tr = replacement ? null : translation.entries.get(key);
       const bgNode = children(line, 'span').find(isBackground);
-      const background = readVoice(bgNode, children(tr, 'span').find(isBackground), children(pr, 'span').find(isBackground));
-      const main = readVoice(line, tr, pr);
+      const background = readVoice(bgNode, children(tr, 'span').find(isBackground), children(pr, 'span').find(isBackground), prefLang);
+      const main = readVoice(line, tr, pr, prefLang);
       if (replacement) {
         Object.assign(main, { text: cleanText(replacement), tokens: tokens(replacement) });
         const bgReplacement = children(replacement, 'span').find(isBackground);
@@ -139,12 +135,17 @@ export function parseTTML(xml, Parser = globalThis.DOMParser, prefLang) {
       return { key, begin: parseTime(line.getAttribute('begin') || '0'), end: parseTime(line.getAttribute('end') || '0'), agent: attribute(line, META, 'agent', 'v1'), ...main, background };
     }),
   }));
+  const lines = sections.flatMap(section => section.lines);
+  const timing = attribute(root, APPLE, 'timing') || (
+    lines.some(line => line.tokens.length || line.background.tokens.length) ? 'Word' :
+      lines.some(line => line.begin !== 0 || line.end !== 0) ? 'Line' : 'None'
+  );
   return {
-    timing: attribute(root, APPLE, 'timing', 'None'),
+    timing,
     language: attribute(root, XML, 'lang', 'en'),
     duration: parseTime(body.getAttribute('dur') || '0'),
     agents,
-    sections, lines: sections.flatMap(section => section.lines),
+    sections, lines,
     credits: children(child(metadata, 'songwriters'), 'songwriter').map(cleanText),
     authors: amllMeta('ttmlAuthorGithubLogin'),
     translation: { language: translation.language, type: translation.type, automatic: translation.automatic },
