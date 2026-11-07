@@ -7,6 +7,7 @@
 - ✨ A "CJK–Latin spacing" lyrics option (on by default) that automatically adjusts spacing between CJK and Latin text.
 
 ### Fixes
+- 🐛 Cleanly rebuild the bundled AMLL so it actually includes the CJK single-character weak-boundary and mixed-script line-break fixes instead of stale build output.
 - 🐛 Better line breaks for single-character CJK words and balanced wrapping of mixed CJK/English lyrics.
 
 ## v0.6.5 (2026-10-30)
