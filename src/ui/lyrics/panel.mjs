@@ -221,7 +221,7 @@ const AMLL_RENDERERS = { amll: MeshGradientRenderer, isolation: IsolationRendere
  * 每个鼓点都到 1 时整个背景一跳一跳，取 0.4
  */
 const AMLL_PULSE = 0.4;
-const DEFAULT_PREFS = { scale: 1, weight: 600, source: 'apple', backdrop: 'amll', pulse: false, textAutospace: false };
+const DEFAULT_PREFS = { scale: 1, weight: 600, source: 'apple', backdrop: 'amll', pulse: false, textAutospace: true };
 function loadPrefs() {
   try {
     const saved = JSON.parse(localStorage.getItem(PREFS_KEY) || '{}');

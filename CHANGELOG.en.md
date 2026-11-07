@@ -4,7 +4,7 @@
 
 ### Added
 - ✨ Optional QQ music source configuration (`--qq-api` / `AM_HOOK_QQ_API` and `--qq-proxy` / `AM_HOOK_QQ_PROXY`), static quality capabilities and lyrics fallbacks.
-- ✨ A "CJK–Latin spacing" lyrics option, off by default, automatically adjusts spacing between CJK and Latin text when enabled.
+- ✨ A "CJK–Latin spacing" lyrics option (on by default) that automatically adjusts spacing between CJK and Latin text.
 
 ### Fixes
 - 🐛 Better line breaks for single-character CJK words and balanced wrapping of mixed CJK/English lyrics.
