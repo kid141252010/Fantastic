@@ -221,7 +221,7 @@ const AMLL_RENDERERS = { amll: MeshGradientRenderer, isolation: IsolationRendere
  * 每个鼓点都到 1 时整个背景一跳一跳，取 0.4
  */
 const AMLL_PULSE = 0.4;
-const DEFAULT_PREFS = { scale: 1, weight: 600, source: 'apple', backdrop: 'amll', pulse: false };
+const DEFAULT_PREFS = { scale: 1, weight: 600, source: 'apple', backdrop: 'amll', pulse: false, textAutospace: true };
 function loadPrefs() {
   try {
     const saved = JSON.parse(localStorage.getItem(PREFS_KEY) || '{}');
@@ -231,6 +231,7 @@ function loadPrefs() {
       source: saved.source === 'amll' ? 'amll' : DEFAULT_PREFS.source,
       backdrop: saved.backdrop === 'classic' ? 'artwork' : BACKDROPS.includes(saved.backdrop) ? saved.backdrop : DEFAULT_PREFS.backdrop,
       pulse: typeof saved.pulse === 'boolean' ? saved.pulse : DEFAULT_PREFS.pulse,
+      textAutospace: typeof saved.textAutospace === 'boolean' ? saved.textAutospace : DEFAULT_PREFS.textAutospace,
     };
   } catch { return { ...DEFAULT_PREFS }; }
 }
@@ -320,6 +321,7 @@ export function mountLyrics({ root, toggle, bar, player, getMeta, t, notify, onL
   const has = { translation: false, pronunciation: false };
   const prefs = loadPrefs();
   const view = new DomLyricPlayer();
+  view.setEnableTextAutospace(prefs.textAutospace);
   panel.append(view.getElement());
   const credits = document.createElement('div');
   credits.className = 'lyrics-credits';
@@ -986,6 +988,9 @@ export function mountLyrics({ root, toggle, bar, player, getMeta, t, notify, onL
         ['fontSmaller', scale > 0], ['fontLarger', scale < FONT_SCALES.length - 1])),
       menuItem(stepper(t('lyrics.fontWeight'), t(`lyrics.weight${prefs.weight}`),
         ['weightLighter', weight > 0], ['weightBolder', weight < FONT_WEIGHTS.length - 1])),
+      menuItem(menuButton({
+        label: t('lyrics.textAutospace'), icon: prefs.textAutospace ? 'check' : '', action: 'textAutospace', toggled: prefs.textAutospace,
+      })),
       separator(),
       menuItem(menuNode('span', '', t('lyrics.source')), 'presentation', 'lyrics-menu-heading'),
       ...(trackSource === 'qq' ? [] : ['apple', 'amll']).map((source) => menuItem(menuButton({
@@ -1293,6 +1298,11 @@ export function mountLyrics({ root, toggle, bar, player, getMeta, t, notify, onL
     } else if (action === 'backdrop') {
       closeMenu(true);
       setBackdrop(value);
+    } else if (action === 'textAutospace') {
+      closeMenu(true);
+      prefs.textAutospace = !prefs.textAutospace;
+      view.setEnableTextAutospace(prefs.textAutospace);
+      savePrefs(prefs);
     } else if (action === 'pulse') {
       // 关闭后律动在逐帧循环里自然回落
       closeMenu(true);
