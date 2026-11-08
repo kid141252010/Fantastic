@@ -25,11 +25,13 @@ import { parseTTML, duetSides } from './ttml.mjs';
 import { lyrics as qqLyrics } from '../sources/qq.mjs';
 import {
   DomLyricPlayer,
+  setWordSegmenter,
   BackgroundRender,
   MeshGradientRenderer,
   IsolationRenderer,
   TitaniumRenderer,
 } from './amll-core.mjs';
+import { ensureWordSegmenter } from './word-segmenter.mjs';
 import { ArtworkBackdrop } from './backdrop.mjs';
 import { BeatPulse } from './pulse.mjs';
 
@@ -781,6 +783,8 @@ export function mountLyrics({ root, toggle, bar, player, getMeta, t, notify, onL
     view.setLyricLines(toAmllLines(song, shown), currentTime());
     renderCredits();
   }
+
+  void ensureWordSegmenter(setWordSegmenter, relayout);
 
   /** 歌词按钮的文案：播放条上为「歌词」，界面里为「显示 / 隐藏歌词」，按下状态表示歌词正在显示 */
   function syncToggle() {

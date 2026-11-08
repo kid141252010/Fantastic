@@ -118,6 +118,9 @@ pub static ASSETS: &[Asset] = &[
     asset!("/assets/station.mjs", JS, "station.mjs"),
     // 歌词界面：TTML 解析、接入播放器的 panel.mjs、打包好的 AMLL（见 browser/amll）与封面动态背景（backdrop*.mjs，移植自 YouLyPlus）
     asset!("/assets/lyrics/panel.mjs", JS, "lyrics/panel.mjs"),
+    asset!("/assets/lyrics/word-segmenter.mjs", JS, "lyrics/word-segmenter.mjs"),
+    asset!("/assets/lyrics/cjdict.tsv.gz", BIN, "lyrics/cjdict.tsv.gz"),
+    asset!("/assets/lyrics/CJDICT-LICENSE.txt", BIN, "lyrics/CJDICT-LICENSE.txt"),
     asset!("/assets/lyrics/ttml.mjs", JS, "lyrics/ttml.mjs"),
     asset!("/assets/lyrics/amll-core.mjs", JS, "lyrics/amll-core.mjs"),
     asset!("/assets/lyrics/amll.css", CSS, "lyrics/amll.css"),
