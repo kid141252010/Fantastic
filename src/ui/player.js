@@ -1774,6 +1774,7 @@
     get currentTime() { return Math.max(0, this.audio.currentTime - this.base()); }
     set currentTime(value) { this.audio.currentTime = this.base() + value; }
     get paused() { return this.audio.paused; }
+    get seeking() { return this.audio.seeking; }
     get readyState() { return this.audio.readyState; }
     play() { return this.audio.play(); }
     pause() { this.audio.pause(); }

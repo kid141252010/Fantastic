@@ -445,6 +445,9 @@ export function mountLyrics({ root, toggle, bar, player, getMeta, t, notify, onL
   let frame = 0;
   let lastFrame = 0;
   let playing = null;
+  // 歌词动画是否在走：<audio> 跳转或缓冲时 currentTime 停住，但逐词动画按页面时钟继续走，
+  // 这时先暂停，等声音真正出来再接着走，否则点歌词跳转后高亮会跑在声音前面
+  let running = null;
   let artworkSource = '';
   let artworkController = null;
   let lyricsShown = loadShown();
@@ -548,10 +551,14 @@ export function mountLyrics({ root, toggle, bar, player, getMeta, t, notify, onL
     const now = !!transport && !transport.paused;
     if (now !== playing) {
       playing = now;
-      if (now) view.resume(); else view.pause();
       // 暂停时大封面缩小（react-full 的 Cover）
       root.classList.toggle('paused', !now);
       wake();
+    }
+    const moving = now && !transport.seeking && !(transport.readyState < 3);
+    if (moving !== running) {
+      running = moving;
+      if (moving) view.resume(); else view.pause();
     }
     // 节拍律动：播放中、背景已显示且没有「减少动态效果」时取样，否则回落到 0
     const pulsing = now && prefs.pulse && !motion.matches && !!backdrop && !canvas.hidden;
@@ -872,7 +879,7 @@ export function mountLyrics({ root, toggle, bar, player, getMeta, t, notify, onL
     syncLayout();
     applyVisibility();
     placeCover(true);
-    playing = null;
+    playing = running = null;
     lastFrame = 0;
     if (!covered) frame = requestAnimationFrame(tick);
     // 焦点移到收起按钮，但不显示焦点框（否则它一打开就变成 ✕）；之后按 Tab 时照常显示
@@ -1391,7 +1398,7 @@ export function mountLyrics({ root, toggle, bar, player, getMeta, t, notify, onL
       return;
     }
     // 被盖住期间可能换了曲目或暂停了播放：重新同步播放状态，背景按当前封面恢复
-    playing = null;
+    playing = running = null;
     lastFrame = 0;
     if (!frame) frame = requestAnimationFrame(tick);
     loadArtwork();
