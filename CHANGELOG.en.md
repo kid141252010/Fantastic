@@ -7,6 +7,7 @@
 - ✨ A "CJK–Latin spacing" lyrics option (on by default) that automatically adjusts spacing between CJK and Latin text.
 
 ### Fixes
+- 🐛 Lazily load ICU's cjdict for client-side lyric word segmentation and wrapping when the browser lacks CJK dictionary segmentation; loading failures do not interrupt lyrics.
 - 🐛 Cleanly rebuild the bundled AMLL so it actually includes the CJK single-character weak-boundary and mixed-script line-break fixes instead of stale build output.
 - 🐛 Better line breaks for single-character CJK words and balanced wrapping of mixed CJK/English lyrics.
 
