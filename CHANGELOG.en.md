@@ -9,7 +9,7 @@
 ### Fixes
 - 🐛 Lazily load ICU's cjdict for client-side lyric word segmentation and wrapping when the browser lacks CJK dictionary segmentation; loading failures do not interrupt lyrics.
 - 🐛 Cleanly rebuild the bundled AMLL so it actually includes the CJK single-character weak-boundary and mixed-script line-break fixes instead of stale build output.
-- 🐛 Better line breaks for single-character CJK words and balanced wrapping of mixed CJK/English lyrics.
+- 🐛 Full-screen lyrics stay in sync with the audio: word float/emphasis animations are anchored to the current frame, so long frames on phones at line changes no longer make a whole line lag; for AAC / ALAC, lyrics wait while a tap-to-seek or buffering is in progress instead of running ahead of the sound.
 
 ## v0.6.5 (2026-10-30)
 
