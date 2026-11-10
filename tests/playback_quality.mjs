@@ -1,7 +1,7 @@
 // Offline default streaming quality and preference storage contracts.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { PLAYBACK_QUALITIES, pickAppleVariant } from '../src/ui/playback-quality.mjs';
+import { PLAYBACK_QUALITIES, pickAppleVariant, mappedPlaybackQuality } from '../src/ui/playback-quality.mjs';
 import { pickDefaultQuality, qualityRows } from '../src/ui/sources/qq.mjs';
 
 const qqTiers = ['RS', 'SQ', 'DAEAC3', 'HQ', 'WEB'];
@@ -89,7 +89,7 @@ test('Apple selects the highest bandwidth in a category and retains existing bes
   assert.equal(pickAppleVariant([]), null);
 });
 
-test('one streaming preference persists, validates, resets and synchronizes across tabs', async () => {
+test('network streaming preferences persist, migrate, validate, reset and synchronize across tabs', async () => {
   const saved = { storage: globalThis.localStorage, listener: globalThis.addEventListener };
   const values = new Map([['am-hook:settings', JSON.stringify({ download: { codec: 'aac' } })]]);
   let storageChanged;
@@ -97,29 +97,49 @@ test('one streaming preference persists, validates, resets and synchronizes acro
   globalThis.addEventListener = (name, fn) => { if (name === 'storage') storageChanged = fn; };
   try {
     const { prefs, OPTIONS, DEFAULTS } = await import('../src/ui/prefs.mjs?playback-quality-test');
-    assert.deepEqual(OPTIONS.playback.quality, PLAYBACK_QUALITIES);
-    assert.deepEqual(DEFAULTS.playback, { quality: 'hires' });
-    assert.deepEqual(prefs.get('playback'), { quality: 'hires' });
+    assert.deepEqual(OPTIONS.playback.quality, ['efficient', 'high', 'lossless', 'hires']);
+    assert.deepEqual(prefs.get('playback'), DEFAULTS.playback);
     assert.equal(prefs.get('download').codec, 'aac');
     const changes = [];
-    const off = prefs.onChange((section, v) => { if (section === 'playback') changes.push(v.quality); });
-    for (const quality of PLAYBACK_QUALITIES) {
-      prefs.set('playback', { quality });
-      assert.equal(JSON.parse(values.get('am-hook:settings')).playback.quality, quality);
+    const off = prefs.onChange((section, v) => { if (section === 'playback') changes.push(v.wifi); });
+    for (const quality of OPTIONS.playback.quality) {
+      prefs.set('playback', { wifi: quality, cellular: quality });
+      assert.equal(JSON.parse(values.get('am-hook:settings')).playback.wifi, quality);
     }
     const snapshot = prefs.get('playback');
-    snapshot.quality = 'dolby';
-    assert.equal(prefs.get('playback').quality, 'standard');
-    assert.equal(prefs.set('playback', { quality: 'RS' }).quality, 'hires');
-    values.set('am-hook:settings', JSON.stringify({ playback: { quality: 'lossless' }, download: { codec: 'aac' } }));
+    snapshot.wifi = 'high';
+    assert.equal(prefs.get('playback').wifi, 'hires');
+    assert.equal(prefs.set('playback', { wifi: 'RS' }).wifi, 'hires');
+    for (const [quality, tier] of Object.entries({ hires: 'hires', lossless: 'lossless', dolby: 'high', high: 'high', standard: 'efficient', invalid: null })) {
+      values.set('am-hook:settings', JSON.stringify({ playback: { quality }, download: { codec: 'aac' } }));
+      storageChanged({ key: 'am-hook:settings' });
+      assert.equal(prefs.get('playback').wifi, tier || DEFAULTS.playback.wifi);
+      assert.equal(prefs.get('playback').cellular, tier || DEFAULTS.playback.cellular);
+      assert.equal(prefs.get('playback').spatial, quality === 'dolby' ? 'always' : DEFAULTS.playback.spatial);
+      assert.equal(changes.at(-1), tier || DEFAULTS.playback.wifi);
+    }
+    for (const spatial of OPTIONS.playback.spatial) {
+      values.set('am-hook:settings', JSON.stringify({ playback: { quality: 'dolby', spatial } }));
+      storageChanged({ key: 'am-hook:settings' });
+      assert.equal(prefs.get('playback').spatial, spatial);
+    }
+    values.set('am-hook:settings', JSON.stringify({ playback: { quality: 'standard', wifi: 'lossless', cellular: 'high' }, download: { codec: 'aac' } }));
     storageChanged({ key: 'am-hook:settings' });
-    assert.equal(prefs.get('playback').quality, 'lossless');
-    assert.equal(changes.at(-1), 'lossless');
-    assert.deepEqual(prefs.reset('playback'), { quality: 'hires' });
+    assert.equal(prefs.get('playback').wifi, 'lossless');
+    assert.equal(prefs.get('playback').cellular, 'high');
+    assert.deepEqual(prefs.reset('playback'), DEFAULTS.playback);
     assert.equal(prefs.get('download').codec, 'aac');
     off();
   } finally {
     if (saved.storage === undefined) delete globalThis.localStorage; else globalThis.localStorage = saved.storage;
     if (saved.listener === undefined) delete globalThis.addEventListener; else globalThis.addEventListener = saved.listener;
   }
+});
+
+test('shared ladder derives its input from the active network tier', () => {
+  for (const [quality, expected] of Object.entries({ hires: 'hires', lossless: 'lossless', high: 'high', efficient: 'standard' })) {
+    assert.equal(mappedPlaybackQuality({ quality }), expected);
+  }
+  assert.equal(mappedPlaybackQuality(), 'hires');
+  assert.equal(mappedPlaybackQuality({ quality: 'invalid' }), 'hires');
 });

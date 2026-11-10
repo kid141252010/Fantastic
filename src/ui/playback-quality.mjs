@@ -2,6 +2,10 @@
 // filtered by the player's capability detection; manual selections bypass this.
 export const PLAYBACK_QUALITIES = ['hires', 'lossless', 'dolby', 'high', 'standard'];
 
+export function mappedPlaybackQuality(settings) {
+  return { hires: 'hires', lossless: 'lossless', high: 'high', efficient: 'standard' }[settings?.quality] || 'hires';
+}
+
 export function playbackQualityChain(preference = 'hires') {
   const index = PLAYBACK_QUALITIES.indexOf(preference);
   return PLAYBACK_QUALITIES.slice(Math.max(0, index));

@@ -1,4 +1,5 @@
-// 设置中心（/settings，views/settings.mjs）的存储：在线播放（playback）、下载（download）与 JOC 对象渲染（joc）。
+// 设置中心（/settings，views/settings.mjs）的存储：播放（playback：按网络选择的播放音质、杜比全景声优先、歌曲之间的过渡）、
+// JOC 对象渲染（joc）与下载设置（download）。
 // 保存在 localStorage（不会过期），同一浏览器的其他标签页修改后自动同步。
 //
 //   prefs.get(section)          该分组的当前设置（已合并默认值、校验过的副本）
@@ -7,8 +8,6 @@
 //   prefs.onChange(fn)          设置变化后回调 fn(section, value)，返回取消订阅的函数
 //   DEFAULTS / OPTIONS          默认值与各选项的可选值（设置页据此渲染）
 //   pickVariant(variants, o)    按首选音质与降级顺序（fallbackChain）选歌曲的变体，classify 为变体的种类
-
-import { PLAYBACK_QUALITIES } from './playback-quality.mjs';
 
 const STORAGE_KEY = 'am-hook:settings';
 
@@ -88,15 +87,55 @@ export function pickVariant(variants, options) {
   return null;
 }
 
+/* ---------- 播放音质（player.js 的 pickPlayable 按此选队列中每首歌的音质） ---------- */
+/**
+ * 当前网络：'cellular'（移动数据，或浏览器开启了省流量 Save-Data）/ 'wifi'（Wi-Fi、有线等）/ null（浏览器不提供，
+ * 如桌面版 Chrome 与 Safari，按 Wi-Fi 处理）。来自 Network Information API 的 navigator.connection
+ */
+export function networkKind() {
+  const c = globalThis.navigator && navigator.connection;
+  if (!c) return null;
+  if (c.type === 'cellular' || c.saveData) return 'cellular';
+  return c.type && c.type !== 'unknown' ? 'wifi' : null;
+}
+
+/** 网络变化后回调 fn（只在支持 navigator.connection 的浏览器上触发），返回取消订阅的函数 */
+export function onNetworkChange(fn) {
+  const c = globalThis.navigator && navigator.connection;
+  if (!c || !c.addEventListener) return () => {};
+  c.addEventListener('change', fn);
+  return () => c.removeEventListener('change', fn);
+}
+
+/** 按当前网络生效的播放设置：{ quality, spatial, network, transition, crossfade } */
+export function playbackFor(value = state.playback) {
+  const network = networkKind();
+  return {
+    quality: network === 'cellular' ? value.cellular : value.wifi,
+    spatial: value.spatial,
+    network,
+    transition: value.transition,
+    crossfade: value.crossfade,
+  };
+}
+
 export const OPTIONS = {
-  playback: { quality: PLAYBACK_QUALITIES },
+  // 播放音质：efficient = HE-AAC，high = AAC 256 kbps，lossless = ALAC 最高 24-bit / 48 kHz，hires = ALAC 最高 24-bit / 192 kHz
+  // spatial：杜比全景声是否优先于上面的音质（auto：开启 JOC 对象渲染时优先；always；off：只在手动换音质时使用）
+  playback: {
+    quality: ['efficient', 'high', 'lossless', 'hires'],
+    spatial: ['auto', 'always', 'off'],
+    // 歌曲之间的过渡（player.js 的 Mixer，规划见 automix.js）：off 无缝衔接；automix 按 Apple Music 的音频分析规划；crossfade 固定时长
+    transition: ['off', 'automix', 'crossfade'],
+  },
   download: {
     // 首选音质；没有时按 fallback 降级
     codec: CODEC_GROUPS.flatMap(([, list]) => list),
     alacMax: [192000, 96000, 48000, 44100],
     atmosMax: [2768, 2448],
     saveMode: ['zip', 'folder', 'files'],
-    coverFormat: ['jpg', 'png'],
+    // source：跟随原图（模板中 /{w}x{h} 前一段的扩展名，如 xxx.rgb.jpg → jpg）
+    coverFormat: ['jpg', 'png', 'source'],
     lyricsFormat: ['lrc', 'ttml'],
     // MV：最高分辨率（高度）与音轨（同参考实现的 mv-max / mv-audio-type）
     mvMax: [2160, 1440, 1080, 720, 480],
@@ -111,7 +150,14 @@ export const OPTIONS = {
 };
 
 export const DEFAULTS = {
-  playback: { quality: 'hires' },
+  playback: {
+    wifi: 'hires',
+    cellular: 'high',
+    spatial: 'auto',
+    transition: 'automix',
+    // 交叉淡化的时长（秒，1–12）
+    crossfade: 6,
+  },
   download: {
     codec: 'alac',
     alacMax: 192000,
@@ -153,14 +199,19 @@ export const DEFAULTS = {
     sortTags: false,
     // 歌单中的曲目写入原专辑信息（专辑名、曲目号等）；关闭时专辑为歌单名、曲目号为歌单中的序号
     playlistAlbumInfo: true,
+    // 去掉专辑名末尾 Apple Music 附加的 ` - EP` / ` - Single`（标签与文件名、文件夹名一致）
+    stripAlbumSuffix: false,
     // 元数据（歌名、专辑名等）的语言；空为跟随曲库语言
     metaLang: '',
     // 封面：嵌入标签的与另存的 cover 文件分开设置
     coverFormat: 'jpg',
     coverSize: 3000,
+    // 原始尺寸：{w}x{h}bb 换成 0x0ss，忽略尺寸设置
+    coverOriginal: false,
     saveCover: true,
     saveCoverFormat: 'jpg',
     saveCoverSize: 3000,
+    saveCoverOriginal: false,
     // 歌词
     saveLyrics: false,
     lyricsFormat: 'lrc',
@@ -175,6 +226,8 @@ export const DEFAULTS = {
     // 输出衰减（dB，-60–0）：15 个对象叠加可能超过满刻度，削波时播放器会提示
     gain: 0,
     dataset: 'D2',
+    // ALAC / AAC 的音量补偿（dB，-20–0）：全景声混音通常比立体声母带小声，调低立体声让切歌时音量接近
+    stereoGain: 0,
   },
 };
 
@@ -201,12 +254,23 @@ function cleanOrder(raw) {
 function clean(section, raw) {
   const d = DEFAULTS[section];
   const r = raw && typeof raw === 'object' ? raw : {};
-  if (section === 'playback') return { quality: oneOf(r.quality, OPTIONS.playback.quality, d.quality) };
+  if (section === 'playback') {
+    const o = OPTIONS.playback;
+    const legacy = { hires: 'hires', lossless: 'lossless', dolby: 'high', high: 'high', standard: 'efficient' }[r.quality];
+    return {
+      wifi: oneOf(r.wifi, o.quality, legacy || d.wifi),
+      cellular: oneOf(r.cellular, o.quality, legacy || d.cellular),
+      spatial: oneOf(r.spatial, o.spatial, r.quality === 'dolby' && r.spatial === undefined ? 'always' : d.spatial),
+      transition: oneOf(r.transition, o.transition, d.transition),
+      crossfade: int(r.crossfade, 1, 12, d.crossfade),
+    };
+  }
   if (section === 'joc') {
     return {
       mode: oneOf(r.mode, OPTIONS.joc.mode, d.mode),
       gain: int(r.gain, -60, 0, d.gain),
       dataset: oneOf(r.dataset, OPTIONS.joc.dataset, d.dataset),
+      stereoGain: int(r.stereoGain, -20, 0, d.stereoGain),
     };
   }
   if (section !== 'download') return { ...d, ...r };
@@ -237,10 +301,13 @@ function clean(section, raw) {
     embed: Array.isArray(r.embed) ? TAG_FIELDS.filter((f) => r.embed.includes(f)) : [...d.embed],
     sortTags: bool(r.sortTags, d.sortTags),
     playlistAlbumInfo: bool(r.playlistAlbumInfo, d.playlistAlbumInfo),
+    stripAlbumSuffix: bool(r.stripAlbumSuffix, d.stripAlbumSuffix),
     metaLang: typeof r.metaLang === 'string' && LANG_TAG.test(r.metaLang.trim()) ? r.metaLang.trim() : d.metaLang,
     coverFormat: oneOf(r.coverFormat, o.coverFormat, d.coverFormat),
     coverSize: int(r.coverSize, 100, 10000, d.coverSize),
+    coverOriginal: bool(r.coverOriginal, d.coverOriginal),
     saveCover: bool(r.saveCover, d.saveCover),
+    saveCoverOriginal: bool(r.saveCoverOriginal, d.saveCoverOriginal),
     // 旧版本只有一组封面设置，另存的封面沿用它
     saveCoverFormat: oneOf(r.saveCoverFormat, o.coverFormat, oneOf(r.coverFormat, o.coverFormat, d.saveCoverFormat)),
     saveCoverSize: int(r.saveCoverSize, 100, 10000, int(r.coverSize, 100, 10000, d.saveCoverSize)),

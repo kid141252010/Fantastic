@@ -42,6 +42,7 @@ function playerHarness() {
   const player = Object.create(AmPlayer.prototype);
   const badge = new Element('button');
   Object.assign(player, {
+    volume: 0.5, mixGain: 1, mixer: { volumeChanged() {} },
     source: 'qq', current: null, queue: null, playToken: 0, queueSerial: 0, nextSerial: 0,
     shuffle: false, variantCache: new Map(), unsupportedListeners: new Set(),
     root: { ownerDocument: { createElement: (tag) => new Element(tag) } },

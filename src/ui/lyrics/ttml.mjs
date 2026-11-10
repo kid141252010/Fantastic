@@ -109,6 +109,13 @@ export function parseTTML(xml, Parser = globalThis.DOMParser, prefLang) {
   const amllMeta = key => children(head, 'meta').filter(meta => meta.getAttribute('key') === key).map(meta => meta.getAttribute('value'));
   const translation = localization(metadata, 'translations', 'translation', prefLang);
   const pronunciation = localization(metadata, 'transliterations', 'transliteration', prefLang);
+  // How much later each audio version plays than the lyric timing, e.g. <audio lyricOffset="0.929" role="spatial"/>
+  // (Atmos and its binaural / downmixed renditions); ms, keyed by role
+  const audioOffsets = Object.fromEntries(children(metadata, 'audio').flatMap((node) => {
+    const offset = Number(node.getAttribute('lyricOffset'));
+    const name = node.getAttribute('role');
+    return name && Number.isFinite(offset) && offset ? [[name, Math.round(offset * 1000)]] : [];
+  }));
   const sections = children(body, 'div').map((section, sectionIndex) => ({
     begin: parseTime(section.getAttribute('begin') || '0'),
     end: parseTime(section.getAttribute('end') || '0'),
@@ -144,6 +151,7 @@ export function parseTTML(xml, Parser = globalThis.DOMParser, prefLang) {
     timing,
     language: attribute(root, XML, 'lang', 'en'),
     duration: parseTime(body.getAttribute('dur') || '0'),
+    audioOffsets,
     agents,
     sections, lines,
     credits: children(child(metadata, 'songwriters'), 'songwriter').map(cleanText),
