@@ -260,7 +260,7 @@ function clean(section, raw) {
     return {
       wifi: oneOf(r.wifi, o.quality, legacy || d.wifi),
       cellular: oneOf(r.cellular, o.quality, legacy || d.cellular),
-      spatial: oneOf(r.spatial, o.spatial, d.spatial),
+      spatial: oneOf(r.spatial, o.spatial, r.quality === 'dolby' && r.spatial === undefined ? 'always' : d.spatial),
       transition: oneOf(r.transition, o.transition, d.transition),
       crossfade: int(r.crossfade, 1, 12, d.crossfade),
     };

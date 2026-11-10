@@ -115,7 +115,13 @@ test('network streaming preferences persist, migrate, validate, reset and synchr
       storageChanged({ key: 'am-hook:settings' });
       assert.equal(prefs.get('playback').wifi, tier || DEFAULTS.playback.wifi);
       assert.equal(prefs.get('playback').cellular, tier || DEFAULTS.playback.cellular);
+      assert.equal(prefs.get('playback').spatial, quality === 'dolby' ? 'always' : DEFAULTS.playback.spatial);
       assert.equal(changes.at(-1), tier || DEFAULTS.playback.wifi);
+    }
+    for (const spatial of OPTIONS.playback.spatial) {
+      values.set('am-hook:settings', JSON.stringify({ playback: { quality: 'dolby', spatial } }));
+      storageChanged({ key: 'am-hook:settings' });
+      assert.equal(prefs.get('playback').spatial, spatial);
     }
     values.set('am-hook:settings', JSON.stringify({ playback: { quality: 'standard', wifi: 'lossless', cellular: 'high' }, download: { codec: 'aac' } }));
     storageChanged({ key: 'am-hook:settings' });
