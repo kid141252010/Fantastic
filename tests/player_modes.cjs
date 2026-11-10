@@ -1,6 +1,29 @@
 const assert = require('node:assert/strict');
 const { test } = require('node:test');
+const { readFileSync } = require('node:fs');
+const { runInNewContext } = require('node:vm');
 const { AmPlayer, detectModes, useJocSettings, sortVariants, pickPlayable } = require('../src/ui/player.js');
+
+test('browser song pages can reuse the queue picker with spatial preferences', () => {
+  const browser = {
+    AmDecrypt: { supported: () => true },
+    MediaSource: { isTypeSupported: () => true },
+  };
+  runInNewContext(readFileSync(require.resolve('../src/ui/player.js'), 'utf8'), { window: browser });
+  const { pickPlayable: pick, useJocSettings: setJoc } = browser.AmHook;
+  const aac = { group_id: 'audio-stereo-256', codecs: 'mp4a.40.2' };
+  const atmos = { group_id: 'audio-atmos-2768', codecs: 'ec-3' };
+  const variants = [aac, atmos];
+  assert.equal(pick(variants, { quality: 'high', spatial: 'always' }), atmos);
+  assert.equal(pick(variants, { quality: 'high', spatial: 'auto' }), aac);
+  setJoc({ get: () => ({ mode: 'speaker' }) });
+  assert.equal(pick(variants, { quality: 'high', spatial: 'auto' }), atmos);
+  assert.equal(pick(variants, { quality: 'high', spatial: 'off' }), aac);
+  assert.equal(pick(variants, { quality: 'efficient', spatial: 'always' }), aac);
+  assert.equal(pick([], { quality: 'high', spatial: 'always' }), undefined);
+  browser.MediaSource.isTypeSupported = () => false;
+  assert.equal(pick(variants, { quality: 'high', spatial: 'always' }), undefined);
+});
 
 test('EC-3 chooses MSE before PCM regardless of browser', () => {
   global.Worker = function Worker() {};

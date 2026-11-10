@@ -4182,7 +4182,7 @@
   }
 
   const api = { AmPlayer, Marquee, artistNodes, qualityBadge, qualityIcon, segmentAt, formatTime, variantLabel,
-    detectMode, detectModes, detectQqModes, mimeFor, useJocSettings, usePlaybackSettings, trackKey, sourceOf };
-  if (typeof module !== 'undefined' && module.exports) module.exports = { ...api, MseEngine, PcmEngine, JocEngine, JocLiveEngine, Mixer, Voice, sortVariants, pickPlayable };
+    detectMode, detectModes, detectQqModes, mimeFor, useJocSettings, usePlaybackSettings, trackKey, sourceOf, pickPlayable };
+  if (typeof module !== 'undefined' && module.exports) module.exports = { ...api, MseEngine, PcmEngine, JocEngine, JocLiveEngine, Mixer, Voice, sortVariants };
   else global.AmHook = api;
 })(typeof window !== 'undefined' ? window : globalThis);
