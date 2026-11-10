@@ -11,6 +11,38 @@
 - 🐛 Cleanly rebuild the bundled AMLL so it actually includes the CJK single-character weak-boundary and mixed-script line-break fixes instead of stale build output.
 - 🐛 Full-screen lyrics stay in sync with the audio: word float/emphasis animations are anchored to the current frame, so long frames on phones at line changes no longer make a whole line lag; for AAC / ALAC, lyrics wait while a tap-to-seek or buffering is in progress instead of running ahead of the sound.
 
+## v0.6.8 (2026-11-09)
+
+### New
+- ✨ Drop the EP / Single suffix from album names (settings → Downloads → Tags, off by default): "Wake Me Up - Single" becomes "Wake Me Up" in the album and sort tags, `{album}` in file name templates, and album folder / ZIP names alike; only a trailing `EP` / `Single` separated by " - " is removed, so names such as "夏のせい ep" and playlist names are kept
+- ✨ A "Same as source" cover format (PNG for PNG / TIFF sources, otherwise JPEG) and an original-size option (0x0ss) for both embedded and saved covers; the cover settings are now two cards, "Embed in tracks" and "Save as file", each with its own switch, format and size, and a preview of the requested URL
+- ✨ JPEG covers are requested at quality 100 (`bb-100.jpg`) instead of the default ~85%
+
+### Fixes
+- 🐛 Choosing the PNG cover format still downloaded JPEG for most songs and albums, whose artwork URL template hardcodes `.jpg`: the trailing extension is now replaced with the chosen format
+- 🐛 Windows Explorer showed neither tags nor duration for downloaded ALAC files: the leftover `free` box in the audio sample entry after decryption is removed
+
+## v0.6.7 (2026-11-05)
+
+### New
+- ✨ AutoMix song transitions (settings → Playback → "Song transitions": Off / AutoMix (default) / Crossfade 1–12 s, plus an AutoMix switch next to the Playing Next title): each transition is planned from Apple Music's audio analysis (loudness curve, beats and bars, BPM, vocals), trimming leading / trailing silence, bringing the next song in during the outro and never overlapping vocals; with close tempos it lines up bars, and `<audio>` playback is time-stretched during the overlap (pitch preserved) before easing back. Albums played in order and songs without an analysis stay gapless; works with MSE, FLAC, EC-3 and JOC, and is unavailable where the audio volume is read-only (iOS Safari)
+
+### Fixes
+- 🐛 Lyrics no longer run ahead of spatial audio (Dolby Atmos and its AAC binaural / stereo downmix versions): they are delayed by the `<audio lyricOffset role="spatial"/>` in Apple's TTML (0.93 s for Message In A Bottle (Taylor's Version)), and clicking a line seeks to the matching position; LRC embedded or saved with these downloads is delayed too, while saved TTML is kept as is
+
+## v0.6.6 (2026-11-04)
+
+### New
+- ✨ The settings center is split into General / Playback / Downloads tabs (the URL hash remembers the tab, and a hash pointing at a section opens its tab)
+- ✨ Separate playback quality for Wi-Fi and cellular: High Efficiency (HE-AAC), High Quality (AAC 256), Lossless (ALAC up to 24/48 kHz) and Hi-Res Lossless (ALAC up to 24/192 kHz), falling back a tier when a song lacks it; a separate Dolby Atmos option (auto / always / off) decides whether Atmos comes first, with auto keeping the old behaviour (preferred while JOC object rendering is on). Changes apply from the next song, and an already prepared gapless next track is re-prepared
+- ✨ "ALAC / AAC volume" (settings → JOC object rendering, -20–0 dB, default 0): Atmos mixes are usually quieter than stereo masters, so moving from an Atmos song to ALAC / AAC no longer jumps in loudness. It attenuates only the `<audio>` element for non-EC-3 tracks, so it never clips, and the volume slider keeps its value
+
+### Fixes
+- 🐛 Dolby Atmos played through EC-3 or JOC object rendering now retries automatically after a segment or key load error (it used to stop until you pressed play), at the same pace as the other playback modes: 3 s doubling, stopping after 5 tries with "Retry now". On a segment or key error the buffered audio keeps playing and playback only waits once it runs out, resuming on recovery; decoder errors and failed seeks restart from the current position
+
+### Changed
+- ⚡ The song master m3u8, MV master and MV `/webplayback` and `/license` requests time out after 15 s instead of 30 s, matching the key and lyrics requests, so errors show sooner
+
 ## v0.6.5 (2026-10-30)
 
 ### New

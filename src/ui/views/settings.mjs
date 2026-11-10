@@ -1,9 +1,10 @@
-// 设置中心（/settings），由 app.mjs 挂载。通用设置（主地区、曲库语言、界面语言、wrapper-lite）沿用导航底部的选择面板；
-// 在线播放默认音质、JOC 对象渲染与下载设置保存在 prefs.mjs；默认音质只影响每首曲的初始选档，
-// JOC 修改会切换正在播放的曲目（player.js 的 jocChanged）；进行中的下载沿用开始时的设置。
-import { prefs, OPTIONS, CODEC_GROUPS, TAG_FIELDS, TAG_NAME, DEFAULTS, DEFAULT_FALLBACK } from '../prefs.mjs';
+// 设置中心（/settings），由 app.mjs 挂载，分通用、播放、下载三个标签页（地址的 hash 记住当前页，也可直接指向某个分组）。
+// 通用（主地区、曲库语言、界面语言、wrapper-lite、media-user-token）沿用导航底部的选择面板；
+// 播放（按 Wi-Fi / 移动数据分别选的音质、全景声优先、JOC 对象渲染、音量）与下载（音质、MV、保存方式、文件名、标签、封面、歌词）
+// 保存在 prefs.mjs，修改立即生效（播放音质从下一首起，JOC 的方式正在播放的曲目随之切换，见 player.js；进行中的下载沿用开始时的设置）。
+import { prefs, OPTIONS, CODEC_GROUPS, TAG_FIELDS, TAG_NAME, DEFAULTS, DEFAULT_FALLBACK, playbackFor, onNetworkChange } from '../prefs.mjs';
 import { appendMediaExtension, formatPath, fitFolder, fitFile, templateIssues, TEMPLATE_VAR_GROUPS, TEMPLATE_SCOPES } from '../naming.mjs';
-import { downloads } from '../downloads.mjs';
+import { downloads, coverUrl } from '../downloads.mjs';
 import { userToken, askToken, onTokenChange } from '../station.mjs';
 
 const { AmI18n, AmDecrypt } = window;
@@ -18,6 +19,28 @@ function el(tag, props = {}, ...children) {
   return node;
 }
 
+const ICON_WIFI = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M2.5 9a14 14 0 0 1 19 0M5.5 12.5a9.5 9.5 0 0 1 13 0M8.8 16a4.8 4.8 0 0 1 6.4 0"/><circle cx="12" cy="19.3" r="1" fill="currentColor"/></svg>';
+const ICON_CELLULAR = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M4 20v-3M9.3 20v-6M14.6 20v-9.5M20 20V4"/></svg>';
+/** 能否单独调节 <audio> 的音量（iOS Safari 不能，歌曲之间的过渡因此不可用，见 player.js 的 canControlVolume） */
+function volumeControllable() {
+  try {
+    const probe = new Audio();
+    probe.volume = 0.5;
+    return Math.abs(probe.volume - 0.5) < 0.01;
+  } catch {
+    return false;
+  }
+}
+
+/** 封面：常用尺寸挡位，与预览用的一个原图为 jpg 的 artwork 模板 */
+const COVER_SIZES = [1400, 3000];
+const SAMPLE_ARTWORK = 'https://is1-ssl.mzstatic.com/image/thumb/Music125/v4/33/fd/32/33fd32b1-0e43-9b4a-8ed6-19643f23544e/21UMGIM26092.rgb.jpg/{w}x{h}bb.{f}';
+const ICON_COVER_EMBED = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V6l10-2v12"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="16.5" cy="16" r="2.5"/></svg>';
+const ICON_COVER_SAVE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="3.5" width="17" height="17" rx="3"/><circle cx="9" cy="9" r="1.6"/><path d="m20.5 15-4.5-4.5L5 20.5"/></svg>';
+
+/** 三个标签页，及各页的分组 id（地址的 hash 指向分组时打开其所在的页） */
+const TABS = ['general', 'playback', 'download'];
+
 /** 文件名模板的预览：一首虚构的歌 */
 const SAMPLE = {
   title: 'Blank Space', artist: 'Taylor Swift', album: "1989 (Taylor's Version)", album_artist: 'Taylor Swift',
@@ -30,7 +53,7 @@ const SAMPLE = {
 
 export function mount({ root, signal, onLangChange, toast }) {
   document.title = `${t('set.title')} · Fantastic`;
-  const host = root.querySelector('#download');
+  const host = root.querySelector('#download-body');
   /** 控件：每项设置变化后刷新显示（正在输入的文本框除外） */
   const controls = [];
   let openVars = null;
@@ -231,34 +254,173 @@ export function mount({ root, signal, onLangChange, toast }) {
     return el('div', { className: 'set-chain-box' }, list, el('div', { className: 'set-mini-row' }, add, reset));
   }
 
+  /** 封面卡片：标题行带开关，关闭时收起；格式与尺寸为分段按钮（尺寸含常用挡位、原图与自定义），底部预览请求的地址结尾 */
+  function coverPanel({ kind, icon, on, setOn, format, size, original, warn }) {
+    const title = t(`set.cover.${kind}`);
+    const input = el('input', { type: 'checkbox', className: 'set-switch-input' });
+    input.setAttribute('role', 'switch');
+    input.setAttribute('aria-label', title);
+    input.addEventListener('change', () => setOn(input.checked));
+    const head = el('label', { className: 'set-cover-head' },
+      el('span', { className: 'set-cover-icon', innerHTML: icon, ariaHidden: 'true' }),
+      el('span', { className: 'set-label' }, el('span', { textContent: title }), el('span', { className: 'set-desc', textContent: t(`set.cover.${kind}Desc`) })),
+      el('span', { className: 'set-switch' }, input, el('span', { className: 'set-switch-track', ariaHidden: 'true' })));
+
+    const formats = segmented(format, OPTIONS.download.coverFormat.map((f) => [f, t(`set.coverFormat.${f}`)]), t('set.cover.format'));
+
+    // 尺寸：挡位 / 原图 / 自定义（选自定义或尺寸不是挡位时露出数字框）
+    let custom = false;
+    const pick = (value) => {
+      custom = value === 'custom';
+      if (value === 'original') set({ [original]: true });
+      else if (custom) { set({ [original]: false }); requestAnimationFrame(() => { px.focus(); px.select(); }); }
+      else set({ [original]: false, [size]: value });
+    };
+    const [sizes, syncSizes] = radios(t('set.cover.size'),
+      [...COVER_SIZES.map((n) => [n, String(n)]), ['original', t('set.cover.original')], ['custom', t('set.cover.custom')]], pick);
+    const px = number(size, 100, 10000, t('set.cover.size'));
+    const pxBox = el('span', { className: 'set-unit-box set-cover-px' }, px, el('span', { className: 'set-unit', textContent: 'px' }));
+
+    const url = el('code', { className: 'set-cover-url' });
+    const spec = el('span', { className: 'set-cover-spec' });
+    const note = warn ? el('span', { className: 'set-cover-warn', textContent: t('set.cover.embedWarn') }) : null;
+    const field = (key, ...control) => el('div', { className: 'set-cover-field' },
+      el('span', { className: 'set-cover-key', textContent: t(key) }), el('div', { className: 'set-cover-value' }, ...control));
+    const body = el('div', { className: 'set-cover-body' },
+      field('set.cover.format', formats),
+      field('set.cover.size', sizes, pxBox),
+      el('div', { className: 'set-cover-preview' }, url, spec),
+      note);
+    const panel = el('div', { className: `set-cover is-${kind}` }, head, body);
+
+    controls.push((v) => {
+      const enabled = on(v);
+      input.checked = enabled;
+      panel.classList.toggle('is-off', !enabled);
+      body.hidden = !enabled;
+      if (!COVER_SIZES.includes(v[size])) custom = true;
+      const current = v[original] ? 'original' : custom ? 'custom' : v[size];
+      syncSizes(current);
+      pxBox.hidden = current !== 'custom';
+      url.textContent = coverUrl(SAMPLE_ARTWORK, v[format], v[original] ? 'original' : v[size]).split('/').pop();
+      spec.textContent = `${v[original] ? t('set.cover.originalSize') : `${v[size]} × ${v[size]}`} · ${t(`set.cover.spec.${v[format]}`)}`;
+      if (note) note.hidden = !warn(v);
+    });
+    return panel;
+  }
+
   function section(id, titleKey, ...rows) {
     return el('section', { className: 'set-group', id }, el('h2', { className: 'set-group-title', textContent: t(titleKey) }), el('div', { className: 'set-card' }, ...rows));
   }
 
-  /* ---------- 在线播放默认音质与 JOC 对象渲染 ---------- */
+  /* ---------- 播放：prefs 的 playback（音质、全景声优先）与 joc（对象渲染、音量）分组，修改立即生效（app.mjs） ---------- */
   const playback = root.querySelector('#playback');
-  const jocControls = [];
+  const playControls = [];
+  const setPlay = (patch) => prefs.set('playback', patch);
   const setJoc = (patch) => prefs.set('joc', patch);
-  let qualitySelect;
+  let playResetArmed = false;
 
-  function renderPlayback() {
-    qualitySelect = el('select', { className: 'set-select' }, ...OPTIONS.playback.quality.map((value) =>
-      el('option', { value, textContent: t(`set.playbackQuality.${value}`) })));
-    qualitySelect.setAttribute('aria-label', t('set.playbackQuality'));
-    qualitySelect.addEventListener('change', () => prefs.set('playback', { quality: qualitySelect.value }));
-    const qualitySection = section('online-quality', 'set.playback',
-      row(t('set.playbackQuality'), t('set.playbackQualityDesc'), qualitySelect));
-    jocControls.length = 0;
-    const mode = el('div', { className: 'set-segmented', role: 'radiogroup' });
-    mode.setAttribute('aria-label', t('set.jocMode'));
-    const modes = OPTIONS.joc.mode.map((value) => {
-      const b = el('button', { type: 'button', className: 'set-segment', textContent: t(`set.joc.${value}`) });
+  /** 单选按钮组（分段样式）：options 为 [value, label]，onPick(value)；返回 [节点, 同步函数] */
+  function radios(label, options, onPick) {
+    const group = el('div', { className: 'set-segmented', role: 'radiogroup' });
+    group.setAttribute('aria-label', label);
+    const buttons = options.map(([value, text]) => {
+      const b = el('button', { type: 'button', className: 'set-segment', textContent: text });
       b.setAttribute('role', 'radio');
-      b.addEventListener('click', () => setJoc({ mode: value }));
-      mode.append(b);
+      b.addEventListener('click', () => onPick(value));
+      group.append(b);
       return [value, b];
     });
-    jocControls.push((v) => { for (const [value, b] of modes) b.setAttribute('aria-checked', String(v.mode === value)); });
+    return [group, (current) => { for (const [value, b] of buttons) b.setAttribute('aria-checked', String(current === value)); }];
+  }
+
+  /** 音质卡片：四个挡位，每个写明格式与每分钟大约的流量 */
+  function qualityPicker(key, label) {
+    const group = el('div', { className: 'set-tiers', role: 'radiogroup' });
+    group.setAttribute('aria-label', label);
+    const cards = OPTIONS.playback.quality.map((tier) => {
+      const b = el('button', { type: 'button', className: `set-tier is-${tier}` },
+        el('span', { className: 'set-tier-name', textContent: t(`set.tier.${tier}`) }),
+        el('span', { className: 'set-tier-spec', textContent: t(`set.tier.${tier}Spec`) }),
+        el('span', { className: 'set-tier-data', textContent: t(`set.tier.${tier}Data`) }));
+      b.setAttribute('role', 'radio');
+      b.addEventListener('click', () => setPlay({ [key]: tier }));
+      group.append(b);
+      return [tier, b];
+    });
+    playControls.push(({ play }) => { for (const [tier, b] of cards) b.setAttribute('aria-checked', String(play[key] === tier)); });
+    return group;
+  }
+
+  function dbInput(label, min, field) {
+    const input = el('input', { type: 'number', className: 'set-input set-number', min, max: 0, step: 1 });
+    input.setAttribute('aria-label', label);
+    input.addEventListener('change', () => {
+      const n = Math.round(Number(input.value));
+      if (Number.isFinite(n)) setJoc({ [field]: Math.min(0, Math.max(min, n)) });
+      input.value = String(prefs.get('joc')[field]);
+    });
+    playControls.push(({ joc }) => { if (document.activeElement !== input) input.value = String(joc[field]); });
+    return el('div', { className: 'set-unit-box' }, input, el('span', { className: 'set-unit', textContent: 'dB' }));
+  }
+
+  function renderPlayback() {
+    playControls.length = 0;
+
+    // 音质：Wi-Fi 与移动数据分别设置，标出当前网络用的是哪一个
+    const networkNote = el('div', { className: 'set-network' });
+    const networkRow = (kind, icon) => {
+      const badge = el('span', { className: 'set-badge', textContent: t('set.networkNow') });
+      const node = row(t(`set.net.${kind}`), t(`set.net.${kind}Desc`), qualityPicker(kind, t(`set.net.${kind}`)), { wide: true });
+      node.querySelector('.set-label > span').prepend(el('span', { className: 'set-net-icon', innerHTML: icon, ariaHidden: 'true' }));
+      node.querySelector('.set-label > span').append(badge);
+      playControls.push(({ live }) => { badge.hidden = (live.network === 'cellular' ? 'cellular' : 'wifi') !== kind; });
+      return node;
+    };
+    playControls.push(({ live }) => {
+      networkNote.textContent = t(live.network ? 'set.networkDetected' : 'set.networkUnknown', { name: t(`set.net.${live.network || 'wifi'}`) });
+    });
+    const quality = section('play-quality', 'set.playQuality',
+      networkRow('wifi', ICON_WIFI),
+      networkRow('cellular', ICON_CELLULAR),
+      el('div', { className: 'set-row set-row-note' }, networkNote, el('span', { className: 'set-desc', textContent: t('set.playQualityNote') })));
+
+    // 歌曲之间的过渡（player.js 的 Mixer）：关闭 / AutoMix / 交叉淡化，交叉淡化可选时长；浏览器不能调节 <audio> 音量时不可用
+    const [transition, syncTransition] = radios(t('set.transitionMode'),
+      OPTIONS.playback.transition.map((v) => [v, t(`set.transition.${v}`)]), (v) => setPlay({ transition: v }));
+    const transitionRow = row(t('set.transitionMode'), '', transition, { wide: true });
+    const transitionDesc = transitionRow.querySelector('.set-label').appendChild(el('span', { className: 'set-desc' }));
+    const seconds = el('input', { type: 'number', className: 'set-input set-number', min: 1, max: 12, step: 1 });
+    seconds.setAttribute('aria-label', t('set.crossfade'));
+    seconds.addEventListener('change', () => {
+      const n = Math.round(Number(seconds.value));
+      if (Number.isFinite(n)) setPlay({ crossfade: Math.min(12, Math.max(1, n)) });
+      seconds.value = String(prefs.get('playback').crossfade);
+    });
+    const secondsRow = row(t('set.crossfade'), t('set.crossfadeDesc'),
+      el('div', { className: 'set-unit-box' }, seconds, el('span', { className: 'set-unit', textContent: 's' })));
+    const transitionNote = el('div', { className: 'set-row set-row-note' },
+      el('span', { className: 'set-desc', textContent: volumeControllable() ? t('set.transitionAlbum') : t('set.transitionUnsupported') }));
+    playControls.push(({ play }) => {
+      syncTransition(play.transition);
+      transitionDesc.textContent = t(`set.transitionDesc.${play.transition}`);
+      secondsRow.hidden = play.transition !== 'crossfade';
+      if (document.activeElement !== seconds) seconds.value = String(play.crossfade);
+    });
+    const transitions = section('transition', 'set.transition', transitionRow, secondsRow, transitionNote);
+
+    // 空间音频：全景声是否优先，以及 E-AC-3 的渲染方式（JOC）
+    const [spatial, syncSpatial] = radios(t('set.spatial'), OPTIONS.playback.spatial.map((v) => [v, t(`set.spatial.${v}`)]), (v) => setPlay({ spatial: v }));
+    const spatialRow = row(t('set.spatial'), '', spatial);
+    const spatialDesc = spatialRow.querySelector('.set-label').appendChild(el('span', { className: 'set-desc' }));
+    playControls.push(({ play, live, joc }) => {
+      syncSpatial(play.spatial);
+      const key = play.spatial === 'auto' ? (joc.mode !== 'off' ? 'autoOn' : 'autoOff') : play.spatial;
+      spatialDesc.textContent = t(`set.spatialDesc.${key}`) + (live.quality === 'efficient' && play.spatial !== 'off' ? ` ${t('set.spatialEfficient')}` : '');
+    });
+
+    const [mode, syncMode] = radios(t('set.jocMode'), OPTIONS.joc.mode.map((v) => [v, t(`set.joc.${v}`)]), (v) => setJoc({ mode: v }));
+    playControls.push(({ joc }) => syncMode(joc.mode));
 
     // HRTF：SADIE II 数据库的 20 位受试者，网站上有每位的头型与耳型照片
     const dataset = el('select', { className: 'set-select' }, ...OPTIONS.joc.dataset.map((name) => el('option', { value: name, textContent: name })));
@@ -268,35 +430,43 @@ export function mount({ root, signal, onLangChange, toast }) {
     datasetRow.querySelector('.set-desc').append(' ', el('a', {
       href: 'https://www.york.ac.uk/sadie-project/database.html', target: '_blank', rel: 'noopener noreferrer', textContent: t('set.jocDatasetLink'),
     }));
-    jocControls.push((v) => { dataset.value = v.dataset; datasetRow.hidden = v.mode !== 'binaural'; });
-
-    const gain = el('input', { type: 'number', className: 'set-input set-number', min: -60, max: 0, step: 1 });
-    gain.setAttribute('aria-label', t('set.jocGain'));
-    gain.addEventListener('change', () => {
-      const n = Math.round(Number(gain.value));
-      if (Number.isFinite(n)) setJoc({ gain: Math.min(0, Math.max(-60, n)) });
-      gain.value = String(prefs.get('joc').gain);
+    const gainRow = row(t('set.jocGain'), t('set.jocGainDesc'), dbInput(t('set.jocGain'), -60, 'gain'));
+    playControls.push(({ joc }) => {
+      dataset.value = joc.dataset;
+      datasetRow.hidden = joc.mode !== 'binaural';
+      gainRow.hidden = joc.mode === 'off';
     });
-    const gainRow = row(t('set.jocGain'), t('set.jocGainDesc'), el('div', { className: 'set-unit-box' }, gain, el('span', { className: 'set-unit', textContent: 'dB' })));
-    jocControls.push((v) => {
-      if (document.activeElement !== gain) gain.value = String(v.gain);
-      gainRow.hidden = v.mode === 'off';
+    const spatialSection = section('spatial', 'set.spatialSection',
+      spatialRow, row(t('set.joc'), t('set.jocModeDesc'), mode, { wide: true }), datasetRow, gainRow);
+
+    // ALAC / AAC 的音量补偿：与 JOC 开关无关（浏览器自己解码的全景声同样比立体声母带小声）
+    const volume = section('volume', 'set.volume',
+      row(t('set.stereoGain'), t('set.stereoGainDesc'), dbInput(t('set.stereoGain'), -20, 'stereoGain')));
+
+    const reset = el('button', { type: 'button', className: 'set-btn set-btn-danger', textContent: t('set.playReset') });
+    reset.addEventListener('click', () => {
+      if (!playResetArmed) {
+        playResetArmed = true;
+        reset.textContent = t('set.resetConfirm');
+        setTimeout(() => { playResetArmed = false; if (reset.isConnected) reset.textContent = t('set.playReset'); }, 4000);
+        return;
+      }
+      playResetArmed = false;
+      prefs.reset('playback');
+      prefs.reset('joc');
+      toast(t('set.resetDone'));
     });
 
-    playback.replaceChildren(qualitySection, section('joc', 'set.joc',
-      row(t('set.jocMode'), t('set.jocModeDesc'), mode, { wide: true }), datasetRow, gainRow));
+    playback.replaceChildren(quality, transitions, spatialSection, volume, el('div', { className: 'set-footer' }, reset));
     syncPlayback();
-    syncJoc();
   }
 
   function syncPlayback() {
-    qualitySelect.value = prefs.get('playback').quality;
+    const play = prefs.get('playback');
+    const state = { play, joc: prefs.get('joc'), live: playbackFor(play) };
+    for (const fn of playControls) fn(state);
   }
-
-  function syncJoc() {
-    const v = prefs.get('joc');
-    for (const fn of jocControls) fn(v);
-  }
+  signal.addEventListener('abort', onNetworkChange(syncPlayback), { once: true });
 
   /* ---------- 各分组 ---------- */
   function render() {
@@ -390,17 +560,25 @@ export function mount({ root, signal, onLangChange, toast }) {
         el('div', { className: 'set-control set-checks-box' }, el('div', { className: 'set-checks' }, ...checks), el('div', { className: 'set-mini-row' }, all, none))),
       row(t('set.sortTags'), t('set.sortTagsDesc'), toggle('sortTags', t('set.sortTags'))),
       row(t('set.playlistAlbumInfo'), t('set.playlistAlbumInfoDesc'), toggle('playlistAlbumInfo', t('set.playlistAlbumInfo'))),
+      row(t('set.stripAlbumSuffix'), t('set.stripAlbumSuffixDesc'), toggle('stripAlbumSuffix', t('set.stripAlbumSuffix'))),
       row(t('set.metaLang'), t('set.metaLangDesc'), text('metaLang', t('set.followCatalog'), t('set.metaLang'), /^[A-Za-z0-9-]{1,35}$/)));
 
-    const formats = o.coverFormat.map((f) => [f, t(`set.coverFormat.${f}`)]);
-    const saveFormatRow = row(t('set.saveCoverFormat'), t('set.saveCoverFormatDesc'), select('saveCoverFormat', formats));
-    const saveSizeRow = row(t('set.saveCoverSize'), t('set.coverSizeDesc'), number('saveCoverSize', 100, 10000, t('set.saveCoverSize')));
-    const cover = section('cover', 'set.cover',
-      row(t('set.coverFormat'), t('set.coverFormatDesc'), select('coverFormat', formats)),
-      row(t('set.coverSize'), t('set.coverSizeDesc'), number('coverSize', 100, 10000, t('set.coverSize'))),
-      row(t('set.saveCover'), t('set.saveCoverDesc'), toggle('saveCover', t('set.saveCover'))),
-      saveFormatRow, saveSizeRow);
-    controls.push((v) => { saveFormatRow.hidden = !v.saveCover; saveSizeRow.hidden = !v.saveCover; });
+    // 封面：「嵌入到歌曲」与「另存为文件」两张卡片，各自一个开关（嵌入的开关即「标签」里的封面勾选）、格式、尺寸，
+    // 底部预览实际请求的地址结尾（如 3000x3000bb-100.jpg）
+    const embedCover = coverPanel({
+      kind: 'embed', icon: ICON_COVER_EMBED,
+      on: (v) => v.embed.includes('cover'),
+      setOn: (on) => set({ embed: TAG_FIELDS.filter((f) => (f === 'cover' ? on : get().embed.includes(f))) }),
+      format: 'coverFormat', size: 'coverSize', original: 'coverOriginal',
+      // 每首歌都带一份：PNG 或原图尺寸时提醒体积
+      warn: (v) => v.coverOriginal || v.coverFormat !== 'jpg',
+    });
+    const saveCover = coverPanel({
+      kind: 'save', icon: ICON_COVER_SAVE,
+      on: (v) => v.saveCover, setOn: (on) => set({ saveCover: on }),
+      format: 'saveCoverFormat', size: 'saveCoverSize', original: 'saveCoverOriginal',
+    });
+    const cover = section('cover', 'set.cover', el('div', { className: 'set-covers' }, embedCover, saveCover));
 
     const lyrics = section('lyrics', 'set.lyrics',
       row(t('set.saveLyrics'), t('set.saveLyricsDesc'), toggle('saveLyrics', t('set.saveLyrics'))),
@@ -428,16 +606,13 @@ export function mount({ root, signal, onLangChange, toast }) {
     center.hidden = !downloads.jobs.length;
     const footer = el('div', { className: 'set-footer' }, center, reset);
 
-    host.replaceChildren(
-      el('h2', { className: 'set-part-title', textContent: t('set.download') }),
-      el('p', { className: 'set-part-desc', textContent: t('set.downloadDesc') }),
-      quality, mv, performance, save, naming, tags, cover, lyrics, footer);
+    host.replaceChildren(quality, mv, performance, save, naming, tags, cover, lyrics, footer);
 
-    // 目录
-    const groups = [['general', 'set.general'], ['online-quality', 'set.playback'], ['joc', 'set.joc'], ['quality', 'set.quality'], ['mv', 'set.mvSection'], ['save', 'set.save'], ['naming', 'set.naming'], ['tags', 'set.tags'], ['cover', 'set.cover'], ['lyrics', 'set.lyrics']];
+    // 下载页的分组目录
+    const groups = [['quality', 'set.quality'], ['mv', 'set.mvSection'], ['performance', 'set.performance'], ['save', 'set.save'], ['naming', 'set.naming'], ['tags', 'set.tags'], ['cover', 'set.cover'], ['lyrics', 'set.lyrics']];
     root.querySelector('#toc').replaceChildren(...groups.map(([id, key]) => {
       const a = el('a', { href: `#${id}`, className: 'set-toc-link', textContent: t(key) });
-      a.addEventListener('click', (e) => { e.preventDefault(); root.querySelector(`#${id}`).scrollIntoView({ behavior: 'smooth', block: 'start' }); });
+      a.addEventListener('click', (e) => { e.preventDefault(); showTab('download', id); });
       return a;
     }));
     sync();
@@ -448,10 +623,48 @@ export function mount({ root, signal, onLangChange, toast }) {
     for (const fn of controls) fn(v);
   }
 
+  /* ---------- 标签页：hash 为标签页或分组的 id；切换时只改 hash（replaceState，不进历史记录） ---------- */
+  const tabs = [...root.querySelectorAll('[data-tab]')];
+  function showTab(name, focusId = null, { scroll = true } = {}) {
+    for (const tab of tabs) {
+      const on = tab.dataset.tab === name;
+      tab.setAttribute('aria-selected', String(on));
+      tab.tabIndex = on ? 0 : -1;
+      root.querySelector(`#${tab.dataset.tab}`).hidden = !on;
+    }
+    const hash = `#${focusId || name}`;
+    if (location.hash !== hash) history.replaceState(history.state, '', location.pathname + location.search + hash);
+    if (!scroll) return;
+    const target = focusId && root.querySelector(`#${CSS.escape(focusId)}`);
+    if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    else window.scrollTo({ top: 0 });
+  }
+  /** hash 对应的 [标签页, 分组 id]；不认识的 hash 打开通用页 */
+  function fromHash() {
+    const id = decodeURIComponent(location.hash.slice(1));
+    if (TABS.includes(id)) return [id, null];
+    const target = id && /^[\w-]+$/.test(id) && root.querySelector(`#${id}`);
+    const panel = target && target.closest('.set-panel');
+    return panel ? [panel.id, id] : ['general', null];
+  }
+  for (const tab of tabs) {
+    tab.addEventListener('click', () => showTab(tab.dataset.tab));
+    // 方向键在标签之间移动（WAI-ARIA 标签页的键盘操作）
+    tab.addEventListener('keydown', (e) => {
+      const i = tabs.indexOf(tab);
+      const next = { ArrowRight: i + 1, ArrowLeft: i - 1, Home: 0, End: tabs.length - 1 }[e.key];
+      if (next === undefined) return;
+      e.preventDefault();
+      const target = tabs[(next + tabs.length) % tabs.length];
+      target.focus();
+      showTab(target.dataset.tab);
+    });
+  }
+  addEventListener('hashchange', () => { const [tab, id] = fromHash(); showTab(tab, id); }, { signal });
+
   const off = prefs.onChange((section) => {
     if (section === 'download') sync();
-    if (section === 'playback') syncPlayback();
-    if (section === 'joc') syncJoc();
+    if (section === 'joc' || section === 'playback') syncPlayback();
   });
   signal.addEventListener('abort', off, { once: true });
   const offDl = downloads.onChange(() => {
@@ -462,4 +675,8 @@ export function mount({ root, signal, onLangChange, toast }) {
   onLangChange(() => { document.title = `${t('set.title')} · Fantastic`; renderPlayback(); render(); });
   renderPlayback();
   render();
+  {
+    const [tab, id] = fromHash();
+    showTab(tab, id, { scroll: !!id });
+  }
 }

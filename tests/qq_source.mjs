@@ -7,7 +7,7 @@ import { createRequire } from 'node:module';
 import * as qq from '../src/ui/sources/qq.mjs';
 import { sourceOf, trackKey, withIdentity } from '../src/ui/sources/track.mjs';
 import { artUrl } from '../src/ui/library.mjs';
-const { AmPlayer, trackKey: playerKey, detectQqModes, useJocSettings, usePlaybackSettings } = createRequire(import.meta.url)('../src/ui/player.js');
+const { AmPlayer, Mixer, trackKey: playerKey, detectQqModes, useJocSettings, usePlaybackSettings } = createRequire(import.meta.url)('../src/ui/player.js');
 const browserGlobals = Object.fromEntries(['window', 'document', 'MediaSource', 'fetch']
   .map((key) => [key, Object.getOwnPropertyDescriptor(globalThis, key)]));
 const nativeFetch = globalThis.fetch;
@@ -420,6 +420,7 @@ test('QQ album, artist and search mappers resolve every artwork template to 500x
 function playerHarness() {
   if (globalThis.fetch === nativeFetch) globalThis.fetch = async () => { throw new Error('offline'); };
   const player = Object.create(AmPlayer.prototype);
+  Object.assign(player, { volume: 0.5, mixGain: 1, mixer: { volumeChanged() {} } });
   Object.assign(player, {
     source: 'apple', current: null, queue: null, sourceContexts: new Map(), playToken: 0, queueSerial: 0, nextSerial: 0,
     shuffle: false, repeat: 'off', root: { hidden: true }, unsupportedListeners: new Set(),
@@ -487,6 +488,22 @@ test('QQ native fallback does not react to a network error after native startup'
   player.handleAudioError();
   await new Promise(setImmediate);
   assert.deepEqual(attempted, ['native']);
+});
+
+test('QQ transitions bypass Apple analysis and audio errors use the event deck', () => {
+  const player = playerHarness();
+  const mixer = new Mixer(player);
+  player.current = { source: 'qq', mode: 'native' };
+  assert.equal(mixer.wants({ source: 'qq' }), false);
+  assert.equal(mixer.wants({ source: 'apple' }), false);
+  player.current = { source: 'apple', mode: 'mse' };
+  assert.equal(mixer.wants({ source: 'qq' }), false);
+  assert.equal(mixer.wants(null), false);
+  player.current = { source: 'qq', mode: 'native' };
+  player.nativeAttempt = { token: player.playToken, reject: (error) => { player.error = error; } };
+  player.audio.error = { code: 2 };
+  player.handleAudioError({ error: { code: 4 } });
+  assert.ok(player.error instanceof Error);
 });
 
 test('QQ native startup hands off on a media error while play is pending', { timeout: 10000 }, async () => {
@@ -588,7 +605,7 @@ test('a manual QQ selection during the qualities lookup cannot be replaced or pa
   } finally { globalThis.fetch = original; }
 });
 
-test('Apple defaults use existing capability filtering, respect preference with JOC enabled, and leave manual playback intact', async () => {
+test('Apple defaults use capability filtering and spatial settings, and leave manual playback intact', async () => {
   const saved = { wrapper: globalThis.AmWrapper, decrypt: globalThis.AmDecrypt, media: globalThis.MediaSource, worker: globalThis.Worker };
   const variants = [
     { group_id: 'audio-alac-stereo-96000-24', codecs: 'alac', sample_rate: 96000, bandwidth: 4000000 },
@@ -600,14 +617,15 @@ test('Apple defaults use existing capability filtering, respect preference with 
   globalThis.AmWrapper = { songMaster: async () => ({ variants }) };
   globalThis.AmDecrypt = { supported: () => true };
   globalThis.MediaSource = { isTypeSupported: () => true };
-  usePlaybackSettings({ get: () => ({ quality: preference }) });
+  let spatial = 'off';
+  usePlaybackSettings({ get: () => ({ quality: preference, spatial }) });
   useJocSettings({ get: () => ({ mode: 'speaker' }) });
   try {
     const player = playerHarness();
     player.start = async (item) => { player.current = item; };
     await player.playQueue([{ track: '123', name: 'Apple song' }]);
     assert.equal(player.current.variant, variants[0]);
-    preference = 'dolby';
+    spatial = 'auto';
     assert.equal(player.current.variant, variants[0]);
     await player.playQueue([{ track: '123', name: 'Apple song' }]);
     assert.equal(player.current.variant, variants[2]);

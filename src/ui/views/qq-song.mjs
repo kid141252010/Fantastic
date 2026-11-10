@@ -3,7 +3,8 @@ import { trackKey } from '../sources/track.mjs';
 import { artUrl } from '../library.mjs';
 import { parseTTML } from '../lyrics/ttml.mjs';
 import { createDetailHeader } from './detail-header.mjs';
-import { prefs } from '../prefs.mjs';
+import { prefs, playbackFor } from '../prefs.mjs';
+import { mappedPlaybackQuality } from '../playback-quality.mjs';
 
 export const bodyClass = 'song-page qq-song-page';
 export const styles = ['/assets/views/song.css', '/assets/views/qq-song.css'];
@@ -42,7 +43,7 @@ export function mount({ root, url, signal, player, onLangChange, toast }) {
   const header = createDetailHeader({ $, signal, artUrl, rerender: () => renderHeader() });
   const active = (quality) => !!track && trackKey(player.current) === track.key && player.current?.quality === quality;
   const playing = () => !!player.current && !player.transport().paused;
-  const defaultQuality = () => qq.pickDefaultQuality(rows, prefs.get('playback').quality);
+  const defaultQuality = () => qq.pickDefaultQuality(rows, mappedPlaybackQuality(playbackFor(prefs.get('playback'))));
   const currentTrack = () => !!track && trackKey(player.current) === track.key;
 
   function renderHeader() {

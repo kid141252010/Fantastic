@@ -140,6 +140,7 @@ async function withJocStubs(seek, body) {
   globalThis.fetch = async (url) => { calls.push(url); return { ok: true, arrayBuffer: async () => mp4().buffer }; };
   Object.assign(JocLiveEngine.prototype, { openDecoder: async () => {}, pump: async () => {}, seek });
   const player = Object.create(AmPlayer.prototype);
+  Object.assign(player, { volume: 0.4, mixGain: 1, mixer: { volumeChanged() {}, reset() {} } });
   try { await body(player, calls); } finally {
     if (player.pcm && !player.pcm.controller?.signal.aborted) { if (player.pcm.decoder) player.pcm.decoder.broken = true; player.pcm.destroy(); }
     for (const [name, descriptor] of Object.entries(methods)) {
@@ -211,6 +212,21 @@ test('QQ PCM entry rejects download and native classifications before opening in
       assert.equal(player.pcm, undefined);
     }
   }
+});
+
+test('preparing a QQ PCM voice uses the download opener and releases it on failure', async () => {
+  await withJocStubs(async () => {}, async (player, calls) => {
+    player.spatial = {};
+    const item = qq.qualityItem(qq.toTrack({ id: 'WET' }), 'DAEAC3');
+    const voice = await player.prerollVoice(item, 'joc2', 0.25);
+    assert.deepEqual(calls, [item.downloadUrl]);
+    assert.equal(voice.engine.gain.gain.value, 0);
+    voice.engine.decoder.broken = true;
+    voice.release();
+    assert.equal(voice.engine.controller.signal.aborted, true);
+    globalThis.fetch = async () => { throw new Error('download failed'); };
+    await assert.rejects(player.prerollVoice(item, 'joc2', 0), /download failed/);
+  });
 });
 
 test('QQ quality switching enters JocLiveEngine through QQ input and resumes native playback without losing the queue', async () => {
