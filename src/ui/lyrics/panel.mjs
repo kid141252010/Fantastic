@@ -556,38 +556,6 @@ export function mountLyrics({ root, toggle, bar, player, getMeta, t, notify, onL
     player.renderProgress();
   });
 
-  // 逐词动画由 AMLL 在换行时按播放进度对齐一次，之后按页面时钟走：手机上长帧、动画启动挂起、跳转后声音晚出来等
-  // 都会让它和声音错开，直到下一行才纠正。这里每 250ms 比一次高亮行里正在走的动画，差出 40ms 以上就把这一行重新对齐
-  let lastAlign = 0;
-  function alignWords(timestamp, time) {
-    if (timestamp - lastAlign < 250) return;
-    lastAlign = timestamp;
-    const groups = view.currentLyricGroups;
-    const highlighted = view.timelineController?.getSnapshot().highlightedGroups;
-    if (!groups || !highlighted) return;
-    for (const index of highlighted) {
-      const group = groups[index];
-      if (group && (lineDrift(group.mainLine, time) > 40 || lineDrift(group.bgLine, time) > 40)) group.enable(time, true);
-    }
-  }
-
-  /** 这一行正在走的逐词动画与 time 应在的位置最多差多少毫秒 */
-  function lineDrift(line, time) {
-    const expected = line ? time - line.getLine().startTime : -1;
-    if (!(expected >= 0)) return 0;
-    let drift = 0;
-    const check = (a) => {
-      if (a.playState !== 'running' || a.pending || a.playbackRate !== 1 || a.currentTime == null) return;
-      const timing = a.effect?.getComputedTiming();
-      const end = Number(timing?.delay ?? 0) + Number(timing?.duration ?? 0);
-      if (expected >= end || a.currentTime >= end) return;
-      drift = Math.max(drift, Math.abs(a.currentTime - expected));
-    };
-    for (const word of line.splittedWords || []) word.elementAnimations?.forEach(check);
-    line.maskAnimator?.animations?.forEach(check);
-    return drift;
-  }
-
   function tick(timestamp) {
     const transport = player.current ? player.transport() : null;
     const now = !!transport && !transport.paused;
@@ -609,7 +577,6 @@ export function mountLyrics({ root, toggle, bar, player, getMeta, t, notify, onL
     if (lyricsVisible) {
       const time = viewTime(transport ? transport.currentTime * 1000 : 0);
       view.setCurrentTime(time);
-      if (running) alignWords(timestamp, time);
       view.update(lastFrame ? timestamp - lastFrame : 0);
     }
     lastFrame = timestamp;

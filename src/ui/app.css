@@ -1639,6 +1639,8 @@ html[dir="rtl"] .layout-h.cover-mode :is(.lyrics-thumb, .lyrics-cover, .lyrics-h
 .lyrics-overlay:is(.lyrics-hidden, .queue-open) .lyric-panel {
   opacity: 0; visibility: hidden; pointer-events: none; transition: opacity .25s cubic-bezier(.5, 0, .5, 1), visibility .25s, --lyrics-mask-inset .3s ease;
 }
+/* AMLL 换到新行时高亮层要淡入 0.3 秒，开头几个字的扫光会显得比声音晚；进入高亮时直接显示，离开时仍按 AMLL 淡出 */
+.lyric-panel .amll-lyric-player [class*="_lyricLine"][class*="_gradientMask"] > :is([class*="_lyricMainLineBright"], [class*="_lyricMainLineDim"]) { transition-duration: 0s; }
 .lyric-panel .amll-lyric-player { font-family: -apple-system, BlinkMacSystemFont, 'SF Pro', 'PingFang SC', 'Helvetica Neue', Helvetica, Arial, sans-serif; font-weight: var(--lyrics-font-weight, 600); }
 .lyrics-credits { font-size: 12px; line-height: 1.25; color: rgba(255, 255, 255, .64); padding-block: 12px 32px; border-top: 1px solid rgba(255, 255, 255, .1); }
 .lyrics-credits .credit-label { font-weight: 600; margin-right: 5px; }
