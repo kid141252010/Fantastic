@@ -47,23 +47,27 @@ const collator = () => new Intl.Collator(AmI18n.lang === 'zh' ? 'zh-CN' : 'en', 
 export function libraryAlbums() {
   const albums = new Map();
   for (const item of library.libraryItems('album')) {
-    albums.set(item.id, { ...item, tracks: [] });
+    albums.set(library.keyOf('album', item.id, item.source), { ...item, tracks: [] });
   }
   for (const track of library.libraryItems()) {
     if ((track.kind !== 'song' && track.kind !== 'music-video') || !track.albumId || !track.albumHref) continue;
-    let album = albums.get(track.albumId);
+    const key = library.keyOf('album', track.albumId, track.source);
+    let album = albums.get(key);
     if (!album) {
       album = {
+        ...(track.source === 'qq' ? { source: 'qq' } : {}),
         kind: 'album', id: track.albumId, name: track.album, artist: track.artist, artistHref: '', href: track.albumHref,
         artwork: track.artwork, country: track.country, addedAt: track.addedAt, tracks: [],
       };
-      albums.set(track.albumId, album);
+      albums.set(key, album);
     }
     album.addedAt = Math.max(album.addedAt, track.addedAt);
     album.tracks.push(track);
   }
   return [...albums.values()];
 }
+
+const appleArtistId = (href) => (href.match(/^\/https:\/\/music\.apple\.com\/.*\/(\d+)$/) || [])[1] || '';
 
 /** 艺人：专辑按专辑艺人、其余歌曲按歌曲艺人归类；{ name, href, artwork, albums, songs } */
 function libraryArtists(albums) {
@@ -96,14 +100,14 @@ function libraryArtists(albums) {
     if (!artist.artwork) artist.artwork = track.artwork;
   }
   for (const artist of artists.values()) {
-    if (!artist.id) artist.id = (artist.href.match(/\/(\d+)$/) || [])[1] || '';
+    if (!artist.id) artist.id = appleArtistId(artist.href);
     if (artist.href) continue;
     // 艺人页链接：曲目里同名艺人的链接
     for (const track of artist.songs) {
       const hit = (track.artists || []).find((a) => a.name === artist.name && a.href);
       if (hit) { artist.href = hit.href; break; }
     }
-    artist.id = (artist.href.match(/\/(\d+)$/) || [])[1] || '';
+    artist.id = appleArtistId(artist.href);
     if (!artist.country) artist.country = ((artist.songs[0] || artist.albums[0] || {}).country) || 'us';
   }
   return [...artists.values()];
@@ -276,7 +280,9 @@ export function mount({ root, url, signal, player, navigate, toast, onLangChange
   function albumCard(album) {
     return card({
       href: album.href, art: img(album.artwork, 360), title: album.name, sub: album.artist,
-      target: { kind: 'album', href: album.href, apple: library.appleUrl(album.href), name: album.name, country: album.country },
+      target: album.source === 'qq'
+        ? { kind: 'album', source: 'qq', href: album.href, name: album.name }
+        : { kind: 'album', href: album.href, apple: library.appleUrl(album.href), name: album.name, country: album.country },
     });
   }
 
@@ -489,7 +495,7 @@ export function mount({ root, url, signal, player, navigate, toast, onLangChange
   /* ---------- 播放 ---------- */
   function playSong(songs, index) {
     const track = songs[index];
-    if (player.current && trackKey(player.current) === trackKey({ id: track.id })) { player.toggle(); return; }
+    if (player.current && trackKey(player.current) === trackKey(track)) { player.toggle(); return; }
     player.playQueue(songs.map(library.entryOf), index);
   }
 

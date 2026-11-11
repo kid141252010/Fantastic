@@ -170,7 +170,7 @@ export function mount({ root, url, signal, player, navigate, toast, onLangChange
   /* ---------- 播放 ---------- */
   function playFrom(index) {
     const list = songs();
-    if (player.current && trackKey(player.current) === trackKey({ id: list[index].id })) { player.toggle(); return; }
+    if (player.current && trackKey(player.current) === trackKey(list[index])) { player.toggle(); return; }
     player.playQueue(list.map(library.entryOf), index);
   }
 

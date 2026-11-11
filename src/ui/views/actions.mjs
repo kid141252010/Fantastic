@@ -194,7 +194,8 @@ export function songEntry(track, country, context = {}) {
  * 先用播放队列里的信息拼出曲目快照（封面地址还原为 {w}x{h} 模板），之后可用 songTarget() 换成完整资源
  */
 export function nowPlayingTarget(current) {
-  if (current?.source === 'qq') return { kind: 'song', name: current.title || current.name, noPlay: true,
+  if (current?.source === 'qq') return { kind: 'song', source: 'qq', name: current.title || current.name, noPlay: true,
+    href: current.href || '', albumHref: current.albumHref || '',
     track: { ...current, id: current.track, name: current.title || current.name, duration: (current.duration || 0) * 1000 } };
   if (!current || !current.track) return null;
   const href = current.href || '';
@@ -304,9 +305,15 @@ function collectionSnapshots(c) {
     .map((track) => snapshotOf(track, c.country, album));
 }
 
-/** 条目在资料库中的 kind 与 id；不能加入资料库的条目为 null */
+/** QQ 音乐条目（歌曲、专辑、艺人、歌单、MV）：source 为 qq，或曲目快照来自 QQ */
+const isQQ = (target) => target.source === 'qq' || target.track?.source === 'qq';
+
+/** 条目在资料库中的 kind、id 与 source；不能加入资料库的条目为 null（QQ 音乐只有歌曲可以加入） */
 function libraryKey(target) {
-  if (target.track?.source === 'qq') return null;
+  if (isQQ(target)) {
+    const id = target.track && (target.track.track ?? target.track.id);
+    return target.kind === 'song' && id ? { kind: 'song', id: String(id), source: 'qq' } : null;
+  }
   if (!['song', 'music-video', 'album', 'playlist'].includes(target.kind)) return null;
   if (target.track) return { kind: target.track.kind, id: target.track.id };
   if (target.resource) return { kind: target.kind, id: target.resource.id };
@@ -318,6 +325,7 @@ function libraryKey(target) {
  * 喜爱用的键：本地歌单为 { local: true, id }，艺人为 { kind: 'artist', id }，其余与 libraryKey 相同；不能喜爱时为 null
  */
 function favoriteKey(target) {
+  if (isQQ(target)) return libraryKey(target);
   if (target.kind === 'library-playlist') return target.playlistId ? { local: true, id: target.playlistId } : null;
   if (target.kind === 'artist') {
     const id = target.resource ? target.resource.id : ((target.href || '').match(/\/(\d+)$/) || [])[1];
@@ -502,16 +510,27 @@ export function createActions({ signal, player, navigate, toast }) {
 
   const playable = (target) => ['song', 'album', 'playlist', 'music-video', 'library-playlist'].includes(target.kind)
     && (target.kind !== 'song' || target.onPlay || target.resource || target.track)
-    && (target.kind !== 'library-playlist' || !!target.onPlay);
+    && (target.kind !== 'library-playlist' || !!target.onPlay)
+    && (!isQQ(target) || target.kind !== 'artist');
+
+  /** QQ 专辑 / 歌单的全部歌曲（歌单只取第一页） */
+  async function qqCollectionEntries(target) {
+    const id = (target.href || '').match(/^\/qq-(?:album|playlist)\/([0-9A-Za-z]{1,32})/)?.[1];
+    if (!id) return [];
+    const songs = target.kind === 'album'
+      ? ((await qq.album(id)).songs || []).map(qq.toTrack)
+      : (await qq.playlist(id)).songs;
+    return songs.map(qq.entryOf);
+  }
 
   async function play(target, button, shuffle = false) {
     if (target.kind === 'music-video') { navigate(target.href); return; }
     if (target.onPlay) { target.onPlay(); return; }
-    if (target.kind === 'song') { player.playQueue([target.resource ? songEntry(target.resource, target.country) : (target.track?.source === 'qq' ? qq.entryOf(target.track) : library.entryOf(target.track))], 0); return; }
+    if (target.kind === 'song') { player.playQueue([target.resource ? songEntry(target.resource, target.country) : (target.track?.qq ? qq.entryOf(target.track) : library.entryOf(target.track))], 0); return; }
     if (button) button.classList.add('busy');
     try {
       // 离开页面后取回的曲目照样播放：播放条常驻
-      const entries = await collectionEntries(target);
+      const entries = isQQ(target) ? await qqCollectionEntries(target) : await collectionEntries(target);
       if (!entries.length) { toast(t('action.noSongs', { name: target.name })); return; }
       player.playQueue(entries, shuffle ? Math.floor(Math.random() * entries.length) : 0, { shuffle });
     } catch (err) {
@@ -529,8 +548,8 @@ export function createActions({ signal, player, navigate, toast }) {
   async function toggleLibrary(target, busy) {
     const key = libraryKey(target);
     if (!key) return;
-    if (library.inLibrary(key.kind, key.id)) {
-      library.removeFromLibrary(key.kind, key.id);
+    if (library.inLibrary(key.kind, key.id, key.source)) {
+      library.removeFromLibrary(key.kind, key.id, key.source);
       toast(t('library.removedFrom', { name: target.name }));
       return;
     }
@@ -545,7 +564,7 @@ export function createActions({ signal, player, navigate, toast }) {
     }
   }
 
-  const favoriteOf = (key) => !!key && (key.local ? !!(library.playlist(key.id) || {}).favorite : library.isFavorite(key.kind, key.id));
+  const favoriteOf = (key) => !!key && (key.local ? !!(library.playlist(key.id) || {}).favorite : library.isFavorite(key.kind, key.id, key.source));
 
   /** 喜爱 / 取消喜爱（与 Apple Music 相同，喜爱时同时加入资料库）；busy 为请求曲目期间显示忙碌的按钮 */
   async function toggleFavorite(target, busy) {
@@ -558,8 +577,8 @@ export function createActions({ signal, player, navigate, toast }) {
       if (busy) busy.classList.add('busy');
       try {
         // 已在资料库中时不必再取曲目
-        const records = on && !library.libraryItem(key.kind, key.id) ? await libraryRecords(target) : [];
-        library.setFavorite(key.kind, key.id, on, records);
+        const records = on && !library.libraryItem(key.kind, key.id, key.source) ? await libraryRecords(target) : [];
+        library.setFavorite(key.kind, key.id, on, records, key.source);
       } catch (err) {
         toast(t('library.failed', { msg: err.message }));
         return;
@@ -580,7 +599,7 @@ export function createActions({ signal, player, navigate, toast }) {
     }
     const key = libraryKey(target);
     if (key) {
-      const has = library.inLibrary(key.kind, key.id);
+      const has = library.inLibrary(key.kind, key.id, key.source);
       entries.library = { icon: has ? LIB_ICON.remove : LIB_ICON.add, label: t(has ? 'library.remove' : 'library.add'), onSelect: () => toggleLibrary(target, button) };
     }
     if (key || target.getTracks) {
@@ -600,8 +619,18 @@ export function createActions({ signal, player, navigate, toast }) {
     return entries;
   }
 
-  /** 复制本站链接与 Apple Music 链接（按键名）；本地歌单没有 Apple Music 链接 */
+  /** 复制本站链接与 Apple Music / QQ 音乐链接（按键名）；本地歌单没有 Apple Music 链接 */
   function linkEntries(target) {
+    if (isQQ(target)) {
+      const href = target.href || target.track?.href || '';
+      const web = qq.webUrl(href);
+      if (!href || !web) return {};
+      const site = location.origin + href;
+      return {
+        copySite: { icon: ICON.link, label: t('action.copySite'), title: site, onSelect: () => copy(site) },
+        copyApple: { icon: ICON.link, label: t('qq.copyLink'), title: web, onSelect: () => copy(web) },
+      };
+    }
     if (!target.href || !target.apple) return {};
     const site = location.origin + target.href;
     return {
@@ -610,11 +639,36 @@ export function createActions({ signal, player, navigate, toast }) {
     };
   }
 
+  /** QQ 音乐条目的菜单：播放、音质与下载、前往专辑 / 艺人 / MV、资料库操作、复制链接 */
+  function qqMenuItems(target, button) {
+    const items = [];
+    const track = target.kind === 'song' ? target.track : null;
+    if (target.kind === 'music-video') items.push({ icon: ICON.video, label: t('action.playMv'), onSelect: () => navigate(target.href) });
+    else if (playable(target) && !target.noPlay) items.push({ icon: ICON.play, label: t('action.play'), onSelect: () => play(target, button) });
+    if (target.kind === 'album' || target.kind === 'playlist' || target.onShuffle) {
+      items.push({ icon: ICON.shuffle, label: t('action.shuffle'), onSelect: () => (target.onShuffle ? target.onShuffle() : play(target, button, true)) });
+    }
+    if (track) {
+      const id = track.track ?? track.id;
+      const href = track.href || qq.songPath(id);
+      if (location.pathname !== href) items.push({ icon: ICON.quality, label: t('album.quality'), onSelect: () => navigate(href) });
+      items.push({ icon: ICON.download, label: t('qq.download'), onSelect: () => qq.download(track) });
+      const albumHref = target.albumHref || track.albumHref;
+      if (albumHref && location.pathname !== albumHref) items.push({ icon: ICON.album, label: t('action.goAlbum'), onSelect: () => navigate(albumHref) });
+      const artist = (track.artists || []).find((a) => a && a.href && location.pathname !== a.href);
+      if (artist) items.push({ icon: ICON.link, label: t('qq.goArtist', { name: artist.name }), onSelect: () => navigate(artist.href) });
+      if (track.qq?.mv) items.push({ icon: ICON.video, label: t('qq.watchMv'), onSelect: () => navigate(qq.mvPath(track.qq.mv)) });
+    }
+    const lib = Object.values(libraryEntries(target, button));
+    if (lib.length) items.push(...(items.length ? ['-'] : []), ...lib);
+    if (target.extraItems && target.extraItems.length) items.push(...(items.length ? ['-'] : []), ...target.extraItems);
+    const links = Object.values(linkEntries(target));
+    if (links.length) items.push(...(items.length ? ['-'] : []), ...links);
+    return items;
+  }
+
   function menuItems(target, button) {
-    if (target.track?.source === 'qq') return [
-      ...(!target.noPlay ? [{ icon: ICON.play, label: t('action.play'), onSelect: () => play(target, button) }] : []),
-      { icon: ICON.download, label: t('qq.download'), onSelect: () => qq.download(target.track) },
-    ];
+    if (isQQ(target)) return qqMenuItems(target, button);
     const items = [];
     if (target.kind === 'music-video') items.push({ icon: ICON.video, label: t('action.playMv'), onSelect: () => navigate(target.href) });
     else if (playable(target) && !target.noPlay) items.push({ icon: ICON.play, label: t('action.play'), onSelect: () => play(target, button) });
@@ -712,7 +766,7 @@ export function createActions({ signal, player, navigate, toast }) {
     const refresh = () => {
       const target = getTarget();
       const key = target && libraryKey(target);
-      const has = !!key && library.inLibrary(key.kind, key.id);
+      const has = !!key && library.inLibrary(key.kind, key.id, key.source);
       button.disabled = !key;
       button.innerHTML = has ? LIB_ICON.added : LIB_ICON.add;
       button.setAttribute('aria-pressed', String(has));

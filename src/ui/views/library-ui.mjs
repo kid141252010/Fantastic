@@ -173,7 +173,7 @@ export function trackRow(track, { actions, onPlay, extraItems, playlistId, lead 
         ...(track.qq?.vip ? [el('span', { className: 'qq-badge qq-vip', textContent: t('qq.vip') })] : []),
         ...(track.qq?.ttml ? [el('span', { className: 'qq-badge', textContent: t('qq.ttml') })] : [])] : []),
       track.explicit ? el('span', { className: 'explicit', textContent: 'E', title: t('search.explicit') }) : null,
-      track.source !== 'qq' && library.isFavorite(track.kind, track.id) ? el('span', { className: 'lib-fav', innerHTML: LIB_ICON.starFilled, title: t('library.favorited') }) : null,
+      library.isFavorite(track.kind, track.id, track.source) ? el('span', { className: 'lib-fav', innerHTML: LIB_ICON.starFilled, title: t('library.favorited') }) : null,
       video ? el('span', { className: 'track-kind', innerHTML: VIDEO_ICON, title: t('album.video') }) : null),
     el('div', { className: 'track-artist' }, ...artistParts(track)));
   const albumCol = track.albumHref && track.album ? el('a', { className: 'track-album', href: track.albumHref, textContent: track.album })

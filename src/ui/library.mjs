@@ -52,9 +52,12 @@ const PLAYLIST_ID = /^p\.[0-9A-Za-z_-]{1,64}$/;
 const FOLDER_ID = /^f\.[0-9A-Za-z_-]{1,64}$/;
 const CATALOG_PLAYLIST_ID = /^pl\.[0-9A-Za-z_-]{1,64}$/;
 const NUMERIC_ID = /^[0-9]{1,20}$/;
+// QQ 音乐歌曲（source 为 qq）：id 为歌曲 mid，albumId 为专辑 mid，链接为本站的 /qq-song|qq-album|qq-artist 页面
+const QQ_ID = /^[0-9A-Za-z]{1,32}$/;
+const QQ_PATH = /^\/qq-(?:song|album|artist|playlist|mv)\/[0-9A-Za-z]{1,32}$/;
 
 const str = (value, max = 300) => (typeof value === 'string' ? value.trim().slice(0, max) : '');
-const href = (value) => { const s = str(value, 600); return SITE_PATH.test(s) ? s : ''; };
+const href = (value) => { const s = str(value, 600); return SITE_PATH.test(s) || QQ_PATH.test(s) ? s : ''; };
 const art = (value) => { const s = str(value, 600); return ART.test(s) ? s : ''; };
 const color = (value) => (typeof value === 'string' && COLOR.test(value) ? value.toLowerCase() : '');
 const country = (value) => (typeof value === 'string' && /^[a-z]{2}$/i.test(value) ? value.toLowerCase() : 'us');
@@ -64,10 +67,13 @@ const folderRef = (value) => (typeof value === 'string' && FOLDER_ID.test(value)
 function cleanTrack(raw) {
   if (!raw || typeof raw !== 'object') return null;
   const kind = raw.kind === 'music-video' ? 'music-video' : raw.kind === 'song' ? 'song' : '';
-  const id = str(raw.id, 20);
-  if (!kind || !NUMERIC_ID.test(id)) return null;
-  const albumId = str(raw.albumId, 20);
+  const qq = raw.source === 'qq';
+  const ID = qq ? QQ_ID : NUMERIC_ID;
+  const id = str(raw.id, qq ? 32 : 20);
+  if (!kind || !ID.test(id) || (qq && kind !== 'song')) return null;
+  const albumId = str(raw.albumId, qq ? 32 : 20);
   return {
+    ...(qq ? { source: 'qq', vip: raw.vip === true || raw.qq?.vip === true } : {}),
     kind,
     id,
     country: country(raw.country),
@@ -77,10 +83,10 @@ function cleanTrack(raw) {
       .map((a) => a && { name: str(a.name), href: href(a.href) })
       .filter((a) => a && a.name),
     album: str(raw.album),
-    albumId: NUMERIC_ID.test(albumId) ? albumId : '',
+    albumId: ID.test(albumId) ? albumId : '',
     albumHref: href(raw.albumHref),
     href: href(raw.href),
-    artwork: art(raw.artwork),
+    artwork: art(raw.artwork && typeof raw.artwork === 'object' ? raw.artwork.url : raw.artwork),
     bgColor: color(raw.bgColor),
     duration: Number.isFinite(raw.duration) && raw.duration > 0 ? Math.round(raw.duration) : 0,
     explicit: raw.explicit === true,
@@ -117,7 +123,7 @@ function cleanItem(raw, now) {
   item.favorite = time(raw.favorite, 0);
   // 艺人条目只表示「喜爱」，没有喜爱时间的视为无效
   if (item.kind === 'artist' && !item.favorite) return null;
-  item.key = keyOf(item.kind, item.id);
+  item.key = keyOf(item.kind, item.id, item.source);
   return item;
 }
 
@@ -165,7 +171,9 @@ function randomId(length) {
   return Array.from(bytes, (b) => alphabet[b % alphabet.length]).join('');
 }
 
-export const keyOf = (kind, id) => `${kind}:${id}`;
+/** 资料库键：Apple Music 为 `${kind}:${id}`（与旧数据相同），QQ 音乐为 `qq:${kind}:${id}` */
+export const keyOf = (kind, id, source) => (source === 'qq' ? `qq:${kind}:${id}` : `${kind}:${id}`);
+const sameSource = (item, source) => (item.source === 'qq') === (source === 'qq');
 
 /* ---------- IndexedDB ---------- */
 const request = (req) => new Promise((resolve, reject) => {
@@ -274,13 +282,13 @@ export function libraryItems(kind) {
   return kind ? all.filter((item) => item.kind === kind) : all;
 }
 
-export const libraryItem = (kind, id) => items.get(keyOf(kind, id)) || null;
+export const libraryItem = (kind, id, source) => items.get(keyOf(kind, id, source)) || null;
 
 /** 是否在资料库中；专辑只要有其中的歌曲就算（与 Apple Music 相同，添加单曲后专辑也出现在资料库里） */
-export function inLibrary(kind, id) {
-  if (items.has(keyOf(kind, id))) return true;
+export function inLibrary(kind, id, source) {
+  if (items.has(keyOf(kind, id, source))) return true;
   if (kind !== 'album') return false;
-  for (const item of items.values()) if (item.albumId === id && (item.kind === 'song' || item.kind === 'music-video')) return true;
+  for (const item of items.values()) if (item.albumId === id && sameSource(item, source) && (item.kind === 'song' || item.kind === 'music-video')) return true;
   return false;
 }
 
@@ -291,7 +299,7 @@ export function addToLibrary(records) {
   const puts = [];
   let added = 0;
   for (const raw of records) {
-    const old = items.get(keyOf(raw.kind, raw.id));
+    const old = items.get(keyOf(raw.kind, raw.id, raw.source));
     // 艺人条目只表示喜爱，新加的艺人在 setFavorite 里写入
     const item = cleanItem({ ...raw, addedAt: undefined, favorite: old ? old.favorite : (raw.kind === 'artist' ? now : 0) }, now);
     if (!item) continue;
@@ -309,10 +317,10 @@ export function addToLibrary(records) {
 }
 
 /** 从资料库删除；专辑连同其中的歌曲与 MV 一起删除（与 Apple Music 的「从资料库中删除」相同）。返回删除的数量 */
-export function removeFromLibrary(kind, id) {
-  const keys = [keyOf(kind, id)];
+export function removeFromLibrary(kind, id, source) {
+  const keys = [keyOf(kind, id, source)];
   if (kind === 'album') {
-    for (const item of items.values()) if (item.albumId === id && (item.kind === 'song' || item.kind === 'music-video')) keys.push(item.key);
+    for (const item of items.values()) if (item.albumId === id && sameSource(item, source) && (item.kind === 'song' || item.kind === 'music-video')) keys.push(item.key);
   }
   const removed = keys.filter((key) => items.delete(key));
   if (removed.length) { emit(); persist({ deleteItems: removed }); }
@@ -321,8 +329,8 @@ export function removeFromLibrary(kind, id) {
 
 /* ---------- 喜爱 ---------- */
 /** 资料库条目（歌曲、MV、专辑、Apple Music 歌单、艺人）是否喜爱 */
-export function isFavorite(kind, id) {
-  const item = items.get(keyOf(kind, id));
+export function isFavorite(kind, id, source) {
+  const item = items.get(keyOf(kind, id, source));
   return !!(item && item.favorite);
 }
 
@@ -330,12 +338,12 @@ export function isFavorite(kind, id) {
  * 喜爱 / 取消喜爱资料库条目。条目不在资料库时先加入 records（与 Apple Music 相同，喜爱即加入资料库；
  * 专辑的 records 含其中的曲目）。取消喜爱的艺人从资料库删除（艺人条目只表示喜爱），其余条目保留在资料库中。
  */
-export function setFavorite(kind, id, on, records = []) {
-  const key = keyOf(kind, id);
+export function setFavorite(kind, id, on, records = [], source) {
+  const key = keyOf(kind, id, source);
   if (on && !items.has(key)) addToLibrary(records);
   const item = items.get(key);
   if (!item) return;
-  if (!on && kind === 'artist') { removeFromLibrary(kind, id); return; }
+  if (!on && kind === 'artist') { removeFromLibrary(kind, id, source); return; }
   const next = { ...item, favorite: on ? Date.now() : 0 };
   items.set(key, next);
   emit();
@@ -413,14 +421,14 @@ export function addToPlaylist(id, tracks, { duplicates = false } = {}) {
   const list = lists.get(id);
   if (!list) return { added: 0, skipped: 0 };
   const now = Date.now();
-  const have = new Set(list.tracks.map((track) => keyOf(track.kind, track.id)));
+  const have = new Set(list.tracks.map((track) => keyOf(track.kind, track.id, track.source)));
   const next = { ...list, tracks: list.tracks.slice() };
   let added = 0;
   let skipped = 0;
   for (const raw of tracks) {
     const track = cleanTrack(raw);
     if (!track) continue;
-    const key = keyOf(track.kind, track.id);
+    const key = keyOf(track.kind, track.id, track.source);
     if (!duplicates && have.has(key)) { skipped++; continue; }
     if (next.tracks.length >= MAX_TRACKS) break;
     have.add(key);
@@ -709,6 +717,16 @@ export function artUrl(template, w, h = w) {
 
 /** 曲目快照 → 播放队列条目（见 AmPlayer.playQueue） */
 export function entryOf(track) {
+  if (track.source === 'qq') {
+    const albumMid = track.albumId || '';
+    return {
+      source: 'qq', key: `qq:${track.id}`, kind: 'song', id: track.id, track: track.id, country: '',
+      name: track.name, title: track.name, artist: track.artist, artists: track.artists, album: track.album,
+      albumId: albumMid, href: track.href, albumHref: track.albumHref,
+      artwork: albumMid ? track.artwork : '', artworkFetchUrl: albumMid ? `/qq/cover/${albumMid}` : '',
+      duration: track.duration, explicit: false, qq: { mid: track.id, albumMid, vip: track.vip === true, ttml: false, mv: '' },
+    };
+  }
   return {
     source: 'apple', key: `apple:${track.id}`,
     track: track.id,
