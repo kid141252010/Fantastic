@@ -556,36 +556,37 @@ export function mountLyrics({ root, toggle, bar, player, getMeta, t, notify, onL
     player.renderProgress();
   });
 
-  // 逐词动画由 AMLL 在换行时按播放进度对齐一次，之后按页面时钟走：手机上长帧、动画启动挂起、跳转后声音晚出来等
-  // 都会让它和声音错开，直到下一行才纠正。这里每 250ms 比一次高亮行里正在走的动画，差出 40ms 以上就把这一行重新对齐
-  let lastAlign = 0;
-  function alignWords(timestamp, time) {
-    if (timestamp - lastAlign < 250) return;
-    lastAlign = timestamp;
+  // AMLL 换行时给逐词动画设好 currentTime 再 play()，动画要等这一帧提交后才开始计时，手机上换行那一帧很重，
+  // 整行就落后这一帧的时间，直到下一行。动画刚从挂起转为运行时，按播放进度把它的 currentTime 直接改对一次
+  // （运行中的动画改 currentTime 不会再挂起），之后照常按页面时钟走，不受播放进度读数抖动的影响
+  const startedAnimations = new WeakSet();
+  function alignStarted(time) {
     const groups = view.currentLyricGroups;
     const highlighted = view.timelineController?.getSnapshot().highlightedGroups;
     if (!groups || !highlighted) return;
     for (const index of highlighted) {
-      const group = groups[index];
-      if (group && (lineDrift(group.mainLine, time) > 40 || lineDrift(group.bgLine, time) > 40)) group.enable(time, true);
+      alignLine(groups[index]?.mainLine, time);
+      alignLine(groups[index]?.bgLine, time);
     }
   }
 
-  /** 这一行正在走的逐词动画与 time 应在的位置最多差多少毫秒 */
-  function lineDrift(line, time) {
-    const expected = line ? time - line.getLine().startTime : -1;
-    if (!(expected >= 0)) return 0;
-    let drift = 0;
+  function alignLine(line, time) {
+    if (!line) return;
+    const expected = time - line.getLine().startTime;
     const check = (a) => {
-      if (a.playState !== 'running' || a.pending || a.playbackRate !== 1 || a.currentTime == null) return;
+      if (a.pending || a.playState !== 'running') {
+        startedAnimations.delete(a);
+        return;
+      }
+      if (startedAnimations.has(a)) return;
+      startedAnimations.add(a);
+      if (!(expected >= 0) || a.playbackRate !== 1 || a.currentTime == null) return;
       const timing = a.effect?.getComputedTiming();
       const end = Number(timing?.delay ?? 0) + Number(timing?.duration ?? 0);
-      if (expected >= end || a.currentTime >= end) return;
-      drift = Math.max(drift, Math.abs(a.currentTime - expected));
+      if (expected < end && Math.abs(a.currentTime - expected) > 16) a.currentTime = expected;
     };
     for (const word of line.splittedWords || []) word.elementAnimations?.forEach(check);
     line.maskAnimator?.animations?.forEach(check);
-    return drift;
   }
 
   function tick(timestamp) {
@@ -609,7 +610,7 @@ export function mountLyrics({ root, toggle, bar, player, getMeta, t, notify, onL
     if (lyricsVisible) {
       const time = viewTime(transport ? transport.currentTime * 1000 : 0);
       view.setCurrentTime(time);
-      if (running) alignWords(timestamp, time);
+      if (running) alignStarted(time);
       view.update(lastFrame ? timestamp - lastFrame : 0);
     }
     lastFrame = timestamp;
