@@ -281,6 +281,22 @@ test('replacement decision uses the selected localization', () => {
   for (const translation of translations.children) translation.attributes.type = 'replacement';
   assert.equal(parseDocument(document, 'zh-Hant').lines[0].text, 'translation zh-Hant-TW');
 });
+for (const [language, prefLang, skip] of [
+  ['zh-CN', 'zh-Hant', true], ['zh-SG', 'zh-Hant', true],
+  ['zh-TW', 'zh-Hans', true], ['zh-HK', 'zh-Hans', true], ['zh-MO', 'zh-Hans', true],
+  ['zh-CN', 'zh-Hans', false], ['zh-TW', 'zh-Hant', false], ['zh-CN', 'en', false],
+  ['zh-Hant-CN', 'zh-Hant', false], ['en-CN', 'zh-Hant', false],
+]) {
+  test(`replacement infers Chinese script from region: ${language}, ${prefLang}`, () => {
+    const document = fixture([language], []);
+    document.documentElement.children[1].children[0].children[0].children[0].nodeType = 1;
+    const translation = document.documentElement.children[0].children[0].children[0].children[0].children[0];
+    translation.attributes.type = 'replacement';
+    const parsed = parseDocument(document, prefLang);
+    assert.equal(parsed.lines[0].text, skip ? 'source' : `translation ${language}`);
+    assert.equal(parsed.lines[0].translation, '');
+  });
+}
 test('empty localization collections keep the original lyrics', () => {
   const parsed = parse([], [], 'zh-Hant');
   assert.equal(parsed.lines[0].tokens[0].text, 'source');

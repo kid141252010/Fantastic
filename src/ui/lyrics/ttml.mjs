@@ -108,7 +108,13 @@ export function parseTTML(xml, Parser = globalThis.DOMParser, prefLang) {
   }));
   const amllMeta = key => children(head, 'meta').filter(meta => meta.getAttribute('key') === key).map(meta => meta.getAttribute('value'));
   const translation = localization(metadata, 'translations', 'translation', prefLang);
-  const chineseScript = language => normalizeLanguage(language).match(/^zh-([a-z]{4})(?:-|$)/)?.[1];
+  const chineseScript = language => {
+    const [primary, ...parts] = normalizeLanguage(language).split('-');
+    if (primary !== 'zh') return undefined;
+    return parts.find(part => /^[a-z]{4}$/.test(part)) || parts.map(part => ({
+      cn: 'hans', sg: 'hans', tw: 'hant', hk: 'hant', mo: 'hant',
+    })[part]).find(Boolean);
+  };
   const preferredScript = chineseScript(prefLang);
   const replacementScript = chineseScript(translation.language);
   const skipReplacement = translation.type === 'replacement' && preferredScript && replacementScript && preferredScript !== replacementScript;
