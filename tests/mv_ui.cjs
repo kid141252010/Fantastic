@@ -19,6 +19,7 @@ function asset(route, url) {
     : url.pathname.startsWith('/assets/mv/') ? 'mv-' + path.basename(url.pathname)
     : url.pathname.startsWith('/assets/views/') ? path.join('views', path.basename(url.pathname))
     : url.pathname.startsWith('/assets/lyrics/') ? path.join('lyrics', path.basename(url.pathname))
+    : url.pathname.startsWith('/assets/sources/') ? path.join('sources', path.basename(url.pathname))
     : url.pathname.startsWith('/assets/') ? path.basename(url.pathname) : 'app.html';
   return route.fulfill({ body: fs.readFileSync(path.join(root, file)), contentType: file.endsWith('.css') ? 'text/css' : /\.m?js$/.test(file) ? 'text/javascript' : 'text/html' });
 }

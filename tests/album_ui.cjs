@@ -36,7 +36,7 @@ const albumPath = '/https://music.apple.com/cn/album/justice-triple-chucks-delux
       const shelves = await frame.locator('.shelf-section').count();
       assert.ok(shelves >= 1, 'shelves from views');
       assert.match(await frame.locator('.shelf-item').first().getAttribute('href'), /^\/https:\/\/music\.apple\.com\/[a-z]{2}\/(album|music-video)\/[^/]+\/\d+$/);
-      const tint = await frame.evaluate(() => document.body.style.getPropertyValue('--album-tint'));
+      const tint = await frame.evaluate(() => document.body.style.getPropertyValue('--joe'));
       assert.match(tint, /^#[0-9a-f]{6}$/i, 'page tinted with artwork colour');
       // Motion artwork (editorialVideo.motionDetailSquare) plays muted over the square cover
       await frame.locator('#art .motion-video.ready').waitFor({ timeout: 30000 });

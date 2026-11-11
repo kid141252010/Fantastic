@@ -47,7 +47,7 @@ const loaded = () => !document.getElementById('title').classList.contains('skele
       const artist = frame.locator('.shelf-item.artist').first();
       assert.match(await artist.getAttribute('href'), /^\/https:\/\/music\.apple\.com\/[a-z]{2}\/artist\/[^/]+\/\d+$/);
       assert.equal(await artist.getAttribute('target'), null);
-      const tint = await frame.evaluate(() => document.body.style.getPropertyValue('--album-tint'));
+      const tint = await frame.evaluate(() => document.body.style.getPropertyValue('--joe'));
       assert.match(tint, /^#[0-9a-f]{6}$/i, 'page tinted with artwork colour');
       await frame.locator('#art .motion-video.ready').waitFor({ timeout: 30000 });
       assert.ok(await frame.locator('#art .motion-video').evaluate((v) => !v.paused && v.muted && v.loop && v.currentTime > 0));

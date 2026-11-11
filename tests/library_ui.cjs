@@ -54,8 +54,11 @@ const album = {
       if (url.pathname === '/blank') return route.fulfill({ body: '<!doctype html><title>blank</title>', contentType: 'text/html' });
       if (url.pathname.startsWith('/lyrics/') || url.pathname.startsWith('/parse/')) return route.fulfill({ status: 404, json: { code: 1, msg: 'offline' } });
       // 单页应用：页面地址返回 app.html，页面视图在 /assets/views/
-      const file = url.pathname.startsWith('/assets/lyrics/') ? path.join('lyrics', path.basename(url.pathname))
+      const file = url.pathname === '/assets/mv/style.css' ? 'mv.css'
+        : url.pathname.startsWith('/assets/mv/') ? 'mv-' + path.basename(url.pathname)
+        : url.pathname.startsWith('/assets/lyrics/') ? path.join('lyrics', path.basename(url.pathname))
         : url.pathname.startsWith('/assets/views/') ? path.join('views', path.basename(url.pathname))
+        : url.pathname.startsWith('/assets/sources/') ? path.join('sources', path.basename(url.pathname))
         : url.pathname.startsWith('/assets/') ? path.basename(url.pathname) : 'app.html';
       const type = file.endsWith('.css') ? 'text/css' : /\.m?js$/.test(file) ? 'text/javascript' : 'text/html';
       return route.fulfill({ body: fs.readFileSync(path.join(root, file)), contentType: type });
@@ -70,9 +73,9 @@ const album = {
 
     const menuLabel = (text) => page.locator('.menu .menu-label').filter({ hasText: new RegExp(`^${text}$`) });
     // 详情页头部只有随机播放、播放与「更多」
-    const headerMore = page.locator('.detail-extra .detail-circle-btn');
+    const headerMore = page.locator('.detail-extra .detail-circle-btn[aria-haspopup="menu"]');
     const openHeaderMenu = async () => {
-      await page.waitForFunction(() => document.querySelector('.detail-extra .detail-circle-btn')?.disabled === false);
+      await page.waitForFunction(() => document.querySelector('.detail-extra .detail-circle-btn[aria-haspopup="menu"]')?.disabled === false);
       await headerMore.click();
       await page.locator('.menu:not([hidden])').waitFor();
     };
@@ -80,7 +83,7 @@ const album = {
     // 1. 专辑页头部「更多」→「添加到资料库」：专辑与全部曲目加入资料库，菜单项变为「从资料库中删除」
     await page.goto(BASE + ALBUM_PATH);
     await openHeaderMenu();
-    assert.equal(await page.locator('.detail-actions button:not([hidden])').count(), 3, 'album header keeps three buttons');
+    assert.equal(await page.locator('.detail-actions button:not([hidden])').count(), 4, 'album header keeps three buttons plus Check ALAC');
     await menuLabel('Add to Library').click();
     await toast(/Added “Test Album”/);
     await openHeaderMenu();
@@ -324,8 +327,11 @@ const album = {
       if (url.pathname === '/blank') return route.fulfill({ body: '<!doctype html><title>blank</title>', contentType: 'text/html' });
       if (url.pathname === '/status') return route.fulfill({ json: { code: 0, regions: ['us'] } });
       if (url.pathname.startsWith('/amp/') || url.pathname.startsWith('/lyrics/')) return route.fulfill({ status: 404, json: {} });
-      const file = url.pathname.startsWith('/assets/lyrics/') ? path.join('lyrics', path.basename(url.pathname))
+      const file = url.pathname === '/assets/mv/style.css' ? 'mv.css'
+        : url.pathname.startsWith('/assets/mv/') ? 'mv-' + path.basename(url.pathname)
+        : url.pathname.startsWith('/assets/lyrics/') ? path.join('lyrics', path.basename(url.pathname))
         : url.pathname.startsWith('/assets/views/') ? path.join('views', path.basename(url.pathname))
+        : url.pathname.startsWith('/assets/sources/') ? path.join('sources', path.basename(url.pathname))
         : url.pathname.startsWith('/assets/') ? path.basename(url.pathname) : 'app.html';
       const type = file.endsWith('.css') ? 'text/css' : /\.m?js$/.test(file) ? 'text/javascript' : 'text/html';
       return route.fulfill({ body: fs.readFileSync(path.join(root, file)), contentType: type });
