@@ -18,6 +18,8 @@ export function mount({ root, url, signal, player, navigate, onLangChange, toast
   let info = null;
   let tracks = [];
   let more = false;
+  // 上游偏移按返回的行数累计；去重后的 tracks.length 可能更少（歌单里有重复歌曲）
+  let offset = 0;
   let loaded = false;
   let rows = [];
   let error = '';
@@ -101,7 +103,8 @@ export function mount({ root, url, signal, player, navigate, onLangChange, toast
   $('more').addEventListener('click', async () => {
     $('more').disabled = true;
     try {
-      const page = await qq.playlist(id, { offset: tracks.length, signal });
+      const page = await qq.playlist(id, { offset, signal });
+      offset += page.songs.length;
       const keys = new Set(tracks.map((track) => track.key));
       tracks.push(...page.songs.filter((track) => !keys.has(track.key)));
       more = page.more && page.songs.length > 0;
@@ -118,6 +121,7 @@ export function mount({ root, url, signal, player, navigate, onLangChange, toast
     if (signal.aborted) return;
     info = data.playlist;
     tracks = data.songs;
+    offset = data.songs.length;
     more = data.more;
     loaded = true;
     render();
