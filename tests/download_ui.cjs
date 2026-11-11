@@ -87,7 +87,7 @@ function nextDownload(page) {
 
 async function pickTracks(page, indexes) {
   // 头部「更多」→「下载专辑 / 下载歌单」
-  await page.click('.detail-extra .detail-circle-btn');
+  await page.click('.detail-extra .detail-circle-btn[aria-haspopup="menu"]');
   await page.locator('.menu .menu-label').filter({ hasText: /^下载(专辑|歌单)$/ }).click();
   await page.waitForSelector('.dl-dialog[open]');
   await page.click('.dl-dialog-tools button:nth-of-type(2)');
@@ -167,7 +167,7 @@ async function pickTracks(page, indexes) {
       const { page, errors } = await newPage(browser, { codec: 'aac', coverSize: 600, mvMax: 480, mvAudio: 'aac' });
       await openPage(page, base + MV_ALBUM);
       await page.waitForSelector('.detail-extra .detail-circle-btn:not([disabled])', { timeout: 30000 });
-      await page.click('.detail-extra .detail-circle-btn');
+      await page.click('.detail-extra .detail-circle-btn[aria-haspopup="menu"]');
       await page.locator('.menu .menu-label').filter({ hasText: /^下载专辑$/ }).click();
       await page.waitForSelector('.dl-dialog[open]');
       const mvItem = page.locator('.dl-dialog-item').filter({ has: page.locator('.dl-dialog-mv') });

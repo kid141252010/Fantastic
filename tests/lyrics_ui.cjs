@@ -84,6 +84,7 @@ const duetTtml = `<tt xmlns="http://www.w3.org/ns/ttml" xmlns:ttm="http://www.w3
             : url.pathname.startsWith('/assets/mv/') ? 'mv-' + path.basename(url.pathname)
             : url.pathname.startsWith('/assets/lyrics/') ? path.join('lyrics', path.basename(url.pathname))
             : url.pathname.startsWith('/assets/views/') ? path.join('views', path.basename(url.pathname))
+            : url.pathname.startsWith('/assets/sources/') ? path.join('sources', path.basename(url.pathname))
             : url.pathname.startsWith('/assets/') ? path.basename(url.pathname) : 'app.html';
           const type = file.endsWith('.css') ? 'text/css' : /\.m?js$/.test(file) ? 'text/javascript' : 'text/html';
           return route.fulfill({ body: fs.readFileSync(path.join(root, file)), contentType: type });
@@ -248,7 +249,7 @@ const duetTtml = `<tt xmlns="http://www.w3.org/ns/ttml" xmlns:ttm="http://www.w3
         const larger = await lyricStyle();
         assert(Math.abs(larger.size / base.size - 1.2) < 0.01, `font size scales: ${base.size} -> ${larger.size}`);
         assert.equal(larger.weight, '700');
-        assert.deepEqual(await prefs(), { scale: 1.2, weight: 700, source: 'apple', backdrop: 'amll', pulse: false });
+        assert.deepEqual(await prefs(), { scale: 1.2, weight: 700, source: 'apple', backdrop: 'amll', pulse: false, textAutospace: true });
         await page.locator(lineSel).filter({ hasText: 'Third line' }).waitFor({ state: 'visible', timeout: 2000 });
         await page.screenshot({ path: `target/ui-lyrics-options-${width}.png` });
         await page.locator('[data-action="weightBolder"]').click();

@@ -30,7 +30,7 @@ const playing = () => { const p = window.AmApp.player; return !!p.current && !p.
     const html = await res.text();
     assert.match(html, /id="view"/);
     assert.match(html, /id="player"/);
-    assert.match(html, /\/assets\/app\.mjs/);
+    assert.match(html, /\/assets\/(h\/)?app(\.[0-9a-f]+)?\.mjs/);
   }
   assert.equal((await fetch(base + '/assets/views/album.mjs')).status, 200);
 
