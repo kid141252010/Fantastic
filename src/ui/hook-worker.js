@@ -25,6 +25,13 @@ const MESSAGES = {
     decrypt: '解密失败：{0}',
     write: '写入 OPFS 不完整（{0}/{1}）',
   },
+  'zh-Hant': {
+    wasm: '載入 hook.wasm 失敗（HTTP {0}）',
+    noTemplate: '缺少解密模板',
+    template: '解析解密模板失敗：{0}',
+    decrypt: '解密失敗：{0}',
+    write: '寫入 OPFS 不完整（{0}/{1}）',
+  },
   en: {
     wasm: 'Failed to load hook.wasm (HTTP {0})',
     noTemplate: 'Missing decryption template',

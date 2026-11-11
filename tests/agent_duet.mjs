@@ -5,7 +5,53 @@
 // 换人就换侧；合唱（type 为 group，如 v1000）不在对唱侧，也不打断交替。和声跟随所属主歌词行由 tests/lyrics_ui.cjs 在页面里检查。
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { runInNewContext } from 'node:vm';
 import { duetSides, parseTTML } from '../src/ui/lyrics/ttml.mjs';
+
+const i18nSource = readFileSync(new URL('../src/ui/i18n.js', import.meta.url), 'utf8');
+function loadI18n(language, saved) {
+  const context = {
+    navigator: { language },
+    localStorage: { getItem: () => saved, setItem() {} },
+    document: { documentElement: {}, addEventListener() {}, querySelectorAll: () => [] },
+    addEventListener() {},
+  };
+  runInNewContext(i18nSource, context);
+  return context;
+}
+for (const language of ['zh-Hant', 'zh-TW', 'zh-HK', 'zh-MO', 'ZH_tw']) {
+  test(`Traditional Chinese browser locale: ${language}`, () => {
+    const { AmI18n, document } = loadI18n(language);
+    assert.equal(AmI18n.lang, 'zh-Hant');
+    assert.equal(AmI18n.locale, 'zh-TW');
+    AmI18n.apply();
+    assert.equal(document.documentElement.lang, 'zh-TW');
+    assert.equal(AmI18n.t('lang.button'), '繁體中文');
+  });
+}
+test('language cycling preserves saved Simplified Chinese preferences', () => {
+  const { AmI18n } = loadI18n('zh-TW', 'zh');
+  assert.equal(AmI18n.lang, 'zh');
+  assert.equal(AmI18n.locale, 'zh-CN');
+  for (const language of ['zh-Hant', 'en', 'zh']) {
+    AmI18n.toggle();
+    assert.equal(AmI18n.lang, language);
+  }
+});
+test('empty browser language and invalid saved language fall back to English', () => {
+  const { AmI18n } = loadI18n('', 'invalid');
+  assert.equal(AmI18n.lang, 'en');
+  assert.equal(AmI18n.t('unknown.key'), 'unknown.key');
+  AmI18n.setLang('invalid');
+  assert.equal(AmI18n.lang, 'en');
+});
+test('unavailable localStorage does not prevent language detection', () => {
+  const context = loadI18n('zh-CN');
+  context.localStorage.getItem = () => { throw new Error('blocked'); };
+  runInNewContext(i18nSource, context);
+  assert.equal(context.AmI18n.lang, 'zh');
+});
 
 /** 按 parseTTML 的输出构造歌曲：singers 为每行的 ttm:agent；不给 agents 时整个省略 */
 const song = (singers, agents) => ({ ...(agents ? { agents } : {}), lines: singers.map((agent) => ({ agent })) });
@@ -107,6 +153,10 @@ const parse = (translation, pronunciation = translation, prefLang) => parseTTML(
   JSON.stringify({ translation, pronunciation }), FixtureParser, prefLang,
 );
 const localizationCases = [
+  ['zh-Hant', ['zh-Hans', 'zh-Hant'], 'zh-Hant'],
+  ['zh-Hant', ['zh-Hans-CN', 'zh-Hant-HK'], 'zh-Hant-HK'],
+  ['zh-Hant', ['zh-CN', 'zh-TW'], 'zh-TW'],
+  ['zh-Hans', ['zh-Hant', 'zh-Hans'], 'zh-Hans'],
   ['zh', ['zh-Hant', 'zh-Hans'], 'zh-Hans'],
   ['zh', ['en', 'zh-Hans-CN'], 'zh-Hans-CN'],
   ['zh', ['zh-CN', 'zh-Hant'], 'zh-CN'],
@@ -147,6 +197,31 @@ test('language matching ignores case and treats underscores as hyphens', () => {
 const parseDocument = (document, prefLang) => parseTTML('', class {
   parseFromString() { return document; }
 }, prefLang);
+for (const prefLang of ['zh-Hant', 'zh-Hans', 'en', undefined]) {
+  test(`replacement respects Chinese script preference: ${prefLang}`, () => {
+    const document = fixture(['zh-Hans-CN'], []);
+    document.documentElement.children[1].children[0].children[0].children[0].nodeType = 1;
+    const translation = document.documentElement.children[0].children[0].children[0].children[0].children[0];
+    translation.attributes.type = 'replacement';
+    const parsed = parseDocument(document, prefLang);
+    assert.equal(parsed.lines[0].text, prefLang === 'zh-Hant' ? 'source' : 'translation zh-Hans-CN');
+    assert.equal(parsed.lines[0].translation, '');
+  });
+}
+test('replacement decision uses the selected localization', () => {
+  const document = fixture(['zh-Hans-CN', 'zh-Hant-TW'], []);
+  const translations = document.documentElement.children[0].children[0].children[0].children[0];
+  for (const translation of translations.children) translation.attributes.type = 'replacement';
+  assert.equal(parseDocument(document, 'zh-Hant').lines[0].text, 'translation zh-Hant-TW');
+});
+test('empty localization collections keep the original lyrics', () => {
+  const parsed = parse([], [], 'zh-Hant');
+  assert.equal(parsed.lines[0].tokens[0].text, 'source');
+  assert.equal(parsed.lines[0].translation, '');
+});
+test('invalid TTML still fails for a Traditional Chinese preference', () => {
+  assert.throws(() => parseDocument({ querySelector: () => true }, 'zh-Hant'), /无法解析 TTML/);
+});
 function parseLines(lines, { prefLang, timing } = {}) {
   return parseDocument({
     documentElement: element('tt', timing === undefined ? {} : { 'itunes:timing': timing }, [

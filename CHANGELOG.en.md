@@ -3,6 +3,7 @@
 ## Unreleased
 
 ### Added
+- ✨ Separate Simplified and Traditional Chinese interface languages, with script-aware lyric localization and replacement handling.
 - ✨ Optional QQ music source configuration (`--qq-api` / `AM_HOOK_QQ_API` and `--qq-proxy` / `AM_HOOK_QQ_PROXY`), static quality capabilities and lyrics fallbacks.
 - ✨ A "CJK–Latin spacing" lyrics option (on by default) that automatically adjusts spacing between CJK and Latin text.
 

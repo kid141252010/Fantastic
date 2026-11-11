@@ -20,7 +20,7 @@ const CHEVRON ='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strok
 const displayNames = new Map();
 /** 按界面语言显示的地区 / 语言名（Intl.DisplayNames），取不到时用 fallback */
 function displayName(type, code, fallback) {
-  const locale = AmI18n.lang === 'zh' ? 'zh-CN' : 'en';
+  const locale = AmI18n.locale;
   const key = `${locale}:${type}`;
   try {
     if (!displayNames.has(key)) displayNames.set(key, new Intl.DisplayNames([locale], { type, fallback: 'none' }));
@@ -157,7 +157,7 @@ export function mountSettings({ picker, scrim, checkStatus }) {
       .filter((cc) => !regions.has(cc))
       .map((cc) => ({ cc, name: regionName(cc, map) }))
       .filter(({ cc, name }) => !filter || cc.includes(filter) || name.toLowerCase().includes(filter) || String(map[cc].name).toLowerCase().includes(filter))
-      .sort((a, b) => a.name.localeCompare(b.name, AmI18n.lang === 'zh' ? 'zh-CN' : 'en'));
+      .sort((a, b) => a.name.localeCompare(b.name, AmI18n.locale));
     return items.length ? group(null, items.map(({ cc }) => storefrontOption(cc, { star: true }))) : state(t('settings.noMatch'));
   }
 

@@ -265,13 +265,13 @@ export function mount({ root, url, signal, player, navigate, onLangChange, toast
     if (a.releaseDate) {
       const date = new Date(`${a.releaseDate}T00:00:00`);
       lines.push(Number.isNaN(date.getTime()) ? a.releaseDate
-        : new Intl.DateTimeFormat(AmI18n.lang === 'zh' ? 'zh-CN' : 'en-US', { dateStyle: 'long' }).format(date));
+        : new Intl.DateTimeFormat(AmI18n.locale, { dateStyle: 'long' }).format(date));
     }
     const songCount = tracks.filter((track) => track.type === 'songs').length;
     const videoCount = tracks.length - songCount;
     const minutes = Math.round(tracks.reduce((sum, track) => sum + (track.attributes.durationInMillis || 0), 0) / 60000);
     const length = minutes >= 60 ? t('album.hours', { h: Math.floor(minutes / 60), m: minutes % 60 }) : t('album.minutes', { n: minutes });
-    lines.push([songCount && t('album.songs', { n: songCount }), videoCount && t('album.videos', { n: videoCount }), minutes && length].filter(Boolean).join(AmI18n.lang === 'zh' ? '，' : ', '));
+    lines.push([songCount && t('album.songs', { n: songCount }), videoCount && t('album.videos', { n: videoCount }), minutes && length].filter(Boolean).join(AmI18n.lang.startsWith('zh') ? '，' : ', '));
     if (a.copyright) lines.push(a.copyright);
     if (a.recordLabel && !(a.copyright || '').includes(a.recordLabel)) lines.push(a.recordLabel);
     $('footer').replaceChildren(...lines.map((line) => el('p', { textContent: line })));
