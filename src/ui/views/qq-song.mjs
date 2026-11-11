@@ -101,12 +101,17 @@ export function mount({ root, url, signal, player, navigate, onLangChange, toast
   let libraryControls = null;
   const songTarget = () => (track ? { kind: 'song', source: 'qq', href: track.href, name: track.name, track,
     albumHref: track.albumHref, noPlay: true } : null);
-  loadActions().then(({ createActions }) => {
+  loadActions().then(({ createActions, ICON: ACTION_ICON }) => {
     const buttons = $('song-buttons');
     if (signal.aborted || !buttons) return;
     const actions = createActions({ signal, player, navigate, toast });
     const favorite = actions.favoriteButton(songTarget);
-    const more = actions.headerMenu(() => (track ? { target: songTarget(), entries: {} } : null));
+    // 头部菜单只按 HEADER_MENU 的键排列，前往专辑 / 艺人 / MV 放在 tail
+    const more = actions.headerMenu(() => (track ? { target: songTarget(), entries: {}, tail: [
+      ...(track.albumHref ? [{ icon: ACTION_ICON.album, label: t('action.goAlbum'), onSelect: () => navigate(track.albumHref) }] : []),
+      ...track.artists.filter((artist) => artist.href).map((artist) => ({ icon: ACTION_ICON.link, label: t('qq.goArtist', { name: artist.name }), onSelect: () => navigate(artist.href) })),
+      ...(track.qq.mv ? [{ icon: ACTION_ICON.video, label: t('qq.watchMv'), onSelect: () => navigate(qq.mvPath(track.qq.mv)) }] : []),
+    ] } : null));
     buttons.append(favorite.button, more);
     libraryControls = favorite;
   }).catch(() => { /* Library controls are optional outside the browser. */ });
