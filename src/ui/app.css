@@ -1984,7 +1984,7 @@ html[dir="rtl"] .quality-option .q-icon { -webkit-mask-position: right center; m
 .lyrics-menu-note { contain: inline-size; padding: 2px 10px 8px; font-size: 11px; line-height: 1.2727272727; color: rgba(255, 255, 255, .55); }
 /* 窄屏时菜单固定在底部居中，背后加暗色遮罩 */
 @media (max-width: 483px) {
-  .lyrics-menu { left: calc(50vw - 135px); bottom: 25px; width: 270px; min-width: 0; max-width: none; }
+  .lyrics-menu { left: calc(50vw - 135px); bottom: 25px; width: 270px; min-width: 0; max-width: none; max-height: calc(100dvh - 50px); overflow-y: auto; overscroll-behavior: contain; }
   .lyrics-menu button { height: 45px; padding: 0 16px; font-size: 17px; line-height: 1.2941176471; }
   .lyrics-menu-stepper { height: 45px; padding: 0 8px 0 16px; font-size: 17px; line-height: 1.2941176471; }
   .lyrics-menu .lyrics-menu-step { width: 32px; height: 32px; }
