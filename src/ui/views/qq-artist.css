@@ -14,4 +14,6 @@
 .qq-artist-page .qq-artist-track { min-height: 55px; }
 .qq-artist-page .qq-artist-track .track-artist { margin-top: 1px; }
 .qq-artist-page .qq-artist-shelf { margin-top: 32px; }
+.qq-artist-page .qq-artist-born { margin: 0 0 6px; color: var(--muted); font-size: 13px; }
+.qq-artist-page .qq-load-more { display: block; margin: 16px auto 0; }
 @media (max-width: 483px) { .qq-artist-page .qq-artist-hero { min-height: 400px; } }

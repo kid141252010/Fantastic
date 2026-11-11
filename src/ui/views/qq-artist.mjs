@@ -11,13 +11,23 @@ const PLAY_ICON = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 4.5v
 
 export function mount({ root, url, signal, player, navigate, onLangChange, toast }) {
   const { t } = window.AmI18n;
+  const { AmI18n } = window;
   const $ = (id) => root.querySelector(`#${id}`);
   const singerMid = url.pathname.match(/^\/qq-artist\/([0-9A-Za-z]{1,32})\/?$/)?.[1];
   const actions = createActions({ signal, player, navigate, toast });
   let artist = null;
   let songs = [];
   let totalSongs = 0;
+  let moreSongs = false;
+  // 上游偏移按返回的条数累计，与去重后的列表长度无关
+  let songOffset = 0;
+  let albumOffset = 0;
+  let mvOffset = 0;
+  let moreMvs = false;
   let albums = [];
+  let moreAlbums = false;
+  let mvs = [];
+  let loading = '';
   let rows = [];
   let error = '';
   let bioExpanded = false;
@@ -63,16 +73,23 @@ export function mount({ root, url, signal, player, navigate, onLangChange, toast
     image($('hero-art'), artist.cover || artist.avatar);
     image($('portrait-glow'), artist.avatar || artist.cover);
     $('counts').textContent = [
+      (artist.transNames || []).join(' / '),
       artist.musicSize && t('qq.artistSongs', { n: artist.musicSize }),
       artist.albumSize && t('qq.artistAlbums', { n: artist.albumSize }),
+      artist.mvSize && t('qq.artistMvs', { n: artist.mvSize }),
     ].filter(Boolean).join(' · ');
     $('play-all').disabled = $('shuffle').disabled = !songs.length;
   }
 
   function renderBio() {
-    const bio = String(artist?.briefDesc || '').trim();
+    const bio = String(artist?.description || artist?.briefDesc || '').trim();
     const block = $('bio');
-    block.hidden = !bio;
+    const born = $('born');
+    const birthday = artist?.birthday ? new Date(Number(artist.birthday)) : null;
+    const bornText = birthday && !Number.isNaN(birthday.getTime())
+      ? t('qq.birthday', { date: birthday.toLocaleDateString(AmI18n.lang === 'zh' ? 'zh-CN' : 'en', { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'Asia/Shanghai' }) }) : '';
+    if (born) { born.hidden = !bornText; born.textContent = bornText; }
+    block.hidden = !bio && !bornText;
     $('bio-text').textContent = bio;
     block.classList.toggle('expanded', bioExpanded);
     const more = $('bio-more');
@@ -133,25 +150,53 @@ export function mount({ root, url, signal, player, navigate, onLangChange, toast
     rows = (songsExpanded ? songs : songs.slice(0, 15)).map(songRow);
     const head = el('div', { className: 'shelf-head' },
       el('h2', { className: 'shelf-heading', textContent: t('qq.topSongs') }));
-    if (!songsExpanded && songs.length > 15) {
+    if (!songsExpanded && (songs.length > 15 || moreSongs)) {
       const more = el('button', { className: 'shelf-all', type: 'button', textContent: t('qq.moreSongs') });
       more.addEventListener('click', () => {
         if (songsExpanded) return;
         songsExpanded = true;
-        const extra = songs.slice(15).map((track, index) => songRow(track, index + 15));
-        rows.push(...extra);
-        section.append(...extra.map(({ row }) => row));
-        more.hidden = true;
-        syncTrackRows(rows, player);
+        renderSongs();
       });
       head.append(more);
     }
-    section.replaceChildren(head, ...rows.map(({ row }) => row));
+    const tail = [];
+    if (songsExpanded && moreSongs) {
+      tail.push(loadMoreButton('songs', async () => {
+        const page = await qq.artistSongs(singerMid, { offset: songOffset, signal });
+        songOffset += page.songs.length;
+        const keys = new Set(songs.map((track) => track.key));
+        songs.push(...page.songs.filter((track) => !keys.has(track.key)));
+        moreSongs = page.more && page.songs.length > 0;
+        return renderSongs;
+      }));
+    }
+    section.replaceChildren(head, ...rows.map(({ row }) => row), ...tail);
     section.hidden = !songs.length;
     syncTrackRows(rows, player);
     const footer = totalSongs > songs.length ? t('qq.artistTotal', { n: totalSongs }) : '';
     $('footer').replaceChildren(footer ? el('p', { textContent: footer }) : '');
     $('footer').hidden = !footer;
+  }
+
+  /** 「加载更多」：分页取下一批（歌曲 / 专辑），请求期间不可再点 */
+  function loadMoreButton(kind, load) {
+    // load() 成功后会重新渲染出新的按钮，所以在它之前清掉 loading，新按钮才可以再点
+    const button = el('button', { className: 'btn load-more qq-load-more', type: 'button', textContent: t('search.more') });
+    button.addEventListener('click', async () => {
+      if (loading) return;
+      loading = kind;
+      button.disabled = true;
+      let fetched;
+      try { fetched = await load(); } catch (err) {
+        loading = '';
+        button.disabled = false;
+        if (!signal.aborted && err.name !== 'AbortError') toast(t('artist.failed', { msg: err.message }));
+        return;
+      }
+      loading = '';
+      fetched?.();
+    });
+    return button;
   }
 
   const albumCard = (album) => {
@@ -170,25 +215,57 @@ export function mount({ root, url, signal, player, navigate, onLangChange, toast
     const shelf = el('div', { className: `shelf${albumsExpanded ? ' expanded' : ''}` }, ...cards);
     const head = el('div', { className: 'shelf-head' },
       el('h2', { className: 'shelf-heading', textContent: t('search.albums') }));
-    if (!albumsExpanded && albums.length > 6) {
+    if (!albumsExpanded && (albums.length > 6 || moreAlbums)) {
       const more = el('button', { className: 'shelf-all', type: 'button', textContent: t('artist.seeAll') });
       more.addEventListener('click', () => {
         if (albumsExpanded) return;
         albumsExpanded = true;
-        shelf.append(...albums.slice(6).map(albumCard));
-        shelf.classList.toggle('expanded', true);
-        more.hidden = true;
+        renderAlbums();
       });
       head.append(more);
     }
+    const tail = albumsExpanded && moreAlbums ? [loadMoreButton('albums', async () => {
+      const page = await qq.artistAlbums(singerMid, { offset: albumOffset, signal });
+      albumOffset += page.albums.length;
+      const seen = new Set(albums.map((album) => album.mid));
+      albums.push(...page.albums.filter((album) => !seen.has(album.mid)));
+      moreAlbums = page.more && page.albums.length > 0;
+      return renderAlbums;
+    })] : [];
     $('shelves').replaceChildren(...(albums.length
-      ? [el('section', { className: 'shelf-section qq-artist-shelf' }, head, shelf)] : []));
+      ? [el('section', { className: 'shelf-section qq-artist-shelf' }, head, shelf, ...tail)] : []));
+  }
+
+  /** MV：16:9 封面，链接到 QQ MV 页 */
+  function renderMvs() {
+    const cards = mvs.map((mv) => {
+      const cover = artUrl(mv.cover, 480, 270);
+      return el('a', { className: 'shelf-item mv', href: qq.mvPath(mv.vid) },
+        el('span', { className: 'shelf-art mv' }, cover
+          ? el('img', { src: cover, alt: '', loading: 'lazy', decoding: 'async' })
+          : el('span', { className: 'ph' })),
+        el('span', { className: 'shelf-title', textContent: mv.name || '' }),
+        el('span', { className: 'shelf-sub', textContent: year(mv.publishTime) }));
+    });
+    const head = el('div', { className: 'shelf-head' }, el('h2', { className: 'shelf-heading', textContent: t('qq.mvs') }));
+    const tail = moreMvs ? [loadMoreButton('mvs', async () => {
+      const page = await qq.artistMvs(singerMid, { offset: mvOffset, signal });
+      mvOffset += page.mvs.length;
+      const seen = new Set(mvs.map((mv) => mv.vid));
+      mvs.push(...page.mvs.filter((mv) => !seen.has(mv.vid)));
+      moreMvs = page.more && page.mvs.length > 0;
+      return renderMvs;
+    })] : [];
+    $('mv-shelf')?.replaceChildren(...(cards.length
+      ? [el('section', { className: 'shelf-section qq-artist-shelf' }, head,
+        el('div', { className: `shelf${moreMvs || mvs.length > 12 ? ' expanded' : ''}` }, ...cards), ...tail)] : []));
   }
 
   function render() {
     renderHero();
     renderSongs();
     renderAlbums();
+    renderMvs();
     renderBio();
     $('alert').hidden = !error;
     $('alert').textContent = error;
@@ -211,8 +288,15 @@ export function mount({ root, url, signal, player, navigate, onLangChange, toast
     if (signal.aborted) return;
     artist = data?.artist || null;
     songs = Array.isArray(data?.songs) ? data.songs.map(qq.toTrack) : [];
+    songOffset = songs.length;
     totalSongs = Number(data?.totalSongs) || 0;
+    moreSongs = data?.moreSongs === true;
     albums = Array.isArray(data?.albums) ? data.albums : [];
+    moreAlbums = data?.moreAlbums === true;
+    albumOffset = albums.length;
+    mvs = Array.isArray(data?.mvs) ? data.mvs : [];
+    mvOffset = mvs.length;
+    moreMvs = data?.moreMvs === true;
     if (!artist) throw new Error('empty response');
     render();
   }).catch((err) => {

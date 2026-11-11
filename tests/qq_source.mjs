@@ -6,7 +6,8 @@ import fs from 'node:fs';
 import { createRequire } from 'node:module';
 import * as qq from '../src/ui/sources/qq.mjs';
 import { sourceOf, trackKey, withIdentity } from '../src/ui/sources/track.mjs';
-import { artUrl } from '../src/ui/library.mjs';
+import * as library from '../src/ui/library.mjs';
+const { artUrl } = library;
 const { AmPlayer, Mixer, trackKey: playerKey, detectQqModes, useJocSettings, usePlaybackSettings } = createRequire(import.meta.url)('../src/ui/player.js');
 const browserGlobals = Object.fromEntries(['window', 'document', 'MediaSource', 'fetch']
   .map((key) => [key, Object.getOwnPropertyDescriptor(globalThis, key)]));
@@ -39,7 +40,7 @@ test('QQ DTO maps names, timing, badges and direct QQ artwork', () => {
   assert.equal(track.artist, '周杰伦');
   assert.deepEqual(track.artists, [{ name: '周杰伦', href: '' }]);
   assert.equal(track.duration, 269000);
-  assert.deepEqual(track.qq, { mid: dto.id, albumMid: dto.albumMid, vip: true, ttml: true });
+  assert.deepEqual(track.qq, { mid: dto.id, albumMid: dto.albumMid, vip: true, ttml: true, mv: '' });
   assert.deepEqual(track.artwork, { url: qq.artworkUrl(dto.cover) });
   assert.equal(track.href, `/qq-song/${dto.id}`);
   assert.equal(track.albumHref, `/qq-album/${dto.albumMid}`);
@@ -888,4 +889,60 @@ test('download-only QQ entries cannot start audio', async () => {
     assert.equal(player.audio.src, undefined);
     assert.ok(player.error);
   }
+});
+
+test('QQ songs enter the library with source-aware keys, survive export and play as QQ entries', () => {
+  const track = qq.toTrack({ ...dto, mv: 'w0026q7f01a', artists: [{ name: '周杰伦', mid: '0025NhlN2yWrP4' }] });
+  assert.equal(track.qq.mv, 'w0026q7f01a');
+  assert.equal(library.addToLibrary([track]), 1);
+  assert.ok(library.inLibrary('song', dto.id, 'qq'));
+  assert.ok(!library.inLibrary('song', dto.id), 'Apple keys stay separate');
+  assert.ok(library.inLibrary('album', dto.albumMid, 'qq'));
+  library.setFavorite('song', dto.id, true, [], 'qq');
+  assert.ok(library.isFavorite('song', dto.id, 'qq'));
+  const item = library.libraryItem('song', dto.id, 'qq');
+  assert.equal(item.key, `qq:song:${dto.id}`);
+  assert.equal(item.source, 'qq');
+  assert.equal(item.vip, true);
+  assert.equal(item.href, `/qq-song/${dto.id}`);
+  assert.equal(item.albumHref, `/qq-album/${dto.albumMid}`);
+  assert.deepEqual(item.artists, [{ name: '周杰伦', href: '/qq-artist/0025NhlN2yWrP4' }]);
+  assert.equal(item.artwork, 'https://y.qq.com/music/photo_new/T002R500x500M000003DFRzD192KKD_5.jpg');
+  const entry = library.entryOf(item);
+  const direct = qq.entryOf(track);
+  for (const key of ['source', 'key', 'track', 'name', 'artist', 'album', 'albumHref', 'href', 'artwork', 'artworkFetchUrl', 'duration']) {
+    assert.deepEqual(entry[key], direct[key], key);
+  }
+  const parsed = library.parseImport(JSON.stringify(library.exportData()));
+  const imported = parsed.items.find((entry) => entry.key === item.key);
+  assert.equal(imported.source, 'qq');
+  assert.equal(imported.favorite > 0, true);
+  assert.equal(qq.fromSnapshot(imported).key, track.key);
+  assert.equal(library.removeFromLibrary('song', dto.id, 'qq'), 1);
+  assert.ok(!library.inLibrary('song', dto.id, 'qq'));
+});
+
+test('QQ page paths map to y.qq.com and reject other paths', () => {
+  assert.equal(qq.webUrl('/qq-song/0039MnYb0qxYhV'), 'https://y.qq.com/n/ryqq/songDetail/0039MnYb0qxYhV');
+  assert.equal(qq.webUrl('/qq-mv/w0026q7f01a'), 'https://y.qq.com/n/ryqq/mv/v/w0026q7f01a');
+  assert.equal(qq.webUrl('/qq-playlist/7039749142'), 'https://y.qq.com/n/ryqq/playlist/7039749142');
+  assert.equal(qq.webUrl('/qq-song/../x'), '');
+  assert.equal(qq.webUrl('/https://music.apple.com/us/song/_/1'), '');
+});
+
+test('QQ typed search keeps tracks for songs and sized artwork for other types', async () => {
+  const seen = [];
+  globalThis.fetch = async (path) => {
+    seen.push(path);
+    return { ok: true, json: async () => (path.includes('type=album')
+      ? { albums: [{ mid: 'a1', name: 'A', cover: 'https://y.gtimg.cn/music/photo_new/T002R{w}x{h}M000a1.jpg' }], total: 3 }
+      : { songs: [dto], total: 1 }) };
+  };
+  const albums = await qq.search('x', 'album', { limit: 5, offset: 10 });
+  assert.equal(albums.total, 3);
+  assert.equal(albums.items[0].cover, 'https://y.gtimg.cn/music/photo_new/T002R500x500M000a1.jpg');
+  const songs = await qq.search('x');
+  assert.equal(songs.items[0].key, `qq:${dto.id}`);
+  assert.deepEqual(seen, ['/qq/search?q=x&type=album&limit=5&offset=10', '/qq/search?q=x&type=song&limit=30&offset=0']);
+  await assert.rejects(qq.search('x', 'video'), /Invalid QQ search type/);
 });

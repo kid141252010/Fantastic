@@ -1,0 +1,32 @@
+<div class="page">
+  <main>
+    <section class="detail-header" id="hero">
+      <div class="detail-art">
+        <div class="detail-radiosity" id="radiosity" aria-hidden="true"></div>
+        <div class="album-art" id="art"></div>
+      </div>
+      <div class="detail-headings">
+        <h1 class="album-title skeleton" id="title">&nbsp;</h1>
+        <p class="album-artist" id="creator"></p>
+        <div class="detail-meta"><span class="album-sub" id="sub"></span></div>
+      </div>
+      <div class="album-notes" id="notes" hidden>
+        <p class="album-notes-text" id="notes-text"></p>
+        <button class="album-notes-more" id="notes-more" type="button" hidden></button>
+      </div>
+      <div class="detail-actions">
+        <button class="detail-play-btn" id="play-all" type="button" disabled>
+          <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7 4.5v15a1 1 0 0 0 1.5.86l12.5-7.5a1 1 0 0 0 0-1.72L8.5 3.64A1 1 0 0 0 7 4.5Z"/></svg>
+          <span data-i18n="album.play"></span>
+        </button>
+        <button class="detail-circle-btn" id="shuffle" type="button" disabled data-i18n-attr="aria-label=album.shuffle,title=album.shuffle">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 3h5v5"/><path d="M4 20 21 3"/><path d="M21 16v5h-5"/><path d="m15 15 6 6"/><path d="M4 4l5 5"/></svg>
+        </button>
+      </div>
+    </section>
+    <div class="alert info" id="alert" hidden aria-live="polite"></div>
+    <section class="tracklist" id="tracks" hidden></section>
+    <button class="btn load-more" id="more" type="button" hidden data-i18n="search.more"></button>
+    <div class="album-footer" id="footer" hidden></div>
+  </main>
+</div>

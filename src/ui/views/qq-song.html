@@ -10,9 +10,10 @@
         <p class="song-artist" id="subtitle"></p>
         <p class="song-album" id="meta"></p>
         <div class="song-badges" id="badges"></div>
-        <div class="song-buttons">
+        <div class="song-buttons" id="song-buttons">
           <button class="detail-play-btn" id="play-best" type="button" disabled data-i18n="song.play"></button>
           <button class="song-reparse" id="enqueue" type="button" disabled data-i18n="qq.addQueue"></button>
+          <a class="song-reparse qq-mv-link" id="mv-link" hidden data-i18n="qq.watchMv"></a>
         </div>
       </div>
     </section>
@@ -25,6 +26,11 @@
         </div>
       </div>
       <div class="quality-list" id="variant-list"></div>
+    </section>
+    <section class="song-section" id="info" hidden aria-labelledby="info-title">
+      <h2 class="song-section-title" id="info-title" data-i18n="qq.info"></h2>
+      <dl class="qq-facts" id="facts"></dl>
+      <p class="qq-intro" id="intro" hidden></p>
     </section>
     <section class="song-section" id="lyrics" hidden aria-labelledby="lyrics-title">
       <h2 class="song-section-title" id="lyrics-title" data-i18n="lyrics.title"></h2>

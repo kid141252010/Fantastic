@@ -205,7 +205,9 @@ pub struct Qq {
     permits: tokio::sync::Semaphore,
     probe_permits: tokio::sync::Semaphore,
     searches: Cache<SearchResult>,
+    suggestions: Cache<Suggestions>,
     songs: Cache<Song>,
+    metas: Cache<SongMeta>,
     infos: Cache<Value>,
     audio: Cache<Audio>,
     audio_failures: Cache<()>,
@@ -258,7 +260,9 @@ impl Qq {
             permits: tokio::sync::Semaphore::new(8),
             probe_permits: tokio::sync::Semaphore::new(3),
             searches: Cache::new(128, 600),
+            suggestions: Cache::new(256, 600),
             songs: Cache::new(4096, 86400),
+            metas: Cache::new(4096, 86400),
             infos: Cache::new(4096, 86400),
             audio: Cache::new(4096, 300),
             audio_failures: Cache::new(4096, 120),
@@ -393,6 +397,12 @@ impl Qq {
             vip: raw.get("fee").and_then(Value::as_u64) == Some(1)
                 || raw.pointer("/pay/pay_play").and_then(Value::as_u64) == Some(1),
             ttml: raw.get("ttml").is_some_and(|v| v == 1 || v == true),
+            mv: raw
+                .get("mv")
+                .and_then(|mv| mv.as_str().or_else(|| mv.get("vid").and_then(Value::as_str)))
+                .filter(|vid| valid_mid(vid))
+                .unwrap_or_default()
+                .into(),
         };
         self.songs.put(id, song.clone());
         Some(song)
@@ -411,19 +421,30 @@ impl Qq {
             }
             return Ok(data);
         }
+        self.fetch_info(mid).await
+    }
+    async fn fetch_info(&self, mid: &str) -> ApiResult<Value> {
         let data = self
             .request(
                 "/extra/music/info",
                 &[("platform", "qq".into()), ("mids", mid.into())],
             )
             .await?;
-        // Keep only the normalized track_info object. The outer response may
-        // contain account, server and other upstream fields that no parser
-        // needs after the DTO has been built.
+        // Keep only the normalized track_info object and the whitelisted
+        // SongMeta fields. The outer response may contain account, server and
+        // other upstream fields that no parser needs after the DTO has been built.
         let track = track_info(mid, &data).clone();
         self.song_from_info(mid, &track)?;
+        self.metas.put(mid.into(), song_meta(mid, &data));
         self.infos.put(mid.into(), track.clone());
         Ok(track)
+    }
+    async fn meta(&self, mid: &str) -> ApiResult<SongMeta> {
+        if let Some(meta) = self.metas.get(mid) {
+            return Ok(meta);
+        }
+        self.fetch_info(mid).await?;
+        self.metas.get(mid).ok_or_else(missing)
     }
     fn song_from_info(&self, mid: &str, data: &Value) -> ApiResult<Song> {
         let song = self.song_dto(track_info(mid, data)).ok_or_else(missing)?;
@@ -523,16 +544,65 @@ fn url_params(mid: &str, quality: Quality) -> [(&'static str, String); 4] {
         ("audio_api", "2".into()),
     ]
 }
-fn track_info<'a>(mid: &str, data: &'a Value) -> &'a Value {
+fn info_root<'a>(mid: &str, data: &'a Value) -> &'a Value {
     // Both the normalized search dialect and QQ's native track_info dialect.
     let rows = data
         .as_array()
         .or_else(|| data.get("data").and_then(Value::as_array));
-    let raw = rows
-        .and_then(|a| a.first())
+    rows.and_then(|a| a.first())
         .or_else(|| data.as_object().and_then(|map| map.get(mid)))
-        .unwrap_or_else(|| data.get("data").unwrap_or(data));
+        .unwrap_or_else(|| data.get("data").unwrap_or(data))
+}
+fn track_info<'a>(mid: &str, data: &'a Value) -> &'a Value {
+    let raw = info_root(mid, data);
     raw.get("track_info").unwrap_or(raw)
+}
+/// `info.<key>.content[].value` of /extra/music/info (company, genre, ...).
+fn info_value(info: &Value, key: &str) -> String {
+    info.get(key)
+        .and_then(|field| field.get("content"))
+        .and_then(Value::as_array)
+        .map(|content| {
+            content
+                .iter()
+                .filter_map(|item| item.get("value").and_then(Value::as_str))
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .collect::<Vec<_>>()
+                .join(" / ")
+        })
+        .unwrap_or_default()
+}
+fn date_text(value: Option<&Value>) -> String {
+    value
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|date| !date.is_empty() && !date.starts_with("0000"))
+        .unwrap_or_default()
+        .into()
+}
+fn song_meta(mid: &str, data: &Value) -> SongMeta {
+    let root = info_root(mid, data);
+    let info = root.get("info").unwrap_or(&Value::Null);
+    let track = root.get("track_info").unwrap_or(root);
+    let mut publish_date = date_text(Some(&Value::String(info_value(info, "pub_time"))));
+    if publish_date.is_empty() {
+        publish_date = date_text(track.get("time_public").or_else(|| track.pointer("/album/time_public")));
+    }
+    let track_number = track.get("index_album").and_then(Value::as_u64).unwrap_or(0);
+    SongMeta {
+        company: info_value(info, "company"),
+        genre: info_value(info, "genre"),
+        language: info_value(info, "lan"),
+        intro: info_value(info, "intro"),
+        publish_date,
+        track_number,
+        disc: if track_number > 0 {
+            track.get("index_cd").and_then(Value::as_u64).unwrap_or(0) + 1
+        } else {
+            0
+        },
+    }
 }
 macro_rules! define_qualities {
     ($( $variant:ident => $name:literal ),+ $(,)?) => {
@@ -1033,6 +1103,25 @@ struct Song {
     cover: String,
     vip: bool,
     ttml: bool,
+    mv: String,
+}
+#[derive(Clone, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SongMeta {
+    company: String,
+    genre: String,
+    language: String,
+    intro: String,
+    publish_date: String,
+    track_number: u64,
+    disc: u64,
+}
+#[derive(Serialize)]
+struct SongInfo {
+    #[serde(flatten)]
+    song: Song,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    meta: Option<SongMeta>,
 }
 #[derive(Clone, Serialize)]
 struct Artist {
@@ -1049,10 +1138,111 @@ impl From<&str> for Artist {
         Self { name: name.into(), mid: String::new() }
     }
 }
-#[derive(Clone, Serialize)]
+#[derive(Clone, Default, Serialize)]
 struct SearchResult {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    songs: Option<Vec<Song>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    albums: Option<Vec<AlbumSummary>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    artists: Option<Vec<ArtistSummary>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    playlists: Option<Vec<PlaylistSummary>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    mvs: Option<Vec<MvSummary>>,
+    total: u64,
+}
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ArtistSummary {
+    mid: String,
+    name: String,
+    avatar: String,
+    album_size: u64,
+    mv_size: u64,
+}
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PlaylistSummary {
+    id: String,
+    name: String,
+    cover: String,
+    track_count: u64,
+    play_count: u64,
+    creator: String,
+    description: String,
+}
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct MvSummary {
+    vid: String,
+    name: String,
+    cover: String,
+    duration_ms: u64,
+    play_count: u64,
+    publish_time: u64,
+    artists: Vec<Artist>,
+}
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct MvDetail {
+    #[serde(flatten)]
+    mv: MvSummary,
+    description: String,
+    publish_date: String,
+}
+#[derive(Clone, Serialize)]
+struct SuggestSong {
+    mid: String,
+    name: String,
+    artist: String,
+}
+#[derive(Clone, Serialize)]
+struct SuggestAlbum {
+    mid: String,
+    name: String,
+    artist: String,
+    cover: String,
+}
+#[derive(Clone, Serialize)]
+struct Suggestions {
+    songs: Vec<SuggestSong>,
+    artists: Vec<ArtistSummary>,
+    albums: Vec<SuggestAlbum>,
+}
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SongPage {
     songs: Vec<Song>,
     total: u64,
+    more: bool,
+}
+#[derive(Serialize)]
+struct AlbumList {
+    albums: Vec<AlbumSummary>,
+    more: bool,
+}
+#[derive(Serialize)]
+struct MvList {
+    mvs: Vec<MvSummary>,
+    more: bool,
+}
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PlaylistInfo {
+    id: String,
+    name: String,
+    cover: String,
+    track_count: u64,
+    description: String,
+    creator: String,
+    update_time: u64,
+}
+#[derive(Serialize)]
+struct PlaylistPage {
+    playlist: Option<PlaylistInfo>,
+    songs: Vec<Song>,
+    more: bool,
 }
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -1069,6 +1259,7 @@ struct Album {
     publish_time: u64,
     size: u64,
     sub_type: String,
+    language: String,
     description: String,
     artists: Vec<Artist>,
 }
@@ -1080,6 +1271,7 @@ struct AlbumSummary {
     cover: String,
     publish_time: u64,
     size: u64,
+    artists: Vec<Artist>,
 }
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -1087,7 +1279,11 @@ struct ArtistPage {
     artist: ArtistDetail,
     songs: Vec<Song>,
     total_songs: u64,
+    more_songs: bool,
     albums: Vec<AlbumSummary>,
+    more_albums: bool,
+    mvs: Vec<MvSummary>,
+    more_mvs: bool,
 }
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -1097,8 +1293,12 @@ struct ArtistDetail {
     avatar: String,
     cover: String,
     brief_desc: String,
+    description: String,
+    trans_names: Vec<String>,
+    birthday: u64,
     music_size: u64,
     album_size: u64,
+    mv_size: u64,
 }
 #[derive(Clone, Serialize)]
 struct Lyric {
@@ -1126,6 +1326,22 @@ pub struct SearchQuery {
     q: String,
     limit: Option<usize>,
     offset: Option<usize>,
+    #[serde(rename = "type")]
+    kind: Option<String>,
+}
+#[derive(Deserialize)]
+pub struct SuggestQuery {
+    q: String,
+}
+#[derive(Default, Deserialize)]
+pub struct PageQuery {
+    limit: Option<usize>,
+    offset: Option<usize>,
+}
+impl PageQuery {
+    fn page(&self, default: usize) -> (usize, usize) {
+        (self.limit.unwrap_or(default).clamp(1, 100), self.offset.unwrap_or(0).min(10000))
+    }
 }
 fn adapter(state: &AppState) -> ApiResult<&Qq> {
     state.qq.as_ref().ok_or_else(missing)
@@ -1138,7 +1354,14 @@ pub fn routes() -> Router<Arc<AppState>> {
         .route("/qq/song/:mid/qualities", get(qualities))
         .route("/qq/cover/:albumMid", get(cover))
         .route("/qq/album/:albumMid", get(album))
+        .route("/qq/suggest", get(suggest))
         .route("/qq/artist/:singerMid", get(artist))
+        .route("/qq/artist/:singerMid/songs", get(artist_songs))
+        .route("/qq/artist/:singerMid/albums", get(artist_albums))
+        .route("/qq/artist/:singerMid/mvs", get(artist_mvs))
+        .route("/qq/playlist/:id", get(playlist))
+        .route("/qq/mv/:vid", get(mv))
+        .route("/qq/mv/:vid/play", get(mv_play))
         .route("/qq/song/:mid", get(info))
         .route("/qq/song/:mid/play", get(play))
         .route("/qq/song/:mid/lyrics", get(lyrics))
@@ -1159,9 +1382,135 @@ fn raw_artist(value: &Value) -> Option<Artist> {
         .get("mid")
         .or_else(|| value.get("id"))
         .map(string)
-        .filter(|mid| valid_mid(mid))
+        .filter(|mid| valid_mid(mid) && mid != "0")
         .unwrap_or_default();
     Some(Artist { name, mid })
+}
+fn text(value: Option<&Value>) -> String {
+    value.and_then(Value::as_str).unwrap_or_default().trim().to_owned()
+}
+fn count(value: Option<&Value>) -> u64 {
+    value.and_then(|v| v.as_u64().or_else(|| v.as_str()?.parse().ok())).unwrap_or(0)
+}
+fn flag(value: Option<&Value>) -> bool {
+    value.is_some_and(|v| v == true || v == 1)
+}
+/// Public QQ CDN image (HTTP upgraded to HTTPS), unsized.
+fn image_url(raw: Option<&Value>) -> String {
+    raw.and_then(Value::as_str)
+        .and_then(cdn_url_upgrade)
+        .map(|url| url.to_string())
+        .unwrap_or_default()
+}
+/// Album / artist photo_new images as a {w}x{h} template; other images unchanged.
+fn sized_image(raw: Option<&Value>) -> String {
+    static RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(T00[12])R\d+x\d+M000").unwrap());
+    RE.replace(&image_url(raw), "${1}R{w}x{h}M000").into_owned()
+}
+/// Upstream timestamps arrive as seconds or milliseconds.
+fn millis(value: Option<&Value>) -> u64 {
+    let n = value.and_then(Value::as_u64).unwrap_or(0);
+    if n > 0 && n < 100_000_000_000 { n * 1000 } else { n }
+}
+/// MV durations arrive as seconds (detail) or milliseconds (lists).
+fn duration_ms(value: Option<&Value>) -> u64 {
+    let n = value.and_then(Value::as_u64).unwrap_or(0);
+    if n > 0 && n < 10_000 { n * 1000 } else { n }
+}
+fn artists_of(value: &Value) -> Vec<Artist> {
+    value
+        .get("artists")
+        .or_else(|| value.get("ar"))
+        .and_then(Value::as_array)
+        .map(|items| items.iter().filter_map(raw_artist).collect())
+        .or_else(|| value.get("artist").and_then(raw_artist).map(|artist| vec![artist]))
+        .unwrap_or_default()
+}
+fn items<T>(value: &Value, key: &str, parse: impl Fn(&Value) -> Option<T>) -> Vec<T> {
+    value
+        .get(key)
+        .and_then(Value::as_array)
+        .map(|items| items.iter().filter_map(parse).collect())
+        .unwrap_or_default()
+}
+fn item_id(item: &Value, keys: &[&str]) -> Option<String> {
+    keys.iter()
+        .filter_map(|key| item.get(*key))
+        .map(string)
+        .find(|id| valid_mid(id) && id != "0")
+}
+fn album_summary(item: &Value) -> Option<AlbumSummary> {
+    let mid = item_id(item, &["id", "mid"])?;
+    Some(AlbumSummary {
+        name: text(item.get("name")),
+        cover: artwork_template_upgrade(item.get("picUrl").or_else(|| item.get("blurPicUrl")), &mid),
+        publish_time: millis(item.get("publishTime")),
+        size: count(item.get("size")),
+        artists: artists_of(item),
+        mid,
+    })
+}
+fn artist_summary(item: &Value) -> Option<ArtistSummary> {
+    let mid = item_id(item, &["id", "mid"])?;
+    let mut avatar = sized_image(item.get("picUrl").or_else(|| item.get("img1v1Url")));
+    if avatar.is_empty() {
+        avatar = format!("https://y.gtimg.cn/music/photo_new/T001R{{w}}x{{h}}M000{mid}.jpg");
+    }
+    Some(ArtistSummary {
+        name: text(item.get("name")),
+        avatar,
+        album_size: count(item.get("albumSize")),
+        mv_size: count(item.get("mvSize")),
+        mid,
+    })
+}
+fn playlist_summary(item: &Value) -> Option<PlaylistSummary> {
+    Some(PlaylistSummary {
+        id: item_id(item, &["id"])?,
+        name: text(item.get("name")),
+        cover: image_url(item.get("coverImgUrl")),
+        track_count: count(item.get("trackCount")),
+        play_count: count(item.get("playCount")),
+        creator: text(item.pointer("/creator/nickname")),
+        description: text(item.get("description")),
+    })
+}
+fn mv_summary(item: &Value) -> Option<MvSummary> {
+    let vid = item_id(item, &["id", "vid"])?;
+    let mut artists = artists_of(item);
+    if artists.is_empty() {
+        let name = text(item.get("artistName"));
+        if !name.is_empty() {
+            let mid = item_id(item, &["artistId"]).unwrap_or_default();
+            artists.push(Artist { name, mid });
+        }
+    }
+    Some(MvSummary {
+        name: text(item.get("name")),
+        cover: image_url(item.get("cover")),
+        duration_ms: duration_ms(item.get("duration")),
+        play_count: count(item.get("playCount")),
+        publish_time: millis(item.get("publishTime")),
+        artists,
+        vid,
+    })
+}
+fn song_page(qq: &Qq, raw: &Value) -> SongPage {
+    SongPage {
+        songs: items(raw, "songs", |song| qq.song_dto(song)),
+        total: count(raw.get("total")),
+        more: flag(raw.get("more")),
+    }
+}
+fn album_list(raw: &Value) -> AlbumList {
+    AlbumList { albums: items(raw, "hotAlbums", album_summary), more: flag(raw.get("more")) }
+}
+fn mv_list(raw: &Value) -> MvList {
+    MvList { mvs: items(raw, "mvs", mv_summary), more: flag(raw.get("hasMore").or_else(|| raw.get("more"))) }
+}
+fn checked(result: ApiResult<Value>) -> ApiResult<Value> {
+    let raw = result?;
+    if upstream_ok(&raw) { Ok(raw) } else { Err(unavailable()) }
 }
 
 async fn album(
@@ -1200,6 +1549,7 @@ async fn album(
         publish_time: album_raw.get("publishTime").and_then(Value::as_u64).unwrap_or(0),
         size: album_raw.get("size").and_then(Value::as_u64).unwrap_or(songs.len() as u64),
         sub_type: album_raw.get("subType").and_then(Value::as_str).unwrap_or_default().to_owned(),
+        language: text(album_raw.get("type")),
         description: album_raw.get("description").and_then(Value::as_str).unwrap_or_default().to_owned(),
         artists,
     };
@@ -1218,11 +1568,13 @@ async fn artist(
         ("limit", "50".into()),
         ("offset", "0".into()),
     ];
-    let albums_params = [("id", singer_mid.clone()), ("limit", "30".into())];
+    let albums_params = [("id", singer_mid.clone()), ("limit", "30".into()), ("offset", "0".into())];
+    let mvs_params = [("id", singer_mid.clone()), ("limit", "12".into()), ("offset", "0".into())];
     let detail_request = qq.request("/artist/detail", &detail_params);
     let songs_request = qq.request("/artist/songs", &songs_params);
     let albums_request = qq.request("/artist/album", &albums_params);
-    let (detail, songs, albums) = tokio::join!(detail_request, songs_request, albums_request);
+    let mvs_request = qq.request("/artist/mv", &mvs_params);
+    let (detail, songs, albums, mvs) = tokio::join!(detail_request, songs_request, albums_request, mvs_request);
 
     let detail = detail?;
     if !upstream_ok(&detail) {
@@ -1256,46 +1608,141 @@ async fn artist(
             .map(|url| url.to_string())
             .unwrap_or_default(),
         brief_desc: artist_raw.get("briefDesc").and_then(Value::as_str).unwrap_or_default().to_owned(),
+        description: text(detail.pointer("/data/user/detailDescription")),
+        trans_names: artist_raw
+            .get("transNames")
+            .and_then(Value::as_array)
+            .map(|names| names.iter().filter_map(Value::as_str).map(str::trim).filter(|n| !n.is_empty()).map(str::to_owned).collect())
+            .unwrap_or_default(),
+        birthday: count(detail.pointer("/data/user/birthday")),
         music_size: artist_raw.get("musicSize").and_then(Value::as_u64).unwrap_or(0),
         album_size: artist_raw.get("albumSize").and_then(Value::as_u64).unwrap_or(0),
+        mv_size: count(artist_raw.get("mvSize")),
     };
 
-    let (songs, total_songs) = match songs {
-        Ok(raw) if upstream_ok(&raw) => {
-            let total = raw.get("total").and_then(Value::as_u64).unwrap_or(0);
-            let songs = raw
-                .get("songs")
-                .and_then(Value::as_array)
-                .map(|items| items.iter().filter_map(|song| qq.song_dto(song)).collect())
-                .unwrap_or_default();
-            (songs, total)
-        }
-        _ => (Vec::new(), 0),
+    let songs = checked(songs).map(|raw| song_page(qq, &raw)).unwrap_or(SongPage { songs: Vec::new(), total: 0, more: false });
+    let albums = checked(albums).map(|raw| album_list(&raw)).unwrap_or(AlbumList { albums: Vec::new(), more: false });
+    let mvs = checked(mvs).map(|raw| mv_list(&raw)).unwrap_or(MvList { mvs: Vec::new(), more: false });
+    Ok(Json(ArtistPage {
+        artist,
+        songs: songs.songs,
+        total_songs: songs.total,
+        more_songs: songs.more,
+        albums: albums.albums,
+        more_albums: albums.more,
+        mvs: mvs.mvs,
+        more_mvs: mvs.more,
+    }))
+}
+async fn artist_songs(
+    State(state): State<Arc<AppState>>,
+    Path(singer_mid): Path<String>,
+    Query(page): Query<PageQuery>,
+) -> ApiResult<Json<SongPage>> {
+    let qq = adapter(&state)?;
+    check_mid(&singer_mid)?;
+    let (limit, offset) = page.page(50);
+    let params = [("id", singer_mid), ("limit", limit.to_string()), ("offset", offset.to_string())];
+    let raw = checked(qq.request("/artist/songs", &params).await)?;
+    Ok(Json(song_page(qq, &raw)))
+}
+async fn artist_albums(
+    State(state): State<Arc<AppState>>,
+    Path(singer_mid): Path<String>,
+    Query(page): Query<PageQuery>,
+) -> ApiResult<Json<AlbumList>> {
+    let qq = adapter(&state)?;
+    check_mid(&singer_mid)?;
+    let (limit, offset) = page.page(30);
+    let params = [("id", singer_mid), ("limit", limit.to_string()), ("offset", offset.to_string())];
+    let raw = checked(qq.request("/artist/album", &params).await)?;
+    Ok(Json(album_list(&raw)))
+}
+async fn artist_mvs(
+    State(state): State<Arc<AppState>>,
+    Path(singer_mid): Path<String>,
+    Query(page): Query<PageQuery>,
+) -> ApiResult<Json<MvList>> {
+    let qq = adapter(&state)?;
+    check_mid(&singer_mid)?;
+    let (limit, offset) = page.page(12);
+    let params = [("id", singer_mid), ("limit", limit.to_string()), ("offset", offset.to_string())];
+    let raw = checked(qq.request("/artist/mv", &params).await)?;
+    Ok(Json(mv_list(&raw)))
+}
+async fn playlist(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+    Query(page): Query<PageQuery>,
+) -> ApiResult<Json<PlaylistPage>> {
+    let qq = adapter(&state)?;
+    check_mid(&id)?;
+    let (limit, offset) = page.page(100);
+    let detail_params = [("platform", "qq".to_owned()), ("id", id.clone())];
+    let track_params = [
+        ("platform", "qq".to_owned()),
+        ("id", id),
+        ("limit", limit.to_string()),
+        ("offset", offset.to_string()),
+    ];
+    // Some playlists fail /playlist/detail (creator lookup) while their tracks
+    // still load, so the header is optional and only fetched with the first page.
+    let detail = async {
+        if offset == 0 { Some(qq.request("/playlist/detail", &detail_params).await) } else { None }
     };
-    let albums = match albums {
-        Ok(raw) if upstream_ok(&raw) => raw
-            .get("hotAlbums")
-            .and_then(Value::as_array)
-            .map(|items| {
-                items
-                    .iter()
-                    .filter_map(|item| {
-                        let mid = item.get("id").or_else(|| item.get("mid")).map(string)?;
-                        if !valid_mid(&mid) { return None; }
-                        Some(AlbumSummary {
-                            mid: mid.clone(),
-                            name: item.get("name").and_then(Value::as_str).unwrap_or_default().to_owned(),
-                            cover: artwork_template_upgrade(item.get("picUrl").or_else(|| item.get("blurPicUrl")), &mid),
-                            publish_time: item.get("publishTime").and_then(Value::as_u64).unwrap_or(0),
-                            size: item.get("size").and_then(Value::as_u64).unwrap_or(0),
-                        })
-                    })
-                    .collect()
+    let (detail, tracks) = tokio::join!(detail, qq.request("/playlist/track/all", &track_params));
+    let tracks = checked(tracks)?;
+    let rows = tracks.get("songs").and_then(Value::as_array).map_or(0, Vec::len);
+    let songs = items(&tracks, "songs", |song| qq.song_dto(song));
+    let playlist = detail
+        .and_then(|raw| checked(raw).ok())
+        .and_then(|raw| {
+            let item = raw.get("playlist")?;
+            Some(PlaylistInfo {
+                id: item_id(item, &["id"])?,
+                name: text(item.get("name")),
+                cover: image_url(item.get("coverImgUrl")),
+                track_count: count(item.get("trackCount")),
+                description: text(item.get("description")),
+                creator: text(item.pointer("/creator/nickname")),
+                update_time: millis(item.get("updateTime")),
             })
-            .unwrap_or_default(),
-        _ => Vec::new(),
-    };
-    Ok(Json(ArtistPage { artist, songs, total_songs, albums }))
+        });
+    let more = rows >= limit
+        && playlist.as_ref().is_none_or(|p| p.track_count == 0 || ((offset + rows) as u64) < p.track_count);
+    Ok(Json(PlaylistPage { playlist, songs, more }))
+}
+async fn mv(
+    State(state): State<Arc<AppState>>,
+    Path(vid): Path<String>,
+) -> ApiResult<Json<MvDetail>> {
+    let qq = adapter(&state)?;
+    check_mid(&vid)?;
+    let raw = checked(qq.request("/mv/detail", &[("platform", "qq".into()), ("mvid", vid)]).await)?;
+    let data = raw.get("data").filter(|data| data.is_object()).ok_or_else(missing)?;
+    let mut description = text(data.get("desc"));
+    if description.is_empty() {
+        description = text(data.get("briefDesc"));
+    }
+    Ok(Json(MvDetail {
+        mv: mv_summary(data).ok_or_else(missing)?,
+        description,
+        publish_date: date_text(data.get("publishTime")),
+    }))
+}
+async fn mv_play(
+    State(state): State<Arc<AppState>>,
+    Path(vid): Path<String>,
+) -> ApiResult<Response> {
+    let qq = adapter(&state)?;
+    check_mid(&vid)?;
+    let raw = checked(qq.request("/mv/url", &[("platform", "qq".into()), ("id", vid)]).await)?;
+    let url = raw
+        .pointer("/data/url")
+        .and_then(Value::as_str)
+        .and_then(cdn_url_upgrade)
+        .ok_or_else(missing)?;
+    Ok(play_redirect(&url))
 }
 async fn cover(
     State(state): State<Arc<AppState>>,
@@ -1344,9 +1791,18 @@ async fn search(
     if term.is_empty() || term.len() > 512 {
         return Err(bad());
     }
+    let kind = q.kind.as_deref().unwrap_or("song");
+    let code = match kind {
+        "song" => "1",
+        "album" => "10",
+        "artist" => "100",
+        "playlist" => "1000",
+        "mv" => "1004",
+        _ => return Err(bad()),
+    };
     let limit = q.limit.unwrap_or(30).clamp(1, 100);
     let offset = q.offset.unwrap_or(0).min(10000);
-    let key = format!("{limit}:{offset}:{term}");
+    let key = format!("{kind}:{limit}:{offset}:{term}");
     if let Some(data) = qq.searches.get(&key) {
         return Ok(Json(data));
     }
@@ -1358,30 +1814,87 @@ async fn search(
                 ("keywords", term.into()),
                 ("limit", limit.to_string()),
                 ("offset", offset.to_string()),
-                ("type", "1".into()),
+                ("type", code.into()),
             ],
         )
         .await?;
     let result = raw.get("result").ok_or_else(unavailable)?;
-    let songs = result
-        .get("songs")
-        .and_then(Value::as_array)
-        .map(|a| a.iter().filter_map(|s| qq.song_dto(s)).collect())
-        .unwrap_or_default();
-    let data = SearchResult {
-        songs,
-        total: result.get("songCount").and_then(Value::as_u64).unwrap_or(0),
-    };
+    let mut data = SearchResult::default();
+    match kind {
+        "song" => {
+            data.songs = Some(items(result, "songs", |song| qq.song_dto(song)));
+            data.total = count(result.get("songCount"));
+        }
+        "album" => {
+            data.albums = Some(items(result, "albums", album_summary));
+            data.total = count(result.get("albumCount"));
+        }
+        "artist" => {
+            data.artists = Some(items(result, "artists", artist_summary));
+            data.total = count(result.get("artistCount"));
+        }
+        "playlist" => {
+            data.playlists = Some(items(result, "playlists", playlist_summary));
+            data.total = count(result.get("playlistCount"));
+        }
+        _ => {
+            data.mvs = Some(items(result, "mvs", mv_summary));
+            data.total = count(result.get("mvCount"));
+        }
+    }
     qq.searches.put(key, data.clone());
+    Ok(Json(data))
+}
+async fn suggest(
+    State(state): State<Arc<AppState>>,
+    Query(q): Query<SuggestQuery>,
+) -> ApiResult<Json<Suggestions>> {
+    let qq = adapter(&state)?;
+    let term = q.q.trim();
+    if term.is_empty() || term.len() > 512 {
+        return Err(bad());
+    }
+    if let Some(data) = qq.suggestions.get(term) {
+        return Ok(Json(data));
+    }
+    let raw = qq
+        .request("/search/suggest", &[("platform", "qq".into()), ("keywords", term.into())])
+        .await?;
+    let result = raw.get("result").ok_or_else(unavailable)?;
+    let data = Suggestions {
+        songs: items(result, "songs", |song| {
+            let mid = item_id(song, &["mid"])?;
+            let mut name = text(song.get("relname"));
+            if name.is_empty() {
+                name = text(song.get("name"));
+            }
+            let artist = artists_of(song).into_iter().map(|a| a.name).collect::<Vec<_>>().join(" / ");
+            Some(SuggestSong { mid, name, artist })
+        }),
+        artists: items(result, "artists", artist_summary),
+        albums: items(result, "albums", |album| {
+            let mid = item_id(album, &["id", "mid"])?;
+            Some(SuggestAlbum {
+                name: text(album.get("name")),
+                artist: text(album.pointer("/artist/name")),
+                cover: artwork_template(None, &mid),
+                mid,
+            })
+        }),
+    };
+    qq.suggestions.put(term.into(), data.clone());
     Ok(Json(data))
 }
 async fn info(
     State(state): State<Arc<AppState>>,
     Path(mid): Path<String>,
-) -> ApiResult<Json<Song>> {
+) -> ApiResult<Json<SongInfo>> {
     let qq = adapter(&state)?;
     check_mid(&mid)?;
-    Ok(Json(qq.song(&mid).await?))
+    let song = qq.song(&mid).await?;
+    // Optional extras; a failure keeps the basic song response.
+    let meta = qq.meta(&mid).await.ok();
+    Ok(Json(SongInfo { song, meta }))
 }
 async fn qualities(
     State(state): State<Arc<AppState>>,

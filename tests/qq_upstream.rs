@@ -397,3 +397,123 @@ async fn raw_lyrics_cold_path_caches_payload_and_preserves_field_names() {
     assert!(queries.iter().any(|query| query.contains("mids=rawcold")));
     task.abort();
 }
+
+#[tokio::test]
+async fn search_types_suggest_playlist_and_mv_routes_normalize_upstream_shapes() {
+    let upstream = Router::new().fallback(any(|request: Request<Body>| async move {
+        let path = request.uri().path().to_owned();
+        let query = request.uri().query().unwrap_or_default().to_owned();
+        let body = match path.as_str() {
+            "/cloudsearch" if query.contains("type=10&") || query.ends_with("type=10") => json!({"result": {
+                "albumCount": 3,
+                "albums": [{"id": "0041WVfh2vtlJE", "name": "Album", "picUrl": "http://y.gtimg.cn/music/photo_new/T002R180x180M0000041WVfh2vtlJE_1.jpg",
+                    "publishTime": 1749139200, "artists": [{"id": "0025NhlN2yWrP4", "name": "Artist"}]}]
+            }}),
+            "/cloudsearch" if query.contains("type=100") && !query.contains("type=1000") && !query.contains("type=1004") => json!({"result": {
+                "artistCount": 1,
+                "artists": [{"id": "0025NhlN2yWrP4", "name": "Artist", "picUrl": "http://y.gtimg.cn/music/photo_new/T001R150x150M0000025NhlN2yWrP4_11.jpg", "albumSize": 43, "mvSize": 9}]
+            }}),
+            "/cloudsearch" if query.contains("type=1000") => json!({"result": {
+                "playlistCount": 1,
+                "playlists": [{"id": "7039749142", "name": "List", "coverImgUrl": "http://qpic.y.qq.com/music_cover/x/300?n=1",
+                    "trackCount": 99, "playCount": 5, "creator": {"nickname": "Me"}, "description": "Desc"}]
+            }}),
+            "/cloudsearch" if query.contains("type=1004") => json!({"result": {
+                "mvCount": 1,
+                "mvs": [{"id": "w0026q7f01a", "name": "MV", "cover": "http://y.gtimg.cn/music/photo_new/T015R640x360M10300061J2t0b0PPW.jpg",
+                    "duration": 317000, "playCount": 7, "artistId": "0025NhlN2yWrP4", "artistName": "Artist"}]
+            }}),
+            "/search/suggest" => json!({"result": {
+                "songs": [{"id": "Song - Artist", "mid": "0039MnYb0qxYhV", "name": "Song - Artist", "relname": "Song", "artists": [{"id": 0, "name": "Artist"}]}],
+                "artists": [{"id": "004Ya5GP1ckXTA", "name": "Artist", "picUrl": "http://y.gtimg.cn/music/photo_new/T001R150x150M000004Ya5GP1ckXTA_3.jpg"}],
+                "albums": [{"id": "002mGsM62gHnX9", "name": "Album", "artist": {"id": 0, "name": "Artist"}}]
+            }}),
+            // The detail request fails for some playlists; tracks must still load.
+            "/playlist/detail" => return (StatusCode::NOT_FOUND, Json(json!({"code": 404}))).into_response(),
+            "/playlist/track/all" => json!({"code": 200, "songs": [song("mid1"), song("mid2")]}),
+            "/mv/detail" => json!({"code": 200, "data": {"id": "w0026q7f01a", "name": "MV", "duration": 317, "playCount": 1,
+                "artists": [{"id": "0025NhlN2yWrP4", "name": "Artist"}], "desc": "Desc", "publishTime": "2003-07-29"}}),
+            "/mv/url" => json!({"code": 200, "data": {"id": "w0026q7f01a", "url": "http://mv6.music.tc.qq.com/abc/v.mp4?fname=v.mp4"}}),
+            _ => return StatusCode::NOT_FOUND.into_response(),
+        };
+        Json(body).into_response()
+    }));
+    let Some((base, task)) = serve(upstream).await else {
+        return;
+    };
+    let state = Arc::new(AppState::with_config(config(base.clone(), base)));
+
+    let body = json_body(get(state.clone(), "/qq/search?q=x&type=album").await).await;
+    assert_eq!(body["total"], 3);
+    assert!(body.get("songs").is_none());
+    assert_eq!(body["albums"][0]["mid"], "0041WVfh2vtlJE");
+    assert_eq!(body["albums"][0]["cover"], "https://y.gtimg.cn/music/photo_new/T002R{w}x{h}M0000041WVfh2vtlJE_1.jpg");
+    assert_eq!(body["albums"][0]["publishTime"], 1749139200000u64);
+    assert_eq!(body["albums"][0]["artists"][0]["mid"], "0025NhlN2yWrP4");
+
+    let body = json_body(get(state.clone(), "/qq/search?q=x&type=artist").await).await;
+    assert_eq!(body["artists"][0]["avatar"], "https://y.gtimg.cn/music/photo_new/T001R{w}x{h}M0000025NhlN2yWrP4_11.jpg");
+    assert_eq!(body["artists"][0]["albumSize"], 43);
+
+    let body = json_body(get(state.clone(), "/qq/search?q=x&type=playlist").await).await;
+    assert_eq!(body["playlists"][0]["id"], "7039749142");
+    assert_eq!(body["playlists"][0]["cover"], "https://qpic.y.qq.com/music_cover/x/300?n=1");
+    assert_eq!(body["playlists"][0]["creator"], "Me");
+
+    let body = json_body(get(state.clone(), "/qq/search?q=x&type=mv").await).await;
+    assert_eq!(body["mvs"][0]["vid"], "w0026q7f01a");
+    assert_eq!(body["mvs"][0]["durationMs"], 317000);
+    assert_eq!(body["mvs"][0]["artists"][0]["mid"], "0025NhlN2yWrP4");
+
+    assert_eq!(get(state.clone(), "/qq/search?q=x&type=video").await.status(), StatusCode::BAD_REQUEST);
+
+    let body = json_body(get(state.clone(), "/qq/suggest?q=x").await).await;
+    assert_eq!(body["songs"][0], json!({"mid": "0039MnYb0qxYhV", "name": "Song", "artist": "Artist"}));
+    assert_eq!(body["artists"][0]["mid"], "004Ya5GP1ckXTA");
+    assert_eq!(body["albums"][0]["cover"], "https://y.gtimg.cn/music/photo_new/T002R{w}x{h}M000002mGsM62gHnX9.jpg");
+
+    let body = json_body(get(state.clone(), "/qq/playlist/7039749142?limit=2").await).await;
+    assert!(body["playlist"].is_null());
+    assert_eq!(body["songs"].as_array().unwrap().len(), 2);
+    assert_eq!(body["more"], true);
+
+    let body = json_body(get(state.clone(), "/qq/mv/w0026q7f01a").await).await;
+    assert_eq!(body["durationMs"], 317000);
+    assert_eq!(body["publishDate"], "2003-07-29");
+    assert_eq!(body["description"], "Desc");
+
+    let response = get(state.clone(), "/qq/mv/w0026q7f01a/play").await;
+    assert_eq!(response.status(), StatusCode::FOUND);
+    assert_eq!(response.headers()["location"], "https://mv6.music.tc.qq.com/abc/v.mp4?fname=v.mp4");
+    assert_eq!(get(state, "/qq/mv/..%2Fx/play").await.status(), StatusCode::BAD_REQUEST);
+    task.abort();
+}
+
+#[tokio::test]
+async fn song_info_includes_whitelisted_meta() {
+    let upstream = Router::new().fallback(any(|| async {
+        Json(json!({"0039MnYb0qxYhV": {
+            "extras": {"secret": "x"},
+            "info": {
+                "company": {"content": [{"value": "Label"}]},
+                "genre": {"content": [{"value": "Pop"}]},
+                "lan": {"content": [{"value": "国语"}]},
+                "intro": {"content": [{"value": "Intro"}]},
+                "pub_time": {"content": [{"value": "2003-07-31"}]}
+            },
+            "track_info": {"mid": "0039MnYb0qxYhV", "name": "晴天", "singer": [{"name": "周杰伦", "mid": "0025NhlN2yWrP4"}],
+                "album": {"mid": "000MkMni19ClKG", "name": "叶惠美"}, "interval": 269, "index_album": 3, "index_cd": 0,
+                "mv": {"vid": "w0026q7f01a"}}
+        }}))
+    }));
+    let Some((base, task)) = serve(upstream).await else {
+        return;
+    };
+    let state = Arc::new(AppState::with_config(config(base.clone(), base)));
+    let body = json_body(get(state, "/qq/song/0039MnYb0qxYhV").await).await;
+    assert_eq!(body["mv"], "w0026q7f01a");
+    assert_eq!(body["meta"], json!({"company": "Label", "genre": "Pop", "language": "国语", "intro": "Intro",
+        "publishDate": "2003-07-31", "trackNumber": 3, "disc": 1}));
+    assert!(!body.to_string().contains("secret"));
+    task.abort();
+}

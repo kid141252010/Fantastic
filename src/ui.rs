@@ -40,6 +40,8 @@ pub async fn fallback_handler(uri: Uri, headers: HeaderMap) -> Response<Body> {
         || path.strip_prefix("qq-song/").is_some_and(|mid| crate::qq::valid_mid(mid.trim_end_matches('/')) && !mid.contains("//"))
         || path.strip_prefix("qq-artist/").is_some_and(|mid| crate::qq::valid_mid(mid.trim_end_matches('/')) && !mid.contains("//"))
         || path.strip_prefix("qq-album/").is_some_and(|mid| crate::qq::valid_mid(mid.trim_end_matches('/')) && !mid.contains("//"))
+        || path.strip_prefix("qq-playlist/").is_some_and(|id| crate::qq::valid_mid(id.trim_end_matches('/')) && !id.contains("//"))
+        || path.strip_prefix("qq-mv/").is_some_and(|vid| crate::qq::valid_mid(vid.trim_end_matches('/')) && !vid.contains("//"))
     {
         return app_handler(headers).await;
     }
@@ -412,7 +414,7 @@ mod tests {
             assert_eq!(response.headers()[axum::http::header::CACHE_CONTROL], "no-store", "{path}");
         }
         // 页面地址仍返回外壳
-        for path in ["/library/songs", "/radio", "/https://music.apple.com/us/station/apple-music-1/ra.978194965", "/qq-song/0039MnYb0qxYhV", "/qq-song/123/", "/qq-artist/0025NhlN2yWrP4", "/qq-album/000MkMni19ClKG"] {
+        for path in ["/library/songs", "/radio", "/https://music.apple.com/us/station/apple-music-1/ra.978194965", "/qq-song/0039MnYb0qxYhV", "/qq-song/123/", "/qq-artist/0025NhlN2yWrP4", "/qq-album/000MkMni19ClKG", "/qq-playlist/7039749142", "/qq-mv/w0026q7f01a"] {
             let page = fallback_handler(path.parse().unwrap(), HeaderMap::new()).await;
             assert_eq!(page.status(), StatusCode::OK, "{path}");
         }
