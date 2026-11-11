@@ -11,7 +11,7 @@
 - 🐛 Cleanly rebuild the bundled AMLL so it actually includes the CJK single-character weak-boundary and mixed-script line-break fixes instead of stale build output.
 - 🐛 Better line breaks for single-character CJK words and balanced wrapping of mixed CJK/English lyrics.
 - 🐛 For AAC / ALAC, full-screen lyrics wait while a tap-to-seek or buffering is in progress instead of running ahead of the sound.
-- 🐛 During natural playback, full-screen lyrics highlight a new line immediately instead of fading it in over 0.3 s, so the first words no longer wipe in behind the sound.
+- 🐛 During natural playback, full-screen lyrics highlight a new line immediately instead of fading it in over 0.3 s, and word animations are realigned to playback once they start, fixing whole lines of word animations lagging behind the sound on phones when the line-change frame is slow.
 
 ## v0.6.8 (2026-11-09)
 
