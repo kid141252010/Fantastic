@@ -34,6 +34,7 @@ import {
 import { ensureWordSegmenter } from './word-segmenter.mjs';
 import { ArtworkBackdrop } from './backdrop.mjs';
 import { BeatPulse } from './pulse.mjs';
+import { createProbe } from './probe.mjs';
 
 const validTokens = (voice) => voice.tokens.filter((token) => token.begin !== 0 || token.end !== 0);
 const plainText = (voice) => validTokens(voice).map((t) => t.text + (t.spaceAfter ? ' ' : '')).join('').trim() || voice.text;
@@ -325,6 +326,7 @@ export function mountLyrics({ root, toggle, bar, player, getMeta, t, notify, onL
   const view = new DomLyricPlayer();
   view.setEnableTextAutospace(prefs.textAutospace);
   panel.append(view.getElement());
+  const probe = createProbe(root, view, player);
   const credits = document.createElement('div');
   credits.className = 'lyrics-credits';
   view.getBottomLineElement().append(credits);
@@ -474,7 +476,7 @@ export function mountLyrics({ root, toggle, bar, player, getMeta, t, notify, onL
   };
   // 没有时间轴的歌词（timing None）每行都是 0：AMLL 把不早于最后一行结束的时间当作歌曲结束、滚到最后，
   // 这里一直给它第一行之前的时间，停在开头。ms 为播放位置，返回歌词时间轴上的时间
-  const viewTime = (ms) => (song?.timing === 'None' ? -1 : ms - lyricOffset());
+  const viewTime = (ms) => (song?.timing === 'None' ? -1 : ms - lyricOffset() + (probe?.offset() || 0));
 
   function currentTime() {
     return viewTime(player.current ? player.transport().currentTime * 1000 : 0);
@@ -484,7 +486,7 @@ export function mountLyrics({ root, toggle, bar, player, getMeta, t, notify, onL
   function seek(ms) {
     if (!player.current) return;
     const transport = player.transport();
-    const position = Math.max(0, ms + lyricOffset());
+    const position = Math.max(0, ms + lyricOffset() - (probe?.offset() || 0));
     transport.currentTime = position / 1000;
     view.setCurrentTime(viewTime(position), true);
     view.resetScroll();
@@ -610,6 +612,7 @@ export function mountLyrics({ root, toggle, bar, player, getMeta, t, notify, onL
     if (lyricsVisible) {
       const time = viewTime(transport ? transport.currentTime * 1000 : 0);
       view.setCurrentTime(time);
+      probe?.frame(timestamp, transport, time, running);
       if (running) alignStarted(time);
       view.update(lastFrame ? timestamp - lastFrame : 0);
     }
