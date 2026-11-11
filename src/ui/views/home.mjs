@@ -1,7 +1,6 @@
 // 首页（/，搜索结果为 /?q=），由 app.mjs 挂载
 import { albumPathOf, createActions } from './actions.mjs';
 import * as qq from '../sources/qq.mjs';
-import { trackRow, syncTrackRows } from './library-ui.mjs';
 import { trackKey } from '../sources/track.mjs';
 
 const { AmI18n } = window;
@@ -18,7 +17,6 @@ export function mount({ root, signal, player, navigate, onLangChange, toast, loa
   const detectEl = $('detect');
   let source = 'apple';
   try { source = qq.enabled() && (new URL(location.href).searchParams.get('source') || localStorage.getItem('am-hook:source')) === 'qq' ? 'qq' : 'apple'; } catch {}
-  let qqRows = [], qqTracks = [];
   function applySource() {
     $('source-switch').hidden = !qq.enabled();
     $('source-select').value = source;
@@ -39,17 +37,6 @@ export function mount({ root, signal, player, navigate, onLangChange, toast, loa
     applySource(); renderDetect();
     if (input.value.trim()) runSearch(input.value.trim(), 'replace'); else closeResults();
   });
-  function renderQQTracks() {
-    qqRows = qqTracks.map((track, index) => trackRow(track, { actions, onPlay: () => {
-      if (player.current && trackKey(player.current) === track.key) { player.toggle(); return; }
-      player.playQueue(qqTracks.map(qq.entryOf), index);
-    } }));
-    const list = el('div', 'qq-tracks');
-    list.append(...qqRows.map((r) => r.row));
-    resultsBody.replaceChildren(...(qqRows.length ? [list] : [statusNode(t('search.none'))]));
-    syncTrackRows(qqRows, player);
-  }
-  player.onChange(() => syncTrackRows(qqRows, player));
 
   /** 把各种输入规整为页面路径：/https://music.apple.com/{cc}/(song|music-video|album|playlist|artist)/{slug}/{id} */
   function toSongLink(raw) {
@@ -259,8 +246,8 @@ export function mount({ root, signal, player, navigate, onLangChange, toast, loa
     clearTimeout(suggestTimer);
     if (suggestController) suggestController.abort();
     const term = input.value.trim();
-    if (source === 'qq' || !term || toSongLink(term) || isUrlLike(term)) { closeSuggest(); return; }
-    suggestTimer = setTimeout(() => loadSuggest(term), 180);
+    if (!term || (source === 'apple' && (toSongLink(term) || isUrlLike(term)))) { closeSuggest(); return; }
+    suggestTimer = setTimeout(() => (source === 'qq' ? loadQQSuggest(term) : loadSuggest(term)), 180);
   }
 
   async function loadSuggest(term) {
@@ -281,39 +268,81 @@ export function mount({ root, signal, player, navigate, onLangChange, toast, loa
     }
   }
 
+  /** 补全词：点击后搜索 searchTerm */
+  function termOption(term, display, searchTerm) {
+    const option = el('button', 'suggest-item suggest-term');
+    option.type = 'button';
+    // 与官网一致：拆出与输入匹配的部分，补全部分加粗
+    const at = display.toLowerCase().indexOf(term.toLowerCase());
+    const text = el('span', 'suggest-text');
+    if (at >= 0) text.append(el('b', null, display.slice(0, at)), el('span', null, display.slice(at, at + term.length)), el('b', null, display.slice(at + term.length)));
+    else text.append(el('b', null, display));
+    option.append(el('span', 'suggest-icon'), text);
+    option.addEventListener('click', () => {
+      input.value = searchTerm;
+      renderDetect();
+      closeSuggest();
+      runSearch(searchTerm, 'push');
+    });
+    return option;
+  }
+
+  /** 直达结果：链接到条目页面 */
+  function resultOption({ href, title, sub, art, artClass = 'suggest-art', explicit = false }) {
+    const option = el('a', 'suggest-item suggest-result');
+    option.href = href;
+    const titleNode = el('span', 'suggest-title', title);
+    if (explicit) titleNode.append(explicitBadge());
+    const text = el('span', 'suggest-text');
+    text.append(titleNode, el('span', 'suggest-sub', sub));
+    option.append(artNode(artClass, art), text);
+    return option;
+  }
+
   function renderSuggest(term, suggestions) {
-    suggestItems = [];
+    const options = [];
     for (const suggestion of suggestions) {
-      let option;
       if (suggestion.kind === 'terms' && suggestion.displayTerm) {
-        const display = suggestion.displayTerm;
-        const searchTerm = suggestion.searchTerm || display;
-        option = el('button', 'suggest-item suggest-term');
-        option.type = 'button';
-        // 与官网一致：拆出与输入匹配的部分，补全部分加粗
-        const at = display.toLowerCase().indexOf(term.toLowerCase());
-        const text = el('span', 'suggest-text');
-        if (at >= 0) text.append(el('b', null, display.slice(0, at)), el('span', null, display.slice(at, at + term.length)), el('b', null, display.slice(at + term.length)));
-        else text.append(el('b', null, display));
-        option.append(el('span', 'suggest-icon'), text);
-        option.addEventListener('click', () => {
-          input.value = searchTerm;
-          renderDetect();
-          closeSuggest();
-          runSearch(searchTerm, 'push');
-        });
+        options.push(termOption(term, suggestion.displayTerm, suggestion.searchTerm || suggestion.displayTerm));
       } else if (suggestion.kind === 'topResults') {
         const item = toItem(suggestion.content);
         if (!item) continue;
-        option = el('a', 'suggest-item suggest-result');
-        option.href = item.href;
-        const title = el('span', 'suggest-title', item.title);
-        if (item.explicit) title.append(explicitBadge());
-        const text = el('span', 'suggest-text');
         // 与官网一致：接口给了 subtitle 就用它，否则为“类型 · 艺人 / 歌单作者”
-        text.append(title, el('span', 'suggest-sub', item.subtitle || [t(KIND_LABELS[item.kind]), item.artist].filter(Boolean).join(' · ')));
-        option.append(artNode(item.mv ? 'suggest-art mv' : item.kind === 'artist' ? 'suggest-art round' : 'suggest-art', artUrl(item.artwork, 80, 80)), text);
-      } else continue;
+        options.push(resultOption({
+          href: item.href, title: item.title, explicit: item.explicit,
+          sub: item.subtitle || [t(KIND_LABELS[item.kind]), item.artist].filter(Boolean).join(' · '),
+          art: artUrl(item.artwork, 80, 80), artClass: item.mv ? 'suggest-art mv' : item.kind === 'artist' ? 'suggest-art round' : 'suggest-art',
+        }));
+      }
+    }
+    showSuggest(options);
+  }
+
+  /** QQ 音乐的输入联想：歌曲为补全词，艺人与专辑直达页面 */
+  async function loadQQSuggest(term) {
+    const controller = suggestController = new AbortController();
+    try {
+      const data = await qq.suggest(term, controller.signal);
+      if (controller !== suggestController || document.activeElement !== input || source !== 'qq') return;
+      showSuggest([
+        ...data.songs.slice(0, 5).map((song) => termOption(term, [song.name, song.artist].filter(Boolean).join(' - '), [song.name, song.artist].filter(Boolean).join(' '))),
+        ...data.artists.slice(0, 3).map((artist) => resultOption({
+          href: qq.artistPath(artist.mid), title: artist.name, sub: t('home.detectArtist'),
+          art: artUrl(artist.avatar, 80, 80), artClass: 'suggest-art round',
+        })),
+        ...data.albums.slice(0, 3).map((album) => resultOption({
+          href: qq.albumPath(album.mid), title: album.name, sub: [t('home.detectAlbum'), album.artist].filter(Boolean).join(' · '),
+          art: artUrl(album.cover, 80, 80),
+        })),
+      ]);
+    } catch {
+      if (controller === suggestController) closeSuggest();
+    }
+  }
+
+  function showSuggest(options) {
+    suggestItems = [];
+    for (const option of options) {
       option.id = `suggest-${suggestItems.length}`;
       option.setAttribute('role', 'option');
       option.setAttribute('aria-selected', 'false');
@@ -402,31 +431,24 @@ export function mount({ root, signal, player, navigate, onLangChange, toast, loa
     resultsBody.replaceChildren(statusNode(t('search.loading'), 'loading'));
     try {
       if (source === 'qq') {
-        const data = await qq.searchSongs(term, { signal: controller.signal });
+        const results = await Promise.allSettled(QQ_GROUPS.map(([key, type]) =>
+          qq.search(term, type, { limit: QQ_LIMIT[key], signal: controller.signal })));
         if (controller !== search.controller || source !== 'qq') return;
-        qqTracks = data.songs;
-        renderQQTracks();
-        if (qqTracks.length < data.total) {
-          let offset = data.songs.length;
-          const more = el('button', 'btn load-more', t('search.more'));
-          resultsBody.append(more);
-          more.addEventListener('click', async () => {
-            more.disabled = true;
-            try {
-              const page = await qq.searchSongs(term, { offset, signal: controller.signal });
-              if (controller !== search.controller || source !== 'qq') return;
-              offset += page.songs.length;
-              const keys = new Set(qqTracks.map(trackKey));
-              qqTracks.push(...page.songs.filter((track) => !keys.has(track.key)));
-              renderQQTracks();
-              if (page.songs.length && offset < page.total) resultsBody.append(more);
-            } catch (error) { if (error.name !== 'AbortError') toast(t('search.failed', { msg: error.message })); }
-            finally { more.disabled = false; }
-          });
-        }
+        // 各类型分别请求，部分失败时照样显示其余的；全部失败才报错
+        if (results.every((result) => result.status === 'rejected')) throw results[0].reason;
+        search.groups = QQ_GROUPS.map(([key, type], index) => {
+          const result = results[index];
+          if (result.status !== 'fulfilled') return null;
+          const { items, total } = result.value;
+          const group = { key, items: [], next: null, qq: { term, type, offset: items.length } };
+          group.items = qqItems(key, items, group);
+          group.next = items.length && items.length < total ? 'qq' : null;
+          return group;
+        }).filter((group) => group && group.items.length);
+        search.view = search.groups.some((group) => group.key === keepView) ? keepView : 'all';
+        renderResults();
         return;
       }
-      qqRows = [];
       await (statusReady ||= loadStatus());
       const data = await amp(`/v1/catalog/${storefront()}/search`, {
         term, l: await catalogLang(), types: 'songs,albums,music-videos,playlists,artists', ...PAGE_PARAMS,
@@ -516,15 +538,28 @@ export function mount({ root, signal, player, navigate, onLangChange, toast, loa
     more.addEventListener('click', async () => {
       more.disabled = true;
       try {
-        const data = await amp(group.next, PAGE_PARAMS, controller.signal);
-        const page = (data.results && (data.results[key] || Object.values(data.results)[0])) || {};
-        const added = (page.data || []).map(toItem).filter(Boolean);
-        group.items.push(...added);
-        group.next = page.next || null;
-        list.append(...added.map(render));
+        if (group.qq) {
+          const { term, type } = group.qq;
+          const page = await qq.search(term, type, { offset: group.qq.offset, limit: QQ_LIMIT[key], signal: controller.signal });
+          if (controller !== search.controller) return;
+          group.qq.offset += page.items.length;
+          const seen = new Set(group.items.map((item) => item.href));
+          const added = qqItems(key, page.items, group).filter((item) => !seen.has(item.href));
+          group.items.push(...added);
+          group.next = page.items.length && group.qq.offset < page.total ? 'qq' : null;
+          list.append(...added.map(render));
+        } else {
+          const data = await amp(group.next, PAGE_PARAMS, controller.signal);
+          const page = (data.results && (data.results[key] || Object.values(data.results)[0])) || {};
+          const added = (page.data || []).map(toItem).filter(Boolean);
+          group.items.push(...added);
+          group.next = page.next || null;
+          list.append(...added.map(render));
+        }
         more.hidden = !group.next;
       } catch (error) {
         if (error.name === 'AbortError') return;
+        toast(t('search.failed', { msg: error.message }));
       }
       more.disabled = false;
     });
@@ -532,8 +567,43 @@ export function mount({ root, signal, player, navigate, onLangChange, toast, loa
     return section;
   }
 
+  /** QQ 音乐搜索：分组 key → cloudsearch 类型（顺序即“全部”视图里的顺序）与每页数量 */
+  const QQ_GROUPS = [['song', 'song'], ['artist', 'artist'], ['album', 'album'], ['playlist', 'playlist'], ['music_video', 'mv']];
+  const QQ_LIMIT = { song: 30, artist: 20, album: 20, playlist: 20, music_video: 20 };
+  const yearOf = (ms) => (ms ? String(new Date(Number(ms)).getUTCFullYear()) : '');
+  const names = (artists) => (artists || []).map((artist) => artist.name).filter(Boolean).join(' / ');
+
+  /** QQ 搜索结果 → 与 toItem 相同形状的条目；歌曲从这一首开始播放本组已载入的歌曲 */
+  function qqItems(key, list, group) {
+    const base = { source: 'qq', mv: false, explicit: false, traits: [], has4K: false, subtitle: '', year: '', genre: '', album: '', artist: '' };
+    return list.map((value) => {
+      if (key === 'song') {
+        const item = { ...base, kind: 'song', href: value.href, title: value.name, artist: value.artist, album: value.album,
+          artwork: value.artwork, duration: value.duration, track: value };
+        item.onPlay = () => {
+          const songs = group.items.filter((entry) => entry.track);
+          if (player.current && trackKey(player.current) === value.key) { player.toggle(); return; }
+          player.playQueue(songs.map((entry) => qq.entryOf(entry.track)), Math.max(0, songs.indexOf(item)));
+        };
+        return item;
+      }
+      if (key === 'artist') return { ...base, kind: 'artist', href: qq.artistPath(value.mid), title: value.name, artwork: value.avatar,
+        genre: value.albumSize ? t('qq.artistAlbums', { n: value.albumSize }) : '' };
+      if (key === 'album') return { ...base, kind: 'album', href: qq.albumPath(value.mid), title: value.name, artwork: value.cover,
+        artist: names(value.artists), year: yearOf(value.publishTime) };
+      if (key === 'playlist') return { ...base, kind: 'playlist', href: qq.playlistPath(value.id), title: value.name, artwork: value.cover,
+        artist: value.creator || '' };
+      return { ...base, kind: 'music-video', mv: true, href: qq.mvPath(value.vid), title: value.name, artwork: value.cover,
+        artist: names(value.artists), duration: value.durationMs };
+    });
+  }
+
   /** 搜索结果条目 → actions.mjs 的条目；歌曲单独播放，菜单里可前往专辑 */
   function targetOf(item) {
+    if (item.source === 'qq') {
+      return { kind: item.kind, source: 'qq', href: item.href, name: item.title, track: item.track,
+        albumHref: item.track?.albumHref || '', ...(item.onPlay ? { onPlay: item.onPlay } : {}) };
+    }
     return {
       kind: item.kind, href: item.href, apple: item.apple, name: item.title, country: storefront(), resource: item.resource,
       albumHref: item.kind === 'song' ? albumPathOf(item.resource) : '',

@@ -145,6 +145,17 @@ export function rawLyricsUrl(id, kind) {
   if (!RAW_LYRIC_KINDS.includes(kind)) throw new Error('Invalid QQ raw lyric kind');
   return `/qq/song/${mid(id)}/lyrics/raw?kind=${kind}`;
 }
+export const albumPath = (id) => `/qq-album/${mid(id)}`;
+export const artistPath = (id) => `/qq-artist/${mid(id)}`;
+export const playlistPath = (id) => `/qq-playlist/${mid(id)}`;
+export const mvPath = (id) => `/qq-mv/${mid(id)}`;
+export const mvPlayUrl = (id) => `/qq/mv/${mid(id)}/play`;
+const WEB_PATHS = { song: 'songDetail', album: 'albumDetail', artist: 'singer', playlist: 'playlist', mv: 'mv/v' };
+/** 本站 QQ 页面路径 → y.qq.com 上的对应页面；不是 QQ 页面时为空 */
+export function webUrl(path) {
+  const m = String(path || '').match(/^\/qq-(song|album|artist|playlist|mv)\/([0-9A-Za-z]{1,32})\/?$/);
+  return m ? `https://y.qq.com/n/ryqq/${WEB_PATHS[m[1]]}/${m[2]}` : '';
+}
 export const coverUrl = (albumMid) => albumMid === '' ? '' : `/qq/cover/${mid(albumMid)}`;
 /** photo_new only serves discrete sizes. Resolve before Apple-sized consumers see it. */
 export function artworkUrl(artwork, albumMid) {
@@ -182,8 +193,16 @@ export function toTrack(dto) {
     albumId: albumMid, albumHref: albumMid && album ? `/qq-album/${albumMid}` : '', href: songPath(id), country: '',
     duration: Number.isFinite(dto.durationMs) ? Math.max(0, dto.durationMs) : 0,
     artwork: { url: albumMid ? artworkUrl(dto.cover, albumMid) : '' }, explicit: false,
-    qq: { mid: id, albumMid, vip: dto.vip === true, ttml: dto.ttml === true },
+    qq: { mid: id, albumMid, vip: dto.vip === true, ttml: dto.ttml === true, mv: MID.test(dto.mv || '') ? dto.mv : '' },
   });
+}
+/** 资料库曲目快照（library.mjs 的 cleanTrack，source 为 qq）→ toTrack 的形状 */
+export function fromSnapshot(snapshot) {
+  const id = mid(snapshot.id);
+  const albumMid = MID.test(snapshot.albumId || '') ? snapshot.albumId : '';
+  return withIdentity({ ...snapshot, source: 'qq', kind: 'song', id, title: snapshot.name || '', country: '',
+    artwork: { url: albumMid ? String(snapshot.artwork || '') : '' }, explicit: false,
+    qq: { mid: id, albumMid, vip: snapshot.vip === true, ttml: false, mv: '' } });
 }
 export function entryOf(track) {
   const albumMid = track.qq?.albumMid || '';
@@ -226,7 +245,45 @@ export async function searchSongs(q, { limit = 30, offset = 0, signal } = {}) {
     ...(Array.isArray(data.artists) ? { artists: data.artists.map(normalizeArtwork) } : {}),
   };
 }
-export async function song(id, signal) { return toTrack(await request(`/qq/song/${mid(id)}`, signal)); }
+const SEARCH_KEYS = { song: 'songs', album: 'albums', artist: 'artists', playlist: 'playlists', mv: 'mvs' };
+export const SEARCH_TYPES = Object.keys(SEARCH_KEYS);
+/** type：song / album / artist / playlist / mv；歌曲为 toTrack 的结果，其余为后端 DTO（图片已定尺寸） */
+export async function search(q, type = 'song', { limit = 30, offset = 0, signal } = {}) {
+  if (!SEARCH_KEYS[type]) throw new Error('Invalid QQ search type');
+  const data = await request(`/qq/search?${new URLSearchParams({ q, type, limit, offset })}`, signal);
+  const list = Array.isArray(data?.[SEARCH_KEYS[type]]) ? data[SEARCH_KEYS[type]] : [];
+  return { items: type === 'song' ? list.map(toTrack) : list.map(normalizeArtwork), total: Number(data?.total) || 0 };
+}
+export async function suggest(q, signal) {
+  const data = await request(`/qq/suggest?${new URLSearchParams({ q })}`, signal);
+  const list = (key) => (Array.isArray(data?.[key]) ? data[key] : []).map(normalizeArtwork);
+  return { songs: list('songs'), artists: list('artists'), albums: list('albums') };
+}
+/** 歌曲与 meta（发行时间、流派、语种、唱片公司、简介、曲序；取不到时为 null） */
+export async function song(id, signal) {
+  const data = await request(`/qq/song/${mid(id)}`, signal);
+  return { ...toTrack(data), meta: data?.meta && typeof data.meta === 'object' ? data.meta : null };
+}
+const page = ({ limit, offset = 0 }) => new URLSearchParams({ ...(limit ? { limit } : {}), offset });
+export async function artistSongs(id, { limit, offset, signal } = {}) {
+  const data = await request(`/qq/artist/${mid(id)}/songs?${page({ limit, offset })}`, signal);
+  return { songs: (data?.songs || []).map(toTrack), total: Number(data?.total) || 0, more: data?.more === true };
+}
+export async function artistAlbums(id, { limit, offset, signal } = {}) {
+  const data = await request(`/qq/artist/${mid(id)}/albums?${page({ limit, offset })}`, signal);
+  return { albums: (data?.albums || []).map(normalizeArtwork), more: data?.more === true };
+}
+export async function artistMvs(id, { limit, offset, signal } = {}) {
+  const data = await request(`/qq/artist/${mid(id)}/mvs?${page({ limit, offset })}`, signal);
+  return { mvs: (data?.mvs || []).map(normalizeArtwork), more: data?.more === true };
+}
+/** 歌单：playlist 为头部信息（部分歌单上游取不到，为 null），songs 为 toTrack 的结果 */
+export async function playlist(id, { limit, offset, signal } = {}) {
+  const data = await request(`/qq/playlist/${mid(id)}?${page({ limit, offset })}`, signal);
+  return { playlist: data?.playlist ? normalizeArtwork(data.playlist) : null,
+    songs: (data?.songs || []).map(toTrack), more: data?.more === true };
+}
+export async function mv(id, signal) { return normalizeArtwork(await request(`/qq/mv/${mid(id)}`, signal)); }
 export async function album(id, signal) {
   const data = await request(`/qq/album/${mid(id)}`, signal);
   return { ...data,
@@ -240,6 +297,7 @@ export async function artist(id, signal) {
     artist: normalizeArtwork(data?.artist),
     ...(Array.isArray(data?.songs) ? { songs: data.songs.map(normalizeArtwork) } : {}),
     ...(Array.isArray(data?.albums) ? { albums: data.albums.map(normalizeArtwork) } : {}),
+    ...(Array.isArray(data?.mvs) ? { mvs: data.mvs.map(normalizeArtwork) } : {}),
   };
 }
 export function qualityRows(data, id, detect, environment = globalThis) {
