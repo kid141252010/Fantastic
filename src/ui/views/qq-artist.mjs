@@ -19,6 +19,11 @@ export function mount({ root, url, signal, player, navigate, onLangChange, toast
   let songs = [];
   let totalSongs = 0;
   let moreSongs = false;
+  // 上游偏移按返回的条数累计，与去重后的列表长度无关
+  let songOffset = 0;
+  let albumOffset = 0;
+  let mvOffset = 0;
+  let moreMvs = false;
   let albums = [];
   let moreAlbums = false;
   let mvs = [];
@@ -157,7 +162,8 @@ export function mount({ root, url, signal, player, navigate, onLangChange, toast
     const tail = [];
     if (songsExpanded && moreSongs) {
       tail.push(loadMoreButton('songs', async () => {
-        const page = await qq.artistSongs(singerMid, { offset: songs.length, signal });
+        const page = await qq.artistSongs(singerMid, { offset: songOffset, signal });
+        songOffset += page.songs.length;
         const keys = new Set(songs.map((track) => track.key));
         songs.push(...page.songs.filter((track) => !keys.has(track.key)));
         moreSongs = page.more && page.songs.length > 0;
@@ -211,7 +217,8 @@ export function mount({ root, url, signal, player, navigate, onLangChange, toast
       head.append(more);
     }
     const tail = albumsExpanded && moreAlbums ? [loadMoreButton('albums', async () => {
-      const page = await qq.artistAlbums(singerMid, { offset: albums.length, signal });
+      const page = await qq.artistAlbums(singerMid, { offset: albumOffset, signal });
+      albumOffset += page.albums.length;
       const seen = new Set(albums.map((album) => album.mid));
       albums.push(...page.albums.filter((album) => !seen.has(album.mid)));
       moreAlbums = page.more && page.albums.length > 0;
@@ -233,8 +240,17 @@ export function mount({ root, url, signal, player, navigate, onLangChange, toast
         el('span', { className: 'shelf-sub', textContent: year(mv.publishTime) }));
     });
     const head = el('div', { className: 'shelf-head' }, el('h2', { className: 'shelf-heading', textContent: t('qq.mvs') }));
+    const tail = moreMvs ? [loadMoreButton('mvs', async () => {
+      const page = await qq.artistMvs(singerMid, { offset: mvOffset, signal });
+      mvOffset += page.mvs.length;
+      const seen = new Set(mvs.map((mv) => mv.vid));
+      mvs.push(...page.mvs.filter((mv) => !seen.has(mv.vid)));
+      moreMvs = page.more && page.mvs.length > 0;
+      renderMvs();
+    })] : [];
     $('mv-shelf')?.replaceChildren(...(cards.length
-      ? [el('section', { className: 'shelf-section qq-artist-shelf' }, head, el('div', { className: 'shelf' }, ...cards))] : []));
+      ? [el('section', { className: 'shelf-section qq-artist-shelf' }, head,
+        el('div', { className: `shelf${moreMvs || mvs.length > 12 ? ' expanded' : ''}` }, ...cards), ...tail)] : []));
   }
 
   function render() {
@@ -264,11 +280,15 @@ export function mount({ root, url, signal, player, navigate, onLangChange, toast
     if (signal.aborted) return;
     artist = data?.artist || null;
     songs = Array.isArray(data?.songs) ? data.songs.map(qq.toTrack) : [];
+    songOffset = songs.length;
     totalSongs = Number(data?.totalSongs) || 0;
     moreSongs = data?.moreSongs === true;
     albums = Array.isArray(data?.albums) ? data.albums : [];
     moreAlbums = data?.moreAlbums === true;
+    albumOffset = albums.length;
     mvs = Array.isArray(data?.mvs) ? data.mvs : [];
+    mvOffset = mvs.length;
+    moreMvs = data?.moreMvs === true;
     if (!artist) throw new Error('empty response');
     render();
   }).catch((err) => {
