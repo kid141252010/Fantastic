@@ -216,6 +216,61 @@ class FixtureParser {
     return fixture(translation, pronunciation);
   }
 }
+const panelSource = readFileSync(new URL('../src/ui/lyrics/panel.mjs', import.meta.url), 'utf8');
+function languageChangePanel({ visible = true, empty = false } = {}) {
+  const raw = JSON.stringify({ translation: ['zh-Hans', 'zh-Hant', 'en'], pronunciation: [] });
+  const calls = [];
+  const context = {
+    AmI18n: { lang: 'zh-Hans' },
+    song: empty ? null : parseTTML(raw, FixtureParser, 'zh-Hans'), lyricsText: empty ? '' : raw,
+    has: {}, lyricsVisible: visible, open: true, menu: { hidden: true },
+    parseTTML: (xml, _, prefLang) => parseTTML(xml, FixtureParser, prefLang),
+    fetch() { throw new Error('language changes must not request lyrics'); },
+    currentTime: () => 4250,
+    view: {
+      getElement: () => ({}), setCurrentTime: (...args) => calls.push(['time', ...args]),
+      resetScroll: () => calls.push(['reset']), setLyricLines: lines => calls.push(['lines', lines.length]),
+    },
+    setLines: () => calls.push(['translation', context.song.lines[0].translation]),
+    syncOptions() {}, renderCredits() {}, renderMenu() {}, renderHeader() {}, syncToggle() {},
+    onLangChange: handler => { context.change = handler; },
+  };
+  const parseFunction = panelSource.match(/  const parseWithUiLanguage = \(text\) => \{[\s\S]*?\n  \};/)[0];
+  const renderFunction = panelSource.match(/  function renderSong\(\) \{[\s\S]*?\n  \}/)[0];
+  const handler = panelSource.match(/  onLangChange\(\(\) => \{[\s\S]*?\n  \}\);/)[0];
+  runInNewContext(`${parseFunction}\n${renderFunction}\n${handler}`, context);
+  return { context, calls };
+}
+test('changing UI language re-parses cached lyrics and aligns the visible view to playback', () => {
+  const { context, calls } = languageChangePanel();
+  for (const language of ['zh-Hant', 'en', 'zh-Hans']) {
+    context.AmI18n.lang = language;
+    context.change();
+    assert.equal(context.song.translation.language, language);
+    assert.deepEqual(calls.splice(0), [['translation', `translation ${language}`], ['time', 4250, true], ['reset']]);
+    assert.equal(context.has.translation, true);
+  }
+});
+test('changing UI language clears hidden lyric lines for layout when reopened', () => {
+  const { context, calls } = languageChangePanel({ visible: false });
+  context.AmI18n.lang = 'zh-Hant';
+  context.change();
+  assert.equal(context.song.translation.language, 'zh-Hant');
+  assert.deepEqual(calls, [['lines', 0]]);
+});
+test('changing UI language before lyrics are loaded does not parse or request lyrics', () => {
+  const { context, calls } = languageChangePanel({ empty: true });
+  context.change();
+  assert.equal(context.song, null);
+  assert.deepEqual(calls, []);
+});
+test('a failed cached lyric parse does not replace the previous song', () => {
+  const { context } = languageChangePanel();
+  const previous = context.song;
+  context.lyricsText = 'invalid';
+  assert.throws(() => context.change(), /Unexpected token/);
+  assert.equal(context.song, previous);
+});
 const parse = (translation, pronunciation = translation, prefLang) => parseTTML(
   JSON.stringify({ translation, pronunciation }), FixtureParser, prefLang,
 );
