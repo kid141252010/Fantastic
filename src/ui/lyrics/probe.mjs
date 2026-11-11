@@ -93,7 +93,7 @@ export function createProbe(root, view, player) {
   button('+10', () => setOffset(offset + 10));
   button('+50', () => setOffset(offset + 50));
   button('偏移归零', () => setOffset(0));
-  const seekToggle = button('', () => { view.enableAutoSeekDetection = !view.enableAutoSeekDetection; render(true); });
+  const seekToggle = button('', () => { view.enableAutoSeekDetection = !view.enableAutoSeekDetection; view.seekDetector?.reset?.(); render(true); });
   const copy = button('复制', async () => {
     try { await navigator.clipboard.writeText(text.textContent); copy.textContent = '已复制'; } catch { copy.textContent = '复制失败'; }
     setTimeout(() => { copy.textContent = '复制'; }, 1500);
