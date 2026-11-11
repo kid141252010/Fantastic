@@ -225,7 +225,9 @@ const AMLL_RENDERERS = { amll: MeshGradientRenderer, isolation: IsolationRendere
  * 每个鼓点都到 1 时整个背景一跳一跳，取 0.4
  */
 const AMLL_PULSE = 0.4;
-const DEFAULT_PREFS = { scale: 1, weight: 600, source: 'apple', backdrop: 'amll', pulse: false, textAutospace: true, offset: 0 };
+const DEFAULT_PREFS = { scale: 1, weight: 600, source: 'apple', backdrop: 'amll', pulse: false, textAutospace: true, output: 'speaker', offsets: { speaker: 0, bluetooth: 0 } };
+/** 扬声器、蓝牙的输出延迟不同，各记一个「歌词提前」 */
+const OUTPUTS = ['speaker', 'bluetooth'];
 function loadPrefs() {
   try {
     const saved = JSON.parse(localStorage.getItem(PREFS_KEY) || '{}');
@@ -236,9 +238,10 @@ function loadPrefs() {
       backdrop: saved.backdrop === 'classic' ? 'artwork' : BACKDROPS.includes(saved.backdrop) ? saved.backdrop : DEFAULT_PREFS.backdrop,
       pulse: typeof saved.pulse === 'boolean' ? saved.pulse : DEFAULT_PREFS.pulse,
       textAutospace: typeof saved.textAutospace === 'boolean' ? saved.textAutospace : DEFAULT_PREFS.textAutospace,
-      offset: LYRIC_OFFSETS.includes(saved.offset) ? saved.offset : DEFAULT_PREFS.offset,
+      output: OUTPUTS.includes(saved.output) ? saved.output : DEFAULT_PREFS.output,
+      offsets: Object.fromEntries(OUTPUTS.map((output) => [output, LYRIC_OFFSETS.includes(saved.offsets?.[output]) ? saved.offsets[output] : 0])),
     };
-  } catch { return { ...DEFAULT_PREFS }; }
+  } catch { return { ...DEFAULT_PREFS, offsets: { ...DEFAULT_PREFS.offsets } }; }
 }
 function savePrefs(prefs) {
   try { localStorage.setItem(PREFS_KEY, JSON.stringify(prefs)); } catch { /* 只在本次会话生效 */ }
@@ -474,7 +477,7 @@ export function mountLyrics({ root, toggle, bar, player, getMeta, t, notify, onL
   const lyricOffset = () => {
     const group = player.current?.variant?.group_id || '';
     const spatial = /atmos|binaural|downmix/i.test(group) ? song?.audioOffsets?.spatial || 0 : 0;
-    return spatial - prefs.offset;
+    return spatial - prefs.offsets[prefs.output];
   };
   // 没有时间轴的歌词（timing None）每行都是 0：AMLL 把不早于最后一行结束的时间当作歌曲结束、滚到最后，
   // 这里一直给它第一行之前的时间，停在开头。ms 为播放位置，返回歌词时间轴上的时间
@@ -1027,14 +1030,15 @@ export function mountLyrics({ root, toggle, bar, player, getMeta, t, notify, onL
   }
 
   /**
-   * 菜单分五组：翻译 / 发音（同 music.apple.com：已开启的显示「隐藏…」，否则「显示…」，歌曲没有的一项置灰）、
-   * 字号与字重、歌词来源（单选，选定的来源没有这首歌时在下面说明）、背景（单选，以及节拍律动开关；
+   * 菜单分六组：翻译 / 发音（同 music.apple.com：已开启的显示「隐藏…」，否则「显示…」，歌曲没有的一项置灰）、
+   * 字号与字重、声音输出（单选）与这个输出的歌词提前、歌词来源（单选，选定的来源没有这首歌时在下面说明）、背景（单选，以及节拍律动开关；
    * 背景不可用或开了「减少动态效果」时开关置灰）、下载 TTML
    */
   function renderMenu() {
     const scale = FONT_SCALES.indexOf(prefs.scale);
     const weight = FONT_WEIGHTS.indexOf(prefs.weight);
-    const offset = LYRIC_OFFSETS.indexOf(prefs.offset);
+    const lead = prefs.offsets[prefs.output];
+    const offset = LYRIC_OFFSETS.indexOf(lead);
     const note = sourceNote();
     const separator = () => menuItem(null, 'separator', 'lyrics-menu-separator');
     const items = [
@@ -1047,11 +1051,17 @@ export function mountLyrics({ root, toggle, bar, player, getMeta, t, notify, onL
         ['fontSmaller', scale > 0], ['fontLarger', scale < FONT_SCALES.length - 1])),
       menuItem(stepper(t('lyrics.fontWeight'), t(`lyrics.weight${prefs.weight}`),
         ['weightLighter', weight > 0], ['weightBolder', weight < FONT_WEIGHTS.length - 1])),
-      menuItem(stepper(t('lyrics.offset'), `${prefs.offset > 0 ? '+' : ''}${prefs.offset} ms`,
-        ['offsetLater', offset > 0], ['offsetEarlier', offset < LYRIC_OFFSETS.length - 1])),
       menuItem(menuButton({
         label: t('lyrics.textAutospace'), icon: prefs.textAutospace ? 'check' : '', action: 'textAutospace', toggled: prefs.textAutospace,
       })),
+      separator(),
+      menuItem(menuNode('span', '', t('lyrics.output')), 'presentation', 'lyrics-menu-heading'),
+      ...OUTPUTS.map((output) => menuItem(menuButton({
+        label: t(output === 'speaker' ? 'lyrics.outputSpeaker' : 'lyrics.outputBluetooth'),
+        icon: prefs.output === output ? 'check' : '', action: 'output', value: output, checked: prefs.output === output,
+      }))),
+      menuItem(stepper(t('lyrics.offset'), `${lead > 0 ? '+' : ''}${lead} ms`,
+        ['offsetLater', offset > 0], ['offsetEarlier', offset < LYRIC_OFFSETS.length - 1])),
       separator(),
       menuItem(menuNode('span', '', t('lyrics.source')), 'presentation', 'lyrics-menu-heading'),
       ...(trackSource === 'qq' ? [] : ['apple', 'amll']).map((source) => menuItem(menuButton({
@@ -1083,14 +1093,20 @@ export function mountLyrics({ root, toggle, bar, player, getMeta, t, notify, onL
   };
   function step(action) {
     const [key, values, delta] = STEPS[action];
-    const index = Math.max(0, Math.min(values.length - 1, values.indexOf(prefs[key]) + delta));
-    if (values[index] === prefs[key]) return;
-    prefs[key] = values[index];
+    const target = key === 'offset' ? prefs.offsets : prefs;
+    const field = key === 'offset' ? prefs.output : key;
+    const index = Math.max(0, Math.min(values.length - 1, values.indexOf(target[field]) + delta));
+    if (values[index] === target[field]) return;
+    target[field] = values[index];
     savePrefs(prefs);
-    // 偏移改了，当前行的逐词动画立即按新时间重新对齐
-    if (key === 'offset') return view.setCurrentTime(currentTime(), true);
+    if (key === 'offset') return realign();
     applyPrefs();
     relayout();
+  }
+
+  /** 歌词提前改了（调整或换了输出），当前行的逐词动画立即按新时间重新对齐 */
+  function realign() {
+    view.setCurrentTime(currentTime(), true);
   }
 
   /** 改歌词来源后重新取这首歌的歌词；结果不是选定的来源时提示原因 */
@@ -1367,6 +1383,15 @@ export function mountLyrics({ root, toggle, bar, player, getMeta, t, notify, onL
       prefs.textAutospace = !prefs.textAutospace;
       view.setEnableTextAutospace(prefs.textAutospace);
       savePrefs(prefs);
+    } else if (action === 'output') {
+      // 菜单保持打开，换输出后可以接着调这个输出的歌词提前
+      const focused = document.activeElement === button;
+      if (prefs.output === value) return;
+      prefs.output = value;
+      savePrefs(prefs);
+      realign();
+      renderMenu();
+      if (focused) menu.querySelector(`[data-action="output"][data-value="${value}"]`)?.focus();
     } else if (action === 'pulse') {
       // 关闭后律动在逐帧循环里自然回落
       closeMenu(true);

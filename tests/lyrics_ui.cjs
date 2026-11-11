@@ -249,16 +249,25 @@ const duetTtml = `<tt xmlns="http://www.w3.org/ns/ttml" xmlns:ttm="http://www.w3
         const larger = await lyricStyle();
         assert(Math.abs(larger.size / base.size - 1.2) < 0.01, `font size scales: ${base.size} -> ${larger.size}`);
         assert.equal(larger.weight, '700');
-        assert.deepEqual(await prefs(), { scale: 1.2, weight: 700, source: 'apple', backdrop: 'amll', pulse: false, textAutospace: true, offset: 0 });
-        // 歌词提前：每档 10 毫秒，保存在浏览器中，调回 0 后恢复
+        assert.deepEqual(await prefs(), { scale: 1.2, weight: 700, source: 'apple', backdrop: 'amll', pulse: false, textAutospace: true, output: 'speaker', offsets: { speaker: 0, bluetooth: 0 } });
+        // 歌词提前：扬声器、蓝牙各记一个值，每档 10 毫秒，保存在浏览器中
+        const lead = () => page.locator('.lyrics-menu-value').nth(2).textContent();
         for (let i = 0; i < 3; i++) await page.locator('[data-action="offsetEarlier"]').click();
-        assert.equal(await page.locator('.lyrics-menu-value').nth(2).textContent(), '+30 ms');
-        assert.equal((await prefs()).offset, 30);
-        for (let i = 0; i < 5; i++) await page.locator('[data-action="offsetLater"]').click();
-        assert.equal(await page.locator('.lyrics-menu-value').nth(2).textContent(), '-20 ms');
-        assert.equal((await prefs()).offset, -20);
+        assert.equal(await lead(), '+30 ms');
+        await page.locator('[data-action="output"][data-value="bluetooth"]').click();
+        assert(await page.locator('.lyrics-menu').isVisible(), 'the menu stays open after choosing an output');
+        assert.equal(await lead(), '0 ms');
+        for (let i = 0; i < 2; i++) await page.locator('[data-action="offsetLater"]').click();
+        assert.equal(await lead(), '-20 ms');
+        assert.deepEqual((await prefs()).offsets, { speaker: 30, bluetooth: -20 });
+        assert.equal((await prefs()).output, 'bluetooth');
+        await page.locator('[data-action="output"][data-value="speaker"]').click();
+        assert.equal(await lead(), '+30 ms');
+        for (let i = 0; i < 3; i++) await page.locator('[data-action="offsetLater"]').click();
+        await page.locator('[data-action="output"][data-value="bluetooth"]').click();
         for (let i = 0; i < 2; i++) await page.locator('[data-action="offsetEarlier"]').click();
-        assert.equal((await prefs()).offset, 0);
+        await page.locator('[data-action="output"][data-value="speaker"]').click();
+        assert.deepEqual((await prefs()).offsets, { speaker: 0, bluetooth: 0 });
         await page.locator(lineSel).filter({ hasText: 'Third line' }).waitFor({ state: 'visible', timeout: 2000 });
         await page.screenshot({ path: `target/ui-lyrics-options-${width}.png` });
         await page.locator('[data-action="weightBolder"]').click();

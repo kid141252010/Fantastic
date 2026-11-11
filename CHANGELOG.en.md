@@ -5,7 +5,7 @@
 ### Added
 - ✨ Optional QQ music source configuration (`--qq-api` / `AM_HOOK_QQ_API` and `--qq-proxy` / `AM_HOOK_QQ_PROXY`), static quality capabilities and lyrics fallbacks.
 - ✨ A "CJK–Latin spacing" lyrics option (on by default) that automatically adjusts spacing between CJK and Latin text.
-- ✨ A "Lyrics Lead" lyrics option that shifts full-screen lyric timing in 10 ms steps (within ±2 s) to compensate for phones playing sound later than the reported position; the setting is remembered.
+- ✨ "Sound Output" (Speaker / Bluetooth) and "Lyrics Lead" lyrics options: shift full-screen lyric timing in 10 ms steps (within ±2 s) to compensate for phones playing sound later than the reported position; Speaker and Bluetooth each remember their own value.
 
 ### Fixes
 - 🐛 Lazily load ICU's cjdict for client-side lyric word segmentation and wrapping when the browser lacks CJK dictionary segmentation; loading failures do not interrupt lyrics.
