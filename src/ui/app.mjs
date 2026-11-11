@@ -53,6 +53,8 @@ const VIEWS = {
   'qq-song': ['/assets/views/qq-song.html', () => import('/assets/views/qq-song.mjs')],
   'qq-artist': ['/assets/views/qq-artist.html', () => import('/assets/views/qq-artist.mjs')],
   'qq-album': ['/assets/views/qq-album.html', () => import('/assets/views/qq-album.mjs')],
+  'qq-playlist': ['/assets/views/qq-playlist.html', () => import('/assets/views/qq-playlist.mjs')],
+  'qq-mv': ['/assets/views/qq-mv.html', () => import('/assets/views/qq-mv.mjs')],
   mv: ['/assets/views/mv.html', () => import('/assets/views/mv.mjs')],
   album: ['/assets/views/album.html', () => import('/assets/views/album.mjs')],
   playlist: ['/assets/views/playlist.html', () => import('/assets/views/playlist.mjs')],
@@ -77,6 +79,8 @@ function route(url) {
   if (/^\/qq-song\/[0-9A-Za-z]{1,32}\/?$/.test(url.pathname)) return 'qq-song';
   if (/^\/qq-artist\/[0-9A-Za-z]{1,32}\/?$/.test(url.pathname)) return 'qq-artist';
   if (/^\/qq-album\/[0-9A-Za-z]{1,32}\/?$/.test(url.pathname)) return 'qq-album';
+  if (/^\/qq-playlist\/[0-9A-Za-z]{1,32}\/?$/.test(url.pathname)) return 'qq-playlist';
+  if (/^\/qq-mv\/[0-9A-Za-z]{1,32}\/?$/.test(url.pathname)) return 'qq-mv';
   // 「新发现」（跟随主地区）
   if (url.pathname === '/new') return 'new';
   // 广播（跟随主地区，与 src/links.rs 的 is_radio_path 相同）
@@ -162,7 +166,6 @@ import('/assets/lyrics/panel.mjs')
       targetId = id;
       target = nowPlayingTarget(player.current);
       resolved = null;
-      favorite.button.hidden = player.current?.source === 'qq';
       favorite.refresh();
     }
     function resolveTarget() {

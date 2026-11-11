@@ -17,6 +17,13 @@ export function mount({ root, url, signal, player, navigate, onLangChange, toast
   let tracks = [];
   let rows = [];
   let error = '';
+  let notesExpanded = false;
+  // 「更多」：添加到歌单、复制本站与 QQ 音乐链接
+  const moreBtn = actions.headerMenu(() => (album ? {
+    target: { kind: 'album', source: 'qq', href: qq.albumPath(albumMid), name: album.name, getTracks: () => playableTracks() },
+    entries: {},
+  } : null));
+  moreBtn.disabled = true;
 
   const el = (tag, props = {}, ...children) => {
     const node = Object.assign(document.createElement(tag), props);
@@ -44,11 +51,25 @@ export function mount({ root, url, signal, player, navigate, onLangChange, toast
     const artist = $('artist');
     artist.classList.remove('skeleton');
     artist.replaceChildren(...artistLinks(album.artists));
-    const meta = [year(album.publishTime), album.subType, album.size ? t('album.songs', { n: album.size }) : ''].filter(Boolean);
+    const meta = [year(album.publishTime), album.language, album.subType, album.size ? t('album.songs', { n: album.size }) : ''].filter(Boolean);
     $('sub').textContent = meta.join(' · ');
     const notes = String(album.description || '').trim();
     $('notes').hidden = !notes;
     $('notes-text').textContent = notes;
+    $('notes').classList.toggle('expanded', notesExpanded);
+    const notesMore = $('notes-more');
+    if (notesMore) {
+      notesMore.textContent = t(notesExpanded ? 'album.less' : 'album.more');
+      notesMore.hidden = true;
+      if (notes) {
+        const raf = globalThis.requestAnimationFrame || ((fn) => setTimeout(fn, 0));
+        raf(() => {
+          const text = $('notes-text');
+          notesMore.hidden = !notesExpanded && (Number(text.scrollHeight) || 0) <= (Number(text.clientHeight) || 0) + 1;
+        });
+      }
+    }
+    moreBtn.disabled = false;
     header({ cover: album.cover, attrs: {}, alt: t('album.coverAlt', { title: album.name }) });
     $('play-all').disabled = $('shuffle').disabled = !queue().length;
   }
@@ -89,6 +110,8 @@ export function mount({ root, url, signal, player, navigate, onLangChange, toast
     if (list.length) player.playQueue(list, 0);
   });
   player.onChange(() => syncTrackRows(rows, player));
+  $('hero').querySelector('.detail-actions').append(moreBtn);
+  $('notes-more')?.addEventListener('click', () => { notesExpanded = !notesExpanded; renderHeader(); });
   onLangChange(render);
   render();
   qq.album(albumMid, signal).then((data) => {

@@ -27,7 +27,7 @@ function detailPage(t, { qualities = defaultQualities, failQualities = false, na
   });
   const root = ids('title', 'subtitle', 'meta', 'badges', 'art', 'radiosity', 'enqueue', 'play-best',
     'variant-list', 'quality-status', 'lyrics', 'lyrics-source', 'lyrics-actions', 'lyrics-preview',
-    'lyrics-qrc', 'lyrics-trans', 'lyrics-roma', 'lyrics-lines', 'alert');
+    'lyrics-qrc', 'lyrics-trans', 'lyrics-roma', 'lyrics-lines', 'alert', 'mv-link', 'info', 'facts', 'intro');
   const played = [], queued = [];
   let paused = false, onPlayerChange;
   const player = { current: null, onChange: (fn) => { onPlayerChange = fn; },

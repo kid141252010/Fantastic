@@ -1,0 +1,12 @@
+.qq-mv-page main { max-width: 1080px; margin: 0 auto; }
+.qq-mv-screen { aspect-ratio: 16 / 9; overflow: hidden; border-radius: 14px; background: #000; }
+.qq-mv-screen video { display: block; width: 100%; height: 100%; background: #000; }
+.qq-mv-info { margin-top: 20px; }
+.qq-mv-title { margin: 0; font-size: 26px; }
+.qq-mv-artist { margin: 6px 0 0; font-size: 17px; }
+.qq-mv-artist a { color: inherit; text-decoration: none; }
+.qq-mv-artist a:hover { text-decoration: underline; }
+.qq-mv-meta { margin: 6px 0 0; color: var(--muted); font-size: 13px; }
+.qq-mv-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 14px; }
+.qq-mv-actions a { text-decoration: none; }
+.qq-mv-desc { margin: 18px 0 0; color: var(--muted); font-size: 14px; line-height: 1.6; white-space: pre-line; }

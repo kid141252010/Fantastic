@@ -1,3 +1,8 @@
+.qq-mv-link { text-decoration: none; }
+.qq-facts { display: grid; grid-template-columns: max-content 1fr; gap: 8px 24px; margin: 14px 0 0; font-size: 14px; }
+.qq-facts dt { color: var(--muted); }
+.qq-facts dd { margin: 0; overflow-wrap: anywhere; }
+.qq-intro { margin: 18px 0 0; color: var(--muted); font-size: 14px; line-height: 1.6; white-space: pre-line; }
 .qq-lyrics-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 14px; }
 .qq-lyrics-download { text-decoration: none; }
 .qq-lyric-lines { margin-top: 18px; }

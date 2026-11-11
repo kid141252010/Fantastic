@@ -24,7 +24,7 @@ const CODEC_NAMES = new Set(['mp3', 'aac', 'flac', 'vorbis', 'opus', 'pcm', 'ape
 let actionsPromise;
 const loadActions = () => (actionsPromise ||= import('./actions.mjs'));
 
-export function mount({ root, url, signal, player, onLangChange, toast }) {
+export function mount({ root, url, signal, player, navigate, onLangChange, toast }) {
   const { t } = window.AmI18n;
   const { formatTime } = window.AmHook;
   const $ = (id) => root.querySelector(`#${id}`);
@@ -67,8 +67,49 @@ export function mount({ root, url, signal, player, onLangChange, toast }) {
     header({ cover: track.artwork, attrs: {}, alt: t('song.coverAlt', { title: track.name }) });
     $('enqueue').disabled = false;
     $('enqueue').textContent = t('qq.addQueue');
+    const mvLink = $('mv-link');
+    if (mvLink) {
+      mvLink.hidden = !track.qq.mv;
+      mvLink.href = track.qq.mv ? qq.mvPath(track.qq.mv) : '';
+      mvLink.textContent = t('qq.watchMv');
+    }
+    libraryControls?.refresh();
     syncPlaying();
   }
+
+  /** 信息：发行时间、流派、语种、唱片公司、曲序与简介（/extra/music/info，取不到时整段隐藏） */
+  function renderInfo() {
+    const section = $('info');
+    if (!section) return;
+    const meta = track?.meta || {};
+    const rows = [
+      ['qq.infoPublished', meta.publishDate],
+      ['qq.infoGenre', meta.genre],
+      ['qq.infoLanguage', meta.language],
+      ['qq.infoCompany', meta.company],
+      ['qq.infoTrack', meta.trackNumber > 0 ? t('qq.infoTrackValue', { disc: meta.disc || 1, n: meta.trackNumber }) : ''],
+    ].filter(([, value]) => value);
+    $('facts').replaceChildren(...rows.flatMap(([key, value]) => [el('dt', { textContent: t(key) }), el('dd', { textContent: String(value) })]));
+    $('facts').hidden = !rows.length;
+    const intro = String(meta.intro || '').trim();
+    $('intro').hidden = !intro;
+    $('intro').textContent = intro;
+    section.hidden = !rows.length && !intro;
+  }
+
+  // 喜爱、添加到歌单与「更多」（资料库、前往专辑 / 艺人、复制链接），与 Apple Music 歌曲页相同
+  let libraryControls = null;
+  const songTarget = () => (track ? { kind: 'song', source: 'qq', href: track.href, name: track.name, track,
+    albumHref: track.albumHref, noPlay: true } : null);
+  loadActions().then(({ createActions }) => {
+    const buttons = $('song-buttons');
+    if (signal.aborted || !buttons) return;
+    const actions = createActions({ signal, player, navigate, toast });
+    const favorite = actions.favoriteButton(songTarget);
+    const more = actions.headerMenu(() => (track ? { target: songTarget(), entries: {} } : null));
+    buttons.append(favorite.button, more);
+    libraryControls = favorite;
+  }).catch(() => { /* Library controls are optional outside the browser. */ });
 
   function playQuality(quality) {
     const row = rows.find((row) => row.quality === quality);
@@ -191,7 +232,7 @@ export function mount({ root, url, signal, player, onLangChange, toast }) {
   }
 
   function render() {
-    renderHeader(); renderQualities(); renderLyrics();
+    renderHeader(); renderInfo(); renderQualities(); renderLyrics();
     $('alert').hidden = !errorKey;
     $('alert').textContent = errorKey ? t(errorKey) : '';
   }
