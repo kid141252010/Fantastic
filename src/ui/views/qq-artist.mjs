@@ -167,7 +167,7 @@ export function mount({ root, url, signal, player, navigate, onLangChange, toast
         const keys = new Set(songs.map((track) => track.key));
         songs.push(...page.songs.filter((track) => !keys.has(track.key)));
         moreSongs = page.more && page.songs.length > 0;
-        renderSongs();
+        return renderSongs;
       }));
     }
     section.replaceChildren(head, ...rows.map(({ row }) => row), ...tail);
@@ -180,13 +180,21 @@ export function mount({ root, url, signal, player, navigate, onLangChange, toast
 
   /** 「加载更多」：分页取下一批（歌曲 / 专辑），请求期间不可再点 */
   function loadMoreButton(kind, load) {
-    const button = el('button', { className: 'btn load-more qq-load-more', type: 'button', textContent: t('search.more'), disabled: loading === kind });
+    // load() 成功后会重新渲染出新的按钮，所以在它之前清掉 loading，新按钮才可以再点
+    const button = el('button', { className: 'btn load-more qq-load-more', type: 'button', textContent: t('search.more') });
     button.addEventListener('click', async () => {
       if (loading) return;
       loading = kind;
       button.disabled = true;
-      try { await load(); } catch (err) { if (!signal.aborted && err.name !== 'AbortError') toast(t('artist.failed', { msg: err.message })); }
-      finally { loading = ''; button.disabled = false; }
+      let fetched;
+      try { fetched = await load(); } catch (err) {
+        loading = '';
+        button.disabled = false;
+        if (!signal.aborted && err.name !== 'AbortError') toast(t('artist.failed', { msg: err.message }));
+        return;
+      }
+      loading = '';
+      fetched?.();
     });
     return button;
   }
@@ -222,7 +230,7 @@ export function mount({ root, url, signal, player, navigate, onLangChange, toast
       const seen = new Set(albums.map((album) => album.mid));
       albums.push(...page.albums.filter((album) => !seen.has(album.mid)));
       moreAlbums = page.more && page.albums.length > 0;
-      renderAlbums();
+      return renderAlbums;
     })] : [];
     $('shelves').replaceChildren(...(albums.length
       ? [el('section', { className: 'shelf-section qq-artist-shelf' }, head, shelf, ...tail)] : []));
@@ -246,7 +254,7 @@ export function mount({ root, url, signal, player, navigate, onLangChange, toast
       const seen = new Set(mvs.map((mv) => mv.vid));
       mvs.push(...page.mvs.filter((mv) => !seen.has(mv.vid)));
       moreMvs = page.more && page.mvs.length > 0;
-      renderMvs();
+      return renderMvs;
     })] : [];
     $('mv-shelf')?.replaceChildren(...(cards.length
       ? [el('section', { className: 'shelf-section qq-artist-shelf' }, head,
