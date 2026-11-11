@@ -15,12 +15,12 @@ const OFFSET_KEY = 'am-hook:lyric-probe-offset';
 const WINDOW = 3000;
 
 function enabled() {
+  const value = new URLSearchParams(location.search).get('lyricprobe');
   try {
-    const value = new URLSearchParams(location.search).get('lyricprobe');
     if (value !== null) localStorage.setItem(KEY, value === '0' ? '0' : '1');
     return localStorage.getItem(KEY) === '1';
   } catch {
-    return false;
+    return value !== null && value !== '0';
   }
 }
 
