@@ -1011,6 +1011,13 @@ export function mountLyrics({ root, toggle, bar, player, getMeta, t, notify, onL
     return button;
   }
 
+  /** 几个单选按钮并排一行、平分宽度（声音输出：扬声器 / 蓝牙） */
+  function segmented(buttons) {
+    const row = menuNode('div', 'lyrics-menu-segmented');
+    row.append(...buttons);
+    return row;
+  }
+
   /** 字号 / 字重一行：名称、减小按钮、当前值、增大按钮；到头时对应按钮置灰 */
   function stepper(label, value, [less, canLess], [more, canMore]) {
     const row = menuNode('div', 'lyrics-menu-stepper');
@@ -1031,7 +1038,7 @@ export function mountLyrics({ root, toggle, bar, player, getMeta, t, notify, onL
 
   /**
    * 菜单分六组：翻译 / 发音（同 music.apple.com：已开启的显示「隐藏…」，否则「显示…」，歌曲没有的一项置灰）、
-   * 字号与字重、声音输出（单选）与这个输出的歌词提前、歌词来源（单选，选定的来源没有这首歌时在下面说明）、背景（单选，以及节拍律动开关；
+   * 字号与字重、声音输出（扬声器 / 蓝牙并排单选）与这个输出的歌词提前、歌词来源（单选，选定的来源没有这首歌时在下面说明）、背景（单选，以及节拍律动开关；
    * 背景不可用或开了「减少动态效果」时开关置灰）、下载 TTML
    */
   function renderMenu() {
@@ -1056,10 +1063,10 @@ export function mountLyrics({ root, toggle, bar, player, getMeta, t, notify, onL
       })),
       separator(),
       menuItem(menuNode('span', '', t('lyrics.output')), 'presentation', 'lyrics-menu-heading'),
-      ...OUTPUTS.map((output) => menuItem(menuButton({
+      menuItem(segmented(OUTPUTS.map((output) => menuButton({
         label: t(output === 'speaker' ? 'lyrics.outputSpeaker' : 'lyrics.outputBluetooth'),
-        icon: prefs.output === output ? 'check' : '', action: 'output', value: output, checked: prefs.output === output,
-      }))),
+        action: 'output', value: output, checked: prefs.output === output,
+      })))),
       menuItem(stepper(t('lyrics.offset'), `${lead > 0 ? '+' : ''}${lead} ms`,
         ['offsetLater', offset > 0], ['offsetEarlier', offset < LYRIC_OFFSETS.length - 1])),
       separator(),
