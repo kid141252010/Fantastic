@@ -56,7 +56,7 @@ const loaded = () => !document.getElementById('title').classList.contains('skele
       await page.close();
     }
 
-    // Switching language refetches the catalog data in the new language
+    // Switching the catalog language refetches the catalog data in the new language
     {
       const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
       let frame;
@@ -64,7 +64,7 @@ const loaded = () => !document.getElementById('title').classList.contains('skele
       frame = await openPage(page, base + playlistPath);
       await frame.waitForFunction(loaded, null, { timeout: 20000 });
       const zhTitle = await frame.locator('#title').textContent();
-      await frame.locator('[data-lang-toggle]').click();
+      await frame.evaluate(() => AmI18n.setAmpLang('cn', 'en-GB'));
       await frame.waitForFunction((before) => document.getElementById('title').textContent !== before, zhTitle, { timeout: 20000 });
       assert.match(await frame.locator('#title').textContent(), /[A-Za-z]/);
       assert.ok(await frame.locator('.pl-track').count() >= 90, 'tracks kept after refetch');

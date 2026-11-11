@@ -91,7 +91,7 @@ const localPage = (kind) => new RegExp(`^/https://music\\.apple\\.com/[a-z]{2}/$
       await page.close();
     }
 
-    // Switching language refetches the catalog data in the new language
+    // Switching the catalog language refetches the catalog data in the new language
     {
       const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
       let frame;
@@ -99,10 +99,11 @@ const localPage = (kind) => new RegExp(`^/https://music\\.apple\\.com/[a-z]{2}/$
       frame = await openPage(page, base + '/' + circularLink);
       await frame.waitForFunction(loaded, null, { timeout: 20000 });
       const zhHeading = await frame.locator('#top-songs-title').textContent();
-      await frame.locator('[data-lang-toggle]').click();
+      await frame.evaluate(() => AmI18n.setAmpLang('cn', 'en-GB'));
       await frame.waitForFunction((before) => document.getElementById('top-songs-title').textContent !== before, zhHeading, { timeout: 20000 });
       assert.match(await frame.locator('#top-songs-title').textContent(), /[A-Za-z]/);
-      assert.match(await frame.locator('#about-title').textContent(), /^About /);
+      await frame.locator('[data-lang-toggle]').click();
+      await frame.waitForFunction(() => /^About /.test(document.getElementById('about-title').textContent), null, { timeout: 20000 });
       await page.close();
     }
 
