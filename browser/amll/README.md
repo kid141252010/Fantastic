@@ -5,9 +5,8 @@ The lyrics view uses [Apple Music-like Lyrics](https://github.com/kid141252010/a
 `DomLyricPlayer` renders the lyrics, and `BackgroundRender` plus the Mesh, Isolation, and
 Titanium renderers draw the selectable backgrounds. `PixiRenderer` is deliberately excluded.
 
-The source is the user's fork, branch `fix/anchor-word-animations`: branch `master` (upstream
-`amll-dev/main` plus unmerged changes for opt-in CJK–Latin text spacing and improved CJK /
-mixed-script line breaking) plus a fix that anchors word animations to the frame timeline.
+The source is the user's fork, branch `master`: upstream `amll-dev/main` plus unmerged
+changes for opt-in CJK–Latin text spacing and improved CJK / mixed-script line breaking.
 
 `scripts/build-amll.cjs` bundles `entry.mjs` with esbuild into `src/ui/lyrics/amll-core.mjs`
 and copies the package stylesheet to `src/ui/lyrics/amll.css`. Its dependencies are bundled too
@@ -15,15 +14,15 @@ and copies the package stylesheet to `src/ui/lyrics/amll.css`. Its dependencies 
 `pixi-stub.mjs` replaces Pixi's imports, so nothing from Pixi ends up in the bundle.
 
 `VERSION` records both the package version and the exact AMLL source revision as
-`<package-version>+git.<short-commit>`, currently `0.6.0+git.1d230ea`. The installed core's
+`<package-version>+git.<short-commit>`, currently `0.6.0+git.f36b5ff`. The installed core's
 `package.json` version must match the part before `+`; the source commit is recorded in the
 generated JavaScript and CSS banners.
 
 To rebuild from the pinned AMLL source:
 
-    git clone --branch fix/anchor-word-animations https://github.com/kid141252010/applemusic-like-lyrics.git
+    git clone --branch master https://github.com/kid141252010/applemusic-like-lyrics.git
     cd applemusic-like-lyrics
-    git checkout 1d230ea92
+    git checkout f36b5ff6c421fb969afda56bd3c7bb169609299d
     rm -rf packages/core/dist
     rm -f packages/core/*.tgz
     pnpm install --filter @applemusic-like-lyrics/core
