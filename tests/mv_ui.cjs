@@ -28,15 +28,16 @@ async function toggleLang(page) {
   const menu = page.locator('#nav-toggle');
   const mobile = await menu.isVisible();
   if (mobile) await menu.click();
-  await page.locator('[data-lang-toggle]').click();
+  await page.locator('[data-picker="uiLang"]').click();
+  await page.locator('#picker .picker-option').filter({ hasText: await page.evaluate(() => AmI18n.lang === 'en' ? '简体中文' : 'English') }).click();
   if (mobile) await page.keyboard.press('Escape');
 }
 (async () => {
   const browser = await chromium.launch({ channel: 'chrome', headless: true });
   try {
     let scenarios = 0;
-    for (const width of [320, 390, 768, 1440]) for (const lang of ['zh', 'en']) {
-      const context = await browser.newContext({ viewport: { width, height: 900 }, colorScheme: lang === 'zh' ? 'light' : 'dark' });
+    for (const width of [320, 390, 768, 1440]) for (const lang of ['zh-Hans', 'en']) {
+      const context = await browser.newContext({ viewport: { width, height: 900 }, colorScheme: lang === 'zh-Hans' ? 'light' : 'dark' });
       await context.addInitScript(lang => localStorage.setItem('am-hook:lang', lang), lang);
       let fail = false;
       await context.route('**/*', route => {

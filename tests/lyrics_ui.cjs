@@ -51,7 +51,7 @@ const duetTtml = `<tt xmlns="http://www.w3.org/ns/ttml" xmlns:ttm="http://www.w3
     for (const width of [390, 1440]) {
       for (const hasLyrics of [true, false]) {
         const context = await browser.newContext({ viewport: { width, height: 844 } });
-        await context.addInitScript(() => localStorage.setItem('am-hook:lang', 'zh'));
+        await context.addInitScript(() => localStorage.setItem('am-hook:lang', 'zh-Hans'));
         const lyricRequests = [];
         const amllRequests = [];
         let amllHasSong = true;
@@ -228,7 +228,7 @@ const duetTtml = `<tt xmlns="http://www.w3.org/ns/ttml" xmlns:ttm="http://www.w3
         await page.locator('.lyrics-menu').waitFor({ state: 'hidden' });
         await page.locator(lineSel).filter({ hasText: 'Tercera línea' }).waitFor({ state: 'visible', timeout: 2000 });
         assert.equal(await page.locator('.credit-names').textContent(), 'Writer A、Writer B');
-        await page.evaluate(() => AmI18n.toggle()); // the overlay covers the page's language button
+        await page.evaluate(() => AmI18n.setLang('en')); // the overlay covers the page's language button
         assert.equal(await page.locator('.credit-names').textContent(), 'Writer A, Writer B');
         assert.equal(await page.locator('.lyrics-close').getAttribute('aria-label'), 'Close lyrics');
 

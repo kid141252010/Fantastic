@@ -53,6 +53,9 @@ export function mountSettings({ picker, scrim, checkStatus }) {
 
   /* ---------- 按钮上的当前值 ---------- */
   async function renderValues() {
+    for (const node of document.querySelectorAll('[data-setting-value="uiLang"]')) {
+      node.textContent = t('lang.button');
+    }
     const cc = AmI18n.storefront;
     const outside = AmI18n.regions.length > 0 && !AmI18n.regions.includes(cc);
     for (const node of document.querySelectorAll('[data-setting-value="storefront"]')) {
@@ -227,6 +230,18 @@ export function mountSettings({ picker, scrim, checkStatus }) {
     body.replaceChildren(...parts);
   }
 
+  function renderUiLang() {
+    title.textContent = t('lang.caption');
+    hint.textContent = '';
+    body.replaceChildren(group(null, [
+      ['zh-Hans', '简体中文'], ['zh-Hant', '繁體中文'], ['en', 'English'],
+    ].map(([code, label]) => option({
+      label,
+      checked: code === AmI18n.lang,
+      onPick: () => { AmI18n.setLang(code); close(true); },
+    }))));
+  }
+
   async function renderAmpLang(seq) {
     const cc = AmI18n.storefront;
     title.textContent = t('settings.ampLang');
@@ -350,6 +365,7 @@ export function mountSettings({ picker, scrim, checkStatus }) {
     if (!open) return;
     const seq = ++renderSeq;
     if (open.kind === 'storefront') renderStorefront();
+    else if (open.kind === 'uiLang') renderUiLang();
     else if (open.kind === 'wrapper') renderWrapper();
     else void renderAmpLang(seq);
   }

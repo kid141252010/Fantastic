@@ -1137,7 +1137,7 @@ export function mountLyrics({ root, toggle, bar, player, getMeta, t, notify, onL
   async function loadLyrics(id) {
     const parseWithUiLanguage = (text) => {
       const language = globalThis.AmI18n?.lang;
-      const prefLang = { zh: 'zh-Hans', 'zh-Hant': 'zh-Hant', en: 'en' }[language];
+      const prefLang = { 'zh-Hans': 'zh-Hans', 'zh-Hant': 'zh-Hant', en: 'en' }[language];
       return prefLang ? parseTTML(text, undefined, prefLang) : parseTTML(text);
     };
     if (trackSource === 'qq') return qqLyrics(id, parseWithUiLanguage);

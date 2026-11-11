@@ -18,7 +18,7 @@ let file = null;
 
 /** Worker 取不到页面的 AmI18n：错误信息按每条消息附带的 lang 选择语言 */
 const MESSAGES = {
-  zh: {
+  'zh-Hans': {
     wasm: '加载 hook.wasm 失败（HTTP {0}）',
     noTemplate: '缺少解密模板',
     template: '解析解密模板失败：{0}',
@@ -40,10 +40,10 @@ const MESSAGES = {
     write: 'Incomplete OPFS write ({0}/{1})',
   },
 };
-let lang = 'zh';
+let lang = 'zh-Hans';
 
 function msg(key, ...args) {
-  return (MESSAGES[lang] || MESSAGES.zh)[key].replace(/\{(\d)\}/g, (_, i) => args[i]);
+  return (MESSAGES[lang] || MESSAGES['zh-Hans'])[key].replace(/\{(\d)\}/g, (_, i) => args[i]);
 }
 
 function loadWasm() {

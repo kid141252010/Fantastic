@@ -19,7 +19,7 @@ const localPage = /^\/https:\/\/music\.apple\.com\/[a-z]{2}\/(song|music-video|a
     await page.addInitScript(() => {
       if (sessionStorage.getItem('am-test')) return;
       sessionStorage.setItem('am-test', '1');
-      localStorage.setItem('am-hook:lang', 'zh');
+      localStorage.setItem('am-hook:lang', 'zh-Hans');
       localStorage.setItem('am-hook:storefront', 'cn');
     });
     await page.goto(base + '/');

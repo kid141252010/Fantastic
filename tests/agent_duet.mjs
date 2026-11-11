@@ -8,14 +8,19 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
 import { duetSides, parseTTML } from '../src/ui/lyrics/ttml.mjs';
+import { Node as UiNode } from './helpers/ui-dom.mjs';
 
 const i18nSource = readFileSync(new URL('../src/ui/i18n.js', import.meta.url), 'utf8');
 function loadI18n(language, saved) {
+  const writes = [];
+  const events = {};
   const context = {
+    writes,
+    events,
     navigator: { language },
-    localStorage: { getItem: () => saved, setItem() {} },
+    localStorage: { getItem: () => saved, setItem: (...args) => writes.push(args) },
     document: { documentElement: {}, addEventListener() {}, querySelectorAll: () => [] },
-    addEventListener() {},
+    addEventListener(type, handler) { events[type] = handler; },
   };
   runInNewContext(i18nSource, context);
   return context;
@@ -30,12 +35,13 @@ for (const language of ['zh-Hant', 'zh-TW', 'zh-HK', 'zh-MO', 'ZH_tw']) {
     assert.equal(AmI18n.t('lang.button'), '繁體中文');
   });
 }
-test('language cycling preserves saved Simplified Chinese preferences', () => {
-  const { AmI18n } = loadI18n('zh-TW', 'zh');
-  assert.equal(AmI18n.lang, 'zh');
+test('direct language selection preserves saved Simplified Chinese preferences', () => {
+  const { AmI18n, writes } = loadI18n('zh-TW', 'zh');
+  assert.equal(AmI18n.lang, 'zh-Hans');
+  assert.deepEqual(writes, [['am-hook:lang', 'zh-Hans']]);
   assert.equal(AmI18n.locale, 'zh-CN');
-  for (const language of ['zh-Hant', 'en', 'zh']) {
-    AmI18n.toggle();
+  for (const language of ['zh-Hant', 'en', 'zh-Hans']) {
+    AmI18n.setLang(language);
     assert.equal(AmI18n.lang, language);
   }
 });
@@ -50,7 +56,68 @@ test('unavailable localStorage does not prevent language detection', () => {
   const context = loadI18n('zh-CN');
   context.localStorage.getItem = () => { throw new Error('blocked'); };
   runInNewContext(i18nSource, context);
-  assert.equal(context.AmI18n.lang, 'zh');
+  assert.equal(context.AmI18n.lang, 'zh-Hans');
+});
+test('legacy storage events migrate to the Simplified Chinese key', () => {
+  const { AmI18n, events, writes } = loadI18n('en');
+  events.storage({ key: 'am-hook:lang', newValue: 'zh' });
+  assert.equal(AmI18n.lang, 'zh-Hans');
+  assert.equal(writes.at(-1)[1], 'zh-Hans');
+});
+test('language picker selects each language without waiting for catalog data', async () => {
+  class PickerNode extends UiNode {
+    focus() {}
+    scrollIntoView() {}
+    closest() { return this.dataset.picker ? this : null; }
+    getBoundingClientRect() { return { width: 300, left: 10, top: 100, bottom: 140 }; }
+    querySelectorAll(selector) {
+      const [base, attribute, value] = selector.match(/^([^[]*)\[([^=]+)="([^"]+)"\]$/)?.slice(1) || [];
+      if (!attribute) return super.querySelectorAll(selector);
+      const nodes = super.querySelectorAll(base || 'span');
+      return nodes.filter(node => node.getAttribute(attribute) === value);
+    }
+  }
+  const context = loadI18n('zh-CN');
+  const root = new PickerNode();
+  const picker = new PickerNode();
+  for (const name of ['title', 'hint', 'body', 'close']) {
+    const node = new PickerNode();
+    node.className = `picker-${name}`;
+    picker.append(node);
+  }
+  const anchor = new PickerNode('button');
+  anchor.dataset.picker = 'uiLang';
+  anchor.isConnected = true;
+  const value = new PickerNode('span');
+  value.setAttribute('data-setting-value', 'uiLang');
+  root.append(picker, value);
+  const clicks = {};
+  context.document = {
+    documentElement: {}, createElement: tag => new PickerNode(tag),
+    querySelectorAll: selector => root.querySelectorAll(selector),
+    addEventListener: (type, fn) => { clicks[type] = fn; },
+  };
+  Object.assign(context, {
+    window: context, Element: PickerNode, innerWidth: 1200, innerHeight: 800,
+    matchMedia: () => ({ matches: false }),
+    AmWrapper: { settings: { url: 'http://localhost' } },
+  });
+  context.AmI18n.storefronts = () => Promise.resolve(null);
+  context.AmI18n.catalogLang = () => Promise.resolve(undefined);
+  runInNewContext(readFileSync(new URL('../src/ui/settings.mjs', import.meta.url), 'utf8')
+    .replace('export function mountSettings', 'function mountSettings'), context);
+  context.mountSettings({ picker, scrim: new PickerNode(), checkStatus() {} });
+  for (const [code, label] of [['zh-Hant', '繁體中文'], ['en', 'English'], ['zh-Hans', '简体中文']]) {
+    clicks.click({ target: anchor });
+    const options = picker.querySelectorAll('.picker-option');
+    assert.deepEqual(options.map(node => node.textContent), ['简体中文', '繁體中文', 'English']);
+    assert.equal(options.filter(node => node.getAttribute('aria-checked') === 'true').length, 1);
+    await options.find(node => node.textContent === label).click();
+    assert.equal(context.AmI18n.lang, code);
+    assert.equal(value.textContent, label);
+    assert.equal(picker.hidden, true);
+    assert.equal(anchor.getAttribute('aria-expanded'), 'false');
+  }
 });
 
 /** 按 parseTTML 的输出构造歌曲：singers 为每行的 ttm:agent；不给 agents 时整个省略 */
