@@ -214,6 +214,8 @@ function saveShown(shown) {
 const PREFS_KEY = 'am-hook:lyrics-prefs';
 export const FONT_SCALES = [0.7, 0.8, 0.9, 1, 1.1, 1.2, 1.35, 1.5];
 export const FONT_WEIGHTS = [300, 400, 500, 600, 700, 800];
+/** 歌词提前多少毫秒（负数为推迟）：手机输出声音比页面读到的播放进度晚，只能手动补偿；每档 10 毫秒，最多 ±2 秒 */
+const LYRIC_OFFSETS = Array.from({ length: 401 }, (_, i) => i * 10 - 2000);
 export const BACKDROPS = ['amll', 'isolation', 'titanium', 'artwork'];
 const BACKDROP_LABELS = {
   amll: 'lyrics.backdropAmll', isolation: 'lyrics.backdropIsolation',
@@ -225,7 +227,12 @@ const AMLL_RENDERERS = { amll: MeshGradientRenderer, isolation: IsolationRendere
  * 每个鼓点都到 1 时整个背景一跳一跳，取 0.4
  */
 const AMLL_PULSE = 0.4;
-const DEFAULT_PREFS = { scale: 1, weight: 600, source: 'apple', backdrop: 'amll', pulse: false, textAutospace: true, translation: false, pronunciation: false };
+const DEFAULT_PREFS = {
+  scale: 1, weight: 600, source: 'apple', backdrop: 'amll', pulse: false, textAutospace: true,
+  translation: false, pronunciation: false, output: 'speaker', offsets: { speaker: 0, bluetooth: 0 },
+};
+/** 扬声器、蓝牙的输出延迟不同，各记一个「歌词提前」 */
+const OUTPUTS = ['speaker', 'bluetooth'];
 function loadPrefs() {
   try {
     const saved = JSON.parse(localStorage.getItem(PREFS_KEY) || '{}');
@@ -238,8 +245,10 @@ function loadPrefs() {
       textAutospace: typeof saved.textAutospace === 'boolean' ? saved.textAutospace : DEFAULT_PREFS.textAutospace,
       translation: typeof saved.translation === 'boolean' ? saved.translation : DEFAULT_PREFS.translation,
       pronunciation: typeof saved.pronunciation === 'boolean' ? saved.pronunciation : DEFAULT_PREFS.pronunciation,
+      output: OUTPUTS.includes(saved.output) ? saved.output : DEFAULT_PREFS.output,
+      offsets: Object.fromEntries(OUTPUTS.map((output) => [output, LYRIC_OFFSETS.includes(saved.offsets?.[output]) ? saved.offsets[output] : 0])),
     };
-  } catch { return { ...DEFAULT_PREFS }; }
+  } catch { return { ...DEFAULT_PREFS, offsets: { ...DEFAULT_PREFS.offsets } }; }
 }
 function savePrefs(prefs) {
   try { localStorage.setItem(PREFS_KEY, JSON.stringify(prefs)); } catch { /* 只在本次会话生效 */ }
@@ -471,10 +480,11 @@ export function mountLyrics({ root, toggle, bar, player, getMeta, t, notify, onL
   let onLeft = null;
 
   // 空间音频（杜比全景声及其双耳渲染、立体声缩混）比歌词的时间轴晚：TTML 里 <audio lyricOffset role="spatial"/> 给出晚多少，
-  // 播放这些版本时歌词跟着推迟
+  // 播放这些版本时歌词跟着推迟；再减去「歌词提前」里手动调的值
   const lyricOffset = () => {
     const group = player.current?.variant?.group_id || '';
-    return /atmos|binaural|downmix/i.test(group) ? song?.audioOffsets?.spatial || 0 : 0;
+    const spatial = /atmos|binaural|downmix/i.test(group) ? song?.audioOffsets?.spatial || 0 : 0;
+    return spatial - prefs.offsets[prefs.output];
   };
   // 没有时间轴的歌词（timing None）每行都是 0：AMLL 把不早于最后一行结束的时间当作歌曲结束、滚到最后，
   // 这里一直给它第一行之前的时间，停在开头。ms 为播放位置，返回歌词时间轴上的时间
@@ -1008,6 +1018,13 @@ export function mountLyrics({ root, toggle, bar, player, getMeta, t, notify, onL
     return button;
   }
 
+  /** 几个单选按钮并排一行、平分宽度（声音输出：扬声器 / 蓝牙） */
+  function segmented(buttons) {
+    const row = menuNode('div', 'lyrics-menu-segmented');
+    row.append(...buttons);
+    return row;
+  }
+
   /** 字号 / 字重一行：名称、减小按钮、当前值、增大按钮；到头时对应按钮置灰 */
   function stepper(label, value, [less, canLess], [more, canMore]) {
     const row = menuNode('div', 'lyrics-menu-stepper');
@@ -1027,13 +1044,15 @@ export function mountLyrics({ root, toggle, bar, player, getMeta, t, notify, onL
   }
 
   /**
-   * 菜单分五组：翻译 / 发音（同 music.apple.com：已开启的显示「隐藏…」，否则「显示…」，歌曲没有的一项置灰）、
-   * 字号与字重、歌词来源（单选，选定的来源没有这首歌时在下面说明）、背景（单选，以及节拍律动开关；
+   * 菜单分六组：翻译 / 发音（同 music.apple.com：已开启的显示「隐藏…」，否则「显示…」，歌曲没有的一项置灰）、
+   * 字号与字重、声音输出（扬声器 / 蓝牙并排单选）与这个输出的歌词提前、歌词来源（单选，选定的来源没有这首歌时在下面说明）、背景（单选，以及节拍律动开关；
    * 背景不可用或开了「减少动态效果」时开关置灰）、下载 TTML
    */
   function renderMenu() {
     const scale = FONT_SCALES.indexOf(prefs.scale);
     const weight = FONT_WEIGHTS.indexOf(prefs.weight);
+    const lead = prefs.offsets[prefs.output];
+    const offset = LYRIC_OFFSETS.indexOf(lead);
     const note = sourceNote();
     const separator = () => menuItem(null, 'separator', 'lyrics-menu-separator');
     const items = [
@@ -1049,6 +1068,14 @@ export function mountLyrics({ root, toggle, bar, player, getMeta, t, notify, onL
       menuItem(menuButton({
         label: t('lyrics.textAutospace'), icon: prefs.textAutospace ? 'check' : '', action: 'textAutospace', toggled: prefs.textAutospace,
       })),
+      separator(),
+      menuItem(menuNode('span', '', t('lyrics.output')), 'presentation', 'lyrics-menu-heading'),
+      menuItem(segmented(OUTPUTS.map((output) => menuButton({
+        label: t(output === 'speaker' ? 'lyrics.outputSpeaker' : 'lyrics.outputBluetooth'),
+        action: 'output', value: output, checked: prefs.output === output,
+      })))),
+      menuItem(stepper(t('lyrics.offset'), `${lead > 0 ? '+' : ''}${lead} ms`,
+        ['offsetLater', offset > 0], ['offsetEarlier', offset < LYRIC_OFFSETS.length - 1])),
       separator(),
       menuItem(menuNode('span', '', t('lyrics.source')), 'presentation', 'lyrics-menu-heading'),
       ...(trackSource === 'qq' ? [] : ['apple', 'amll']).map((source) => menuItem(menuButton({
@@ -1076,15 +1103,24 @@ export function mountLyrics({ root, toggle, bar, player, getMeta, t, notify, onL
   const STEPS = {
     fontSmaller: ['scale', FONT_SCALES, -1], fontLarger: ['scale', FONT_SCALES, 1],
     weightLighter: ['weight', FONT_WEIGHTS, -1], weightBolder: ['weight', FONT_WEIGHTS, 1],
+    offsetLater: ['offset', LYRIC_OFFSETS, -1], offsetEarlier: ['offset', LYRIC_OFFSETS, 1],
   };
   function step(action) {
     const [key, values, delta] = STEPS[action];
-    const index = Math.max(0, Math.min(values.length - 1, values.indexOf(prefs[key]) + delta));
-    if (values[index] === prefs[key]) return;
-    prefs[key] = values[index];
+    const target = key === 'offset' ? prefs.offsets : prefs;
+    const field = key === 'offset' ? prefs.output : key;
+    const index = Math.max(0, Math.min(values.length - 1, values.indexOf(target[field]) + delta));
+    if (values[index] === target[field]) return;
+    target[field] = values[index];
     savePrefs(prefs);
+    if (key === 'offset') return realign();
     applyPrefs();
     relayout();
+  }
+
+  /** 歌词提前改了（调整或换了输出），当前行的逐词动画立即按新时间重新对齐 */
+  function realign() {
+    view.setCurrentTime(currentTime(), true);
   }
 
   /** 改歌词来源后重新取这首歌的歌词；结果不是选定的来源时提示原因 */
@@ -1363,6 +1399,15 @@ export function mountLyrics({ root, toggle, bar, player, getMeta, t, notify, onL
       prefs.textAutospace = !prefs.textAutospace;
       view.setEnableTextAutospace(prefs.textAutospace);
       savePrefs(prefs);
+    } else if (action === 'output') {
+      // 菜单保持打开，换输出后可以接着调这个输出的歌词提前
+      const focused = document.activeElement === button;
+      if (prefs.output === value) return;
+      prefs.output = value;
+      savePrefs(prefs);
+      realign();
+      renderMenu();
+      if (focused) menu.querySelector(`[data-action="output"][data-value="${value}"]`)?.focus();
     } else if (action === 'pulse') {
       // 关闭后律动在逐帧循环里自然回落
       closeMenu(true);
