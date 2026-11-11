@@ -10,13 +10,18 @@ QQ 是可选服务端音源。设置 `--qq-api` / `FANTASTIC_QQ_API` 后启用�
 
 | 方法 | 路径 | 行为 |
 | --- | --- | --- |
-| GET | `/qq/search?q=&limit=&offset=` | 搜索；`limit` 归一化到 1–100，`offset` 最大 10000 |
-| GET | `/qq/song/:mid` | 白名单歌曲 DTO |
+| GET | `/qq/search?q=&type=&limit=&offset=` | 搜索；`type` 为 `song`（默认）/ `album` / `artist` / `playlist` / `mv`，`limit` 归一化到 1–100，`offset` 最大 10000 |
+| GET | `/qq/suggest?q=` | 输入联想：歌曲、艺人、专辑 |
+| GET | `/qq/song/:mid` | 白名单歌曲 DTO（含 `mv`），附 `meta`：发行时间、流派、语种、唱片公司、简介、碟号与曲序 |
 | GET | `/qq/song/:mid/play?quality=` | 校验档位后返回 302；浏览器直连 QQ CDN |
 | GET | `/qq/song/:mid/download?quality=` | 服务端流式转发，限制 CDN 主机和响应头 |
 | GET | `/qq/song/:mid/qualities[?basic=1]` | 读取 info 尺寸；完整模式才探测未映射档位 |
 | GET | `/qq/song/:mid/lyrics` | AMLL → TTML → QRC → LRC 候选 |
 | GET | `/qq/song/:mid/lyrics/raw?kind=qrc\|qrctrans\|qrcroma` | 返回同一缓存中的原始 QRC 字段 |
+| GET | `/qq/artist/:mid/songs\|albums\|mvs?limit=&offset=` | 艺人歌曲、专辑、MV 分页（返回 `more`） |
+| GET | `/qq/playlist/:id?limit=&offset=` | 歌单歌曲分页；头部信息取不到时 `playlist` 为 null，歌曲照常返回 |
+| GET | `/qq/mv/:vid` | MV 详情 |
+| GET | `/qq/mv/:vid/play` | 302 到 QQ CDN 的 MP4（HTTP 升级为 HTTPS，只接受 QQ 主机） |
 | GET | `/qq/cover/:albumMid` | 只请求固定 QQ 封面模板，禁止重定向 |
 | GET | `/qq/capabilities` | 返回 [`qq-quality-validation.md`](qq-quality-validation.md) 定义的静态 20 档表 |
 

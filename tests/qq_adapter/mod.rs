@@ -250,7 +250,7 @@ fn dto_is_a_whitelist_with_direct_cover_and_vip_flags() {
     );
     assert_eq!(dto["vip"], true);
     assert_eq!(dto["ttml"], true);
-    assert_eq!(dto.as_object().unwrap().len(), 9);
+    assert_eq!(dto.as_object().unwrap().len(), 10);
     let text = dto.to_string();
     for secret in [
         "file_url",
@@ -1283,10 +1283,11 @@ async fn configured_routes_validate_mid_and_serve_only_cached_dtos() {
     let qq = state.qq.as_ref().unwrap();
     let song = qq.song_dto(&raw_song()).unwrap();
     qq.searches.put(
-        "30:0:test".into(),
+        "song:30:0:test".into(),
         SearchResult {
-            songs: vec![song],
+            songs: Some(vec![song]),
             total: 1,
+            ..Default::default()
         },
     );
     qq.lyrics.put(
@@ -1422,6 +1423,7 @@ async fn download_upstream_non_2xx_returns_502() {
             cover: String::new(),
             vip: false,
             ttml: false,
+            mv: String::new(),
         },
     );
     qq.audio.put(
@@ -1454,7 +1456,7 @@ async fn download_success_transfers_headers_and_body() {
     let mid = "downloadok";
     qq.songs.put(mid.into(), Song {
         id: mid.into(), name: "Song".into(), artists: vec!["Artist".into()], album: "Album".into(),
-        album_mid: "album".into(), duration_ms: 1000, cover: String::new(), vip: false, ttml: false,
+        album_mid: "album".into(), duration_ms: 1000, cover: String::new(), vip: false, ttml: false, mv: String::new(),
     });
     qq.audio.put(Quality::Hq.cache_key(mid), Audio {
         url: reqwest::Url::parse(&format!("{base}/track.mp3")).unwrap(), size_bytes: Some(4), codec_hint: None,
@@ -1484,7 +1486,7 @@ async fn download_redirect_from_upstream_is_hidden_as_502() {
     let mid = "downloadredirect";
     qq.songs.put(mid.into(), Song {
         id: mid.into(), name: "Song".into(), artists: vec!["Artist".into()], album: "Album".into(),
-        album_mid: "album".into(), duration_ms: 1000, cover: String::new(), vip: false, ttml: false,
+        album_mid: "album".into(), duration_ms: 1000, cover: String::new(), vip: false, ttml: false, mv: String::new(),
     });
     qq.audio.put(Quality::Hq.cache_key(mid), Audio {
         url: reqwest::Url::parse(&format!("{base}/track.mp3")).unwrap(), size_bytes: Some(4), codec_hint: None,
