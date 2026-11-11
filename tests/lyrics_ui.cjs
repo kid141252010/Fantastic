@@ -245,11 +245,20 @@ const duetTtml = `<tt xmlns="http://www.w3.org/ns/ttml" xmlns:ttm="http://www.w3
         await page.locator('[data-action="fontLarger"]').click();
         await page.locator('[data-action="weightBolder"]').click();
         assert(await page.locator('.lyrics-menu').isVisible(), 'the menu stays open while adjusting');
-        assert.deepEqual(await page.locator('.lyrics-menu-value').allTextContents(), ['120%', 'Bold']);
+        assert.deepEqual(await page.locator('.lyrics-menu-value').allTextContents(), ['120%', 'Bold', '0 ms']);
         const larger = await lyricStyle();
         assert(Math.abs(larger.size / base.size - 1.2) < 0.01, `font size scales: ${base.size} -> ${larger.size}`);
         assert.equal(larger.weight, '700');
-        assert.deepEqual(await prefs(), { scale: 1.2, weight: 700, source: 'apple', backdrop: 'amll', pulse: false, textAutospace: true });
+        assert.deepEqual(await prefs(), { scale: 1.2, weight: 700, source: 'apple', backdrop: 'amll', pulse: false, textAutospace: true, offset: 0 });
+        // 歌词提前：每档 10 毫秒，保存在浏览器中，调回 0 后恢复
+        for (let i = 0; i < 3; i++) await page.locator('[data-action="offsetEarlier"]').click();
+        assert.equal(await page.locator('.lyrics-menu-value').nth(2).textContent(), '+30 ms');
+        assert.equal((await prefs()).offset, 30);
+        for (let i = 0; i < 5; i++) await page.locator('[data-action="offsetLater"]').click();
+        assert.equal(await page.locator('.lyrics-menu-value').nth(2).textContent(), '-20 ms');
+        assert.equal((await prefs()).offset, -20);
+        for (let i = 0; i < 2; i++) await page.locator('[data-action="offsetEarlier"]').click();
+        assert.equal((await prefs()).offset, 0);
         await page.locator(lineSel).filter({ hasText: 'Third line' }).waitFor({ state: 'visible', timeout: 2000 });
         await page.screenshot({ path: `target/ui-lyrics-options-${width}.png` });
         await page.locator('[data-action="weightBolder"]').click();

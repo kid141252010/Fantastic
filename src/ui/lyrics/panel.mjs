@@ -212,6 +212,8 @@ function saveShown(shown) {
 const PREFS_KEY = 'am-hook:lyrics-prefs';
 export const FONT_SCALES = [0.7, 0.8, 0.9, 1, 1.1, 1.2, 1.35, 1.5];
 export const FONT_WEIGHTS = [300, 400, 500, 600, 700, 800];
+/** 歌词提前多少毫秒（负数为推迟）：手机输出声音比页面读到的播放进度晚，只能手动补偿；每档 10 毫秒，最多 ±2 秒 */
+const LYRIC_OFFSETS = Array.from({ length: 401 }, (_, i) => i * 10 - 2000);
 export const BACKDROPS = ['amll', 'isolation', 'titanium', 'artwork'];
 const BACKDROP_LABELS = {
   amll: 'lyrics.backdropAmll', isolation: 'lyrics.backdropIsolation',
@@ -223,7 +225,7 @@ const AMLL_RENDERERS = { amll: MeshGradientRenderer, isolation: IsolationRendere
  * 每个鼓点都到 1 时整个背景一跳一跳，取 0.4
  */
 const AMLL_PULSE = 0.4;
-const DEFAULT_PREFS = { scale: 1, weight: 600, source: 'apple', backdrop: 'amll', pulse: false, textAutospace: true };
+const DEFAULT_PREFS = { scale: 1, weight: 600, source: 'apple', backdrop: 'amll', pulse: false, textAutospace: true, offset: 0 };
 function loadPrefs() {
   try {
     const saved = JSON.parse(localStorage.getItem(PREFS_KEY) || '{}');
@@ -234,6 +236,7 @@ function loadPrefs() {
       backdrop: saved.backdrop === 'classic' ? 'artwork' : BACKDROPS.includes(saved.backdrop) ? saved.backdrop : DEFAULT_PREFS.backdrop,
       pulse: typeof saved.pulse === 'boolean' ? saved.pulse : DEFAULT_PREFS.pulse,
       textAutospace: typeof saved.textAutospace === 'boolean' ? saved.textAutospace : DEFAULT_PREFS.textAutospace,
+      offset: LYRIC_OFFSETS.includes(saved.offset) ? saved.offset : DEFAULT_PREFS.offset,
     };
   } catch { return { ...DEFAULT_PREFS }; }
 }
@@ -467,10 +470,11 @@ export function mountLyrics({ root, toggle, bar, player, getMeta, t, notify, onL
   let onLeft = null;
 
   // 空间音频（杜比全景声及其双耳渲染、立体声缩混）比歌词的时间轴晚：TTML 里 <audio lyricOffset role="spatial"/> 给出晚多少，
-  // 播放这些版本时歌词跟着推迟
+  // 播放这些版本时歌词跟着推迟；再减去「歌词提前」里手动调的值
   const lyricOffset = () => {
     const group = player.current?.variant?.group_id || '';
-    return /atmos|binaural|downmix/i.test(group) ? song?.audioOffsets?.spatial || 0 : 0;
+    const spatial = /atmos|binaural|downmix/i.test(group) ? song?.audioOffsets?.spatial || 0 : 0;
+    return spatial - prefs.offset;
   };
   // 没有时间轴的歌词（timing None）每行都是 0：AMLL 把不早于最后一行结束的时间当作歌曲结束、滚到最后，
   // 这里一直给它第一行之前的时间，停在开头。ms 为播放位置，返回歌词时间轴上的时间
@@ -1030,6 +1034,7 @@ export function mountLyrics({ root, toggle, bar, player, getMeta, t, notify, onL
   function renderMenu() {
     const scale = FONT_SCALES.indexOf(prefs.scale);
     const weight = FONT_WEIGHTS.indexOf(prefs.weight);
+    const offset = LYRIC_OFFSETS.indexOf(prefs.offset);
     const note = sourceNote();
     const separator = () => menuItem(null, 'separator', 'lyrics-menu-separator');
     const items = [
@@ -1042,6 +1047,8 @@ export function mountLyrics({ root, toggle, bar, player, getMeta, t, notify, onL
         ['fontSmaller', scale > 0], ['fontLarger', scale < FONT_SCALES.length - 1])),
       menuItem(stepper(t('lyrics.fontWeight'), t(`lyrics.weight${prefs.weight}`),
         ['weightLighter', weight > 0], ['weightBolder', weight < FONT_WEIGHTS.length - 1])),
+      menuItem(stepper(t('lyrics.offset'), `${prefs.offset > 0 ? '+' : ''}${prefs.offset} ms`,
+        ['offsetLater', offset > 0], ['offsetEarlier', offset < LYRIC_OFFSETS.length - 1])),
       menuItem(menuButton({
         label: t('lyrics.textAutospace'), icon: prefs.textAutospace ? 'check' : '', action: 'textAutospace', toggled: prefs.textAutospace,
       })),
@@ -1072,6 +1079,7 @@ export function mountLyrics({ root, toggle, bar, player, getMeta, t, notify, onL
   const STEPS = {
     fontSmaller: ['scale', FONT_SCALES, -1], fontLarger: ['scale', FONT_SCALES, 1],
     weightLighter: ['weight', FONT_WEIGHTS, -1], weightBolder: ['weight', FONT_WEIGHTS, 1],
+    offsetLater: ['offset', LYRIC_OFFSETS, -1], offsetEarlier: ['offset', LYRIC_OFFSETS, 1],
   };
   function step(action) {
     const [key, values, delta] = STEPS[action];
@@ -1079,6 +1087,8 @@ export function mountLyrics({ root, toggle, bar, player, getMeta, t, notify, onL
     if (values[index] === prefs[key]) return;
     prefs[key] = values[index];
     savePrefs(prefs);
+    // 偏移改了，当前行的逐词动画立即按新时间重新对齐
+    if (key === 'offset') return view.setCurrentTime(currentTime(), true);
     applyPrefs();
     relayout();
   }
