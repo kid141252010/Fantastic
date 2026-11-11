@@ -73,6 +73,8 @@ export function createProbe(root, view, player) {
   for (const type of ['pointerdown', 'pointerup', 'click', 'touchstart', 'touchend', 'wheel']) box.addEventListener(type, stop);
 
   const setOffset = (value) => {
+    // 正在走的逐词动画只在开始时校准一次，这里按新的时间让当前行重新开始
+    view.setCurrentTime(view.getCurrentTime() + value - offset, true);
     offset = value;
     try { localStorage.setItem(OFFSET_KEY, String(offset)); } catch { /* 只在本次会话生效 */ }
     render(true);
