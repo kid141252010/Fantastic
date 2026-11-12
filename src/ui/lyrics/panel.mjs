@@ -2,11 +2,12 @@
  * 在线播放的全屏播放界面：用 AMLL（Apple Music-like Lyrics，见 browser/amll）显示歌词，接到 AmPlayer 上。
  *
  *   歌词     AmWrapper.lyrics()：wrapper-lite /lyrics 的 TTML 原文（经服务端 GET /lyrics/<adamId>?language=<曲库语言>，或浏览器直连本地 wrapper-lite），
- *            language 取歌曲所在地区的曲库语言（AmI18n.catalogLang：选定的语言，否则为地区默认语言），取不到时不传；首次打开歌词界面时才请求并缓存；没有歌词时隐藏按钮。
+ *            language 取设置里的歌词语言，没填时中文界面（简繁都）取 zh-Hans-CN（wrapper-lite 不受地区语言列表限制；繁中标签实测拿不到翻译），否则取歌曲所在地区的曲库语言
+ *            （AmI18n.catalogLang：选定的语言，否则为地区默认语言），取不到时不传；首次打开歌词界面时才请求并缓存；没有歌词时隐藏按钮。
  *            歌词来源选 AMLL 歌词库时先由浏览器直接请求 AMLL TTML DB（https://amll.dev/reference/http-api/overview，允许跨域）的
  *            GET /v1/lyrics/get?appleMusicId=<adamId>，未收录或请求失败时仍用上面的 Apple Music 歌词。
  *            ttml.mjs 解析 TTML，toAmllLines() 转成 AMLL 的 LyricLine（对唱侧由 ttml.mjs 的 duetSides() 照 AMLL 逐行决定）
- *   选项     「歌词选项」按钮弹出的菜单：翻译 / 发音、字号、字重、歌词来源、背景、下载当前显示的 TTML；除翻译 / 发音外都保存在浏览器中
+ *   选项     「歌词选项」按钮弹出的菜单：翻译 / 发音、字号、字重、歌词来源、背景、下载当前显示的 TTML；都保存在浏览器中
  *   时间     每帧把 player.transport().currentTime 交给 DomLyricPlayer，点击歌词行跳转并继续播放
  *   背景     歌曲页已有的专辑封面，交给 AMLL 的 MeshGradientRenderer、IsolationRenderer 或 TitaniumRenderer 生成背景（所选渲染器不可用时依次回退 Mesh，再回退封面动态背景），
  *            或在菜单里选封面动态背景：移植自 YouLyPlus 的 ArtworkBackdrop（backdrop.mjs，三份旋转、环绕的封面经模糊与调色，WebGL 1 即可）；
@@ -23,6 +24,7 @@
  */
 import { parseTTML, duetSides } from './ttml.mjs';
 import { lyrics as qqLyrics } from '../sources/qq.mjs';
+import { prefs as appPrefs } from '../prefs.mjs';
 import {
   DomLyricPlayer,
   setWordSegmenter,
@@ -225,7 +227,10 @@ const AMLL_RENDERERS = { amll: MeshGradientRenderer, isolation: IsolationRendere
  * 每个鼓点都到 1 时整个背景一跳一跳，取 0.4
  */
 const AMLL_PULSE = 0.4;
-const DEFAULT_PREFS = { scale: 1, weight: 600, source: 'apple', backdrop: 'amll', pulse: false, textAutospace: true, output: 'speaker', offsets: { speaker: 0, bluetooth: 0 } };
+const DEFAULT_PREFS = {
+  scale: 1, weight: 600, source: 'apple', backdrop: 'amll', pulse: false, textAutospace: true,
+  translation: false, pronunciation: false, output: 'speaker', offsets: { speaker: 0, bluetooth: 0 },
+};
 /** 扬声器、蓝牙的输出延迟不同，各记一个「歌词提前」 */
 const OUTPUTS = ['speaker', 'bluetooth'];
 function loadPrefs() {
@@ -238,6 +243,8 @@ function loadPrefs() {
       backdrop: saved.backdrop === 'classic' ? 'artwork' : BACKDROPS.includes(saved.backdrop) ? saved.backdrop : DEFAULT_PREFS.backdrop,
       pulse: typeof saved.pulse === 'boolean' ? saved.pulse : DEFAULT_PREFS.pulse,
       textAutospace: typeof saved.textAutospace === 'boolean' ? saved.textAutospace : DEFAULT_PREFS.textAutospace,
+      translation: typeof saved.translation === 'boolean' ? saved.translation : DEFAULT_PREFS.translation,
+      pronunciation: typeof saved.pronunciation === 'boolean' ? saved.pronunciation : DEFAULT_PREFS.pronunciation,
       output: OUTPUTS.includes(saved.output) ? saved.output : DEFAULT_PREFS.output,
       offsets: Object.fromEntries(OUTPUTS.map((output) => [output, LYRIC_OFFSETS.includes(saved.offsets?.[output]) ? saved.offsets[output] : 0])),
     };
@@ -325,9 +332,9 @@ export function mountLyrics({ root, toggle, bar, player, getMeta, t, notify, onL
       root.style.setProperty(`--spring-${name}-dur`, `${duration}s`);
     }
   }
-  const shown = { translation: false, pronunciation: false };
   const has = { translation: false, pronunciation: false };
   const prefs = loadPrefs();
+  const shown = { translation: prefs.translation, pronunciation: prefs.pronunciation };
   const view = new DomLyricPlayer();
   view.setEnableTextAutospace(prefs.textAutospace);
   panel.append(view.getElement());
@@ -1197,7 +1204,8 @@ export function mountLyrics({ root, toggle, bar, player, getMeta, t, notify, onL
       }
     }
     const apple = await remember('apple', async () => {
-      const language = await (async () => globalThis.AmI18n?.catalogLang(getMeta()?.country || country))().catch(() => undefined);
+      const language = appPrefs.get('download').lyricsLang || (globalThis.AmI18n?.lang?.startsWith('zh') ? 'zh-Hans-CN'
+        : await (async () => globalThis.AmI18n?.catalogLang(getMeta()?.country || country))().catch(() => undefined));
       const text = await globalThis.AmWrapper.lyrics(id, language);
       return text == null ? null : { text, source: 'apple' };
     });
@@ -1378,7 +1386,8 @@ export function mountLyrics({ root, toggle, bar, player, getMeta, t, notify, onL
     if (!button || button.disabled) return;
     const { option, action, value } = button.dataset;
     if (option) {
-      shown[option] = !shown[option];
+      prefs[option] = shown[option] = !shown[option];
+      savePrefs(prefs);
       closeMenu(true);
       syncOptions();
       setLines();
