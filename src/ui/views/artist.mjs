@@ -131,7 +131,7 @@ export function mount({ root, url, signal, player, navigate, onLangChange, toast
   function formatDate(iso) {
     const date = new Date(/^\d{4}-\d{2}-\d{2}$/.test(iso || '') ? `${iso}T00:00:00` : iso);
     return Number.isNaN(date.getTime()) ? ''
-      : new Intl.DateTimeFormat(AmI18n.lang === 'zh' ? 'zh-CN' : 'en-US', { dateStyle: 'long' }).format(date);
+      : new Intl.DateTimeFormat(AmI18n.locale, { dateStyle: 'long' }).format(date);
   }
 
   const explicitBadge = () => el('span', { className: 'explicit', textContent: 'E', title: t('search.explicit') });
@@ -367,7 +367,7 @@ export function mount({ root, url, signal, player, navigate, onLangChange, toast
     const facts = [];
     if (a.origin) facts.push([t(a.isGroup ? 'artist.origin' : 'artist.hometown'), a.origin]);
     if (a.bornOrFormed) facts.push([t(a.isGroup ? 'artist.formed' : 'artist.born'), a.bornOrFormed]);
-    if ((a.genreNames || []).length) facts.push([t('artist.genre'), a.genreNames.join(AmI18n.lang === 'zh' ? '、' : ', ')]);
+    if ((a.genreNames || []).length) facts.push([t('artist.genre'), a.genreNames.join(AmI18n.lang.startsWith('zh') ? '、' : ', ')]);
     $('about').hidden = !bio && !facts.length;
     $('about-title').textContent = t('artist.about', { name: a.name });
     $('bio').hidden = !bio;

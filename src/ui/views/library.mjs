@@ -40,7 +40,7 @@ function el(tag, props = {}, ...children) {
   return node;
 }
 
-const collator = () => new Intl.Collator(AmI18n.lang === 'zh' ? 'zh-CN' : 'en', { numeric: true, sensitivity: 'base' });
+const collator = () => new Intl.Collator(AmI18n.locale, { numeric: true, sensitivity: 'base' });
 
 /* ---------- 由资料库条目归纳出专辑与艺人（与 Apple Music 相同，添加单曲后其专辑、艺人也出现在资料库中） ---------- */
 /** 专辑：专辑条目与歌曲 / MV 所属的专辑合并；{ id, name, artist, artistHref, href, artwork, country, addedAt, tracks } */
@@ -438,7 +438,7 @@ export function mount({ root, url, signal, player, navigate, toast, onLangChange
     const minutes = Math.round(visibleSongs.reduce((sum, track) => sum + (track.duration || 0), 0) / 60000);
     const length = minutes >= 60 ? t('album.hours', { h: Math.floor(minutes / 60), m: minutes % 60 }) : t('album.minutes', { n: minutes });
     return el('div', {}, songList(visibleSongs),
-      el('div', { className: 'album-footer' }, el('p', { textContent: [t('album.songs', { n: visibleSongs.length }), length].join(AmI18n.lang === 'zh' ? '，' : ', ') })));
+      el('div', { className: 'album-footer' }, el('p', { textContent: [t('album.songs', { n: visibleSongs.length }), length].join(AmI18n.lang.startsWith('zh') ? '，' : ', ') })));
   }
 
   /** 艺人：宽屏左侧为列表、右侧为选中艺人；手机上先列表，点进后为该艺人（地址带名称，可以返回） */

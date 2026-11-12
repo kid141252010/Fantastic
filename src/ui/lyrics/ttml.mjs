@@ -43,8 +43,8 @@ function languageScore(language, prefLang) {
   if (language === preferred) return 1000;
   const preferredParts = preferred.split('-').filter(Boolean);
   const primary = preferredParts[0];
-  const preferredScript = primary === 'zh' ? 'hans' : '';
-  const preferredRegion = primary === 'zh' ? 'cn' : primary === 'en' ? 'us' : '';
+  const preferredScript = preferredParts.find(part => /^[a-z]{4}$/.test(part)) || (primary === 'zh' ? 'hans' : '');
+  const preferredRegion = primary === 'zh' ? (preferredScript === 'hant' ? 'tw' : 'cn') : primary === 'en' ? 'us' : '';
   const parts = language.split('-').filter(Boolean);
   if (parts[0] !== primary) return 0;
   const script = parts.find(part => /^[a-z]{4}$/.test(part));
@@ -108,6 +108,16 @@ export function parseTTML(xml, Parser = globalThis.DOMParser, prefLang) {
   }));
   const amllMeta = key => children(head, 'meta').filter(meta => meta.getAttribute('key') === key).map(meta => meta.getAttribute('value'));
   const translation = localization(metadata, 'translations', 'translation', prefLang);
+  const chineseScript = language => {
+    const [primary, ...parts] = normalizeLanguage(language).split('-');
+    if (primary !== 'zh') return undefined;
+    return parts.find(part => /^[a-z]{4}$/.test(part)) || parts.map(part => ({
+      cn: 'hans', sg: 'hans', tw: 'hant', hk: 'hant', mo: 'hant',
+    })[part]).find(Boolean);
+  };
+  const preferredScript = chineseScript(prefLang);
+  const replacementScript = chineseScript(translation.language);
+  const skipReplacement = translation.type === 'replacement' && preferredScript && replacementScript && preferredScript !== replacementScript;
   const pronunciation = localization(metadata, 'transliterations', 'transliteration', prefLang);
   // How much later each audio version plays than the lyric timing, e.g. <audio lyricOffset="0.929" role="spatial"/>
   // (Atmos and its binaural / downmixed renditions); ms, keyed by role
@@ -124,8 +134,8 @@ export function parseTTML(xml, Parser = globalThis.DOMParser, prefLang) {
       const key = attribute(line, APPLE, 'key', `${sectionIndex}:${lineIndex}`);
       const pr = pronunciation.entries.get(key);
       // A replacement (e.g. zh-Hans-CN for a zh-Hant original) supersedes the lyrics, keeping its own word timing
-      const replacement = translation.type === 'replacement' ? translation.entries.get(key) : null;
-      const tr = replacement ? null : translation.entries.get(key);
+      const replacement = translation.type === 'replacement' && !skipReplacement ? translation.entries.get(key) : null;
+      const tr = replacement || skipReplacement ? null : translation.entries.get(key);
       const bgNode = children(line, 'span').find(isBackground);
       const background = readVoice(bgNode, children(tr, 'span').find(isBackground), children(pr, 'span').find(isBackground), prefLang);
       const main = readVoice(line, tr, pr, prefLang);

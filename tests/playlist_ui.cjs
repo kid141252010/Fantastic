@@ -23,7 +23,7 @@ const loaded = () => !document.getElementById('title').classList.contains('skele
       let frame;
       const errors = [];
       page.on('pageerror', (error) => errors.push(error.message));
-      await page.addInitScript((lang) => localStorage.setItem('am-hook:lang', lang), scheme === 'light' ? 'zh' : 'en');
+      await page.addInitScript((lang) => localStorage.setItem('am-hook:lang', lang), scheme === 'light' ? 'zh-Hans' : 'en');
       frame = await openPage(page, base + playlistPath);
       await frame.waitForFunction(loaded, null, { timeout: 20000 });
 
@@ -60,7 +60,7 @@ const loaded = () => !document.getElementById('title').classList.contains('skele
     {
       const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
       let frame;
-      await page.addInitScript(() => localStorage.setItem('am-hook:lang', 'zh'));
+      await page.addInitScript(() => localStorage.setItem('am-hook:lang', 'zh-Hans'));
       frame = await openPage(page, base + playlistPath);
       await frame.waitForFunction(loaded, null, { timeout: 20000 });
       const zhTitle = await frame.locator('#title').textContent();

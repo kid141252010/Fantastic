@@ -44,7 +44,7 @@ function clock(seconds) {
 
 function dateTime(date, seconds = false) {
   if (!date) return '';
-  return new Intl.DateTimeFormat(AmI18n.lang === 'zh' ? 'zh-CN' : 'en-US', { dateStyle: 'medium', timeStyle: seconds ? 'medium' : 'short' }).format(date);
+  return new Intl.DateTimeFormat(AmI18n.locale, { dateStyle: 'medium', timeStyle: seconds ? 'medium' : 'short' }).format(date);
 }
 
 function size(bytes) {

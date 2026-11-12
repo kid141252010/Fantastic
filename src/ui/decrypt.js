@@ -33,7 +33,7 @@
     return global.AmI18n ? global.AmI18n.t(key, vars) : key;
   }
 
-  const currentLang = () => (global.AmI18n ? global.AmI18n.lang : 'zh');
+  const currentLang = () => (global.AmI18n ? global.AmI18n.lang : 'zh-Hans');
 
   /* ---------- Worker RPC ---------- */
 

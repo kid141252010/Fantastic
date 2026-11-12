@@ -547,7 +547,7 @@ export function mount({ root, url, signal, player, navigate, onLangChange, toast
 
   /** 时间段（同一天只写一次日期） */
   function timeRange(start, end) {
-    const fmt = new Intl.DateTimeFormat(AmI18n.lang === 'zh' ? 'zh-CN' : 'en-US', { timeStyle: 'short' });
+    const fmt = new Intl.DateTimeFormat(AmI18n.locale, { timeStyle: 'short' });
     const s = new Date(start), e = new Date(end);
     return Number.isNaN(s.getTime()) || Number.isNaN(e.getTime()) ? '' : `${fmt.format(s)}–${fmt.format(e)}`;
   }

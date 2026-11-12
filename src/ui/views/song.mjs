@@ -499,7 +499,7 @@ export function mount({ root, url, signal, player, navigate, onLangChange, toast
     if (a.releaseDate) {
       const date = new Date(`${a.releaseDate}T00:00:00`);
       facts.push([t('song.released'), Number.isNaN(date.getTime()) ? a.releaseDate
-        : new Intl.DateTimeFormat(AmI18n.lang === 'zh' ? 'zh-CN' : 'en-US', { dateStyle: 'long' }).format(date)]);
+        : new Intl.DateTimeFormat(AmI18n.locale, { dateStyle: 'long' }).format(date)]);
     }
     if (a.durationInMillis) facts.push([t('song.duration'), formatTime(a.durationInMillis / 1000)]);
     if (a.trackNumber) facts.push([t('song.track'), t('song.trackNo', { disc: a.discNumber || 1, n: a.trackNumber })]);

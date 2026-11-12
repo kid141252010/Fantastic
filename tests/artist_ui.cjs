@@ -26,7 +26,7 @@ const localPage = (kind) => new RegExp(`^/https://music\\.apple\\.com/[a-z]{2}/$
       let frame;
       const errors = [];
       page.on('pageerror', (error) => errors.push(error.message));
-      await page.addInitScript((lang) => localStorage.setItem('am-hook:lang', lang), scheme === 'light' ? 'zh' : 'en');
+      await page.addInitScript((lang) => localStorage.setItem('am-hook:lang', lang), scheme === 'light' ? 'zh-Hans' : 'en');
       frame = await openPage(page, base + '/' + circularLink);
       await frame.waitForFunction(loaded, null, { timeout: 20000 });
 
@@ -95,14 +95,15 @@ const localPage = (kind) => new RegExp(`^/https://music\\.apple\\.com/[a-z]{2}/$
     {
       const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
       let frame;
-      await page.addInitScript(() => localStorage.setItem('am-hook:lang', 'zh'));
+      await page.addInitScript(() => localStorage.setItem('am-hook:lang', 'zh-Hans'));
       frame = await openPage(page, base + '/' + circularLink);
       await frame.waitForFunction(loaded, null, { timeout: 20000 });
       const zhHeading = await frame.locator('#top-songs-title').textContent();
       await frame.evaluate(() => AmI18n.setAmpLang('cn', 'en-GB'));
       await frame.waitForFunction((before) => document.getElementById('top-songs-title').textContent !== before, zhHeading, { timeout: 20000 });
       assert.match(await frame.locator('#top-songs-title').textContent(), /[A-Za-z]/);
-      await frame.locator('[data-lang-toggle]').click();
+      await frame.locator('[data-picker="uiLang"]').click();
+      await frame.locator('#picker .picker-option').filter({ hasText: 'English' }).click();
       await frame.waitForFunction(() => /^About /.test(document.getElementById('about-title').textContent), null, { timeout: 20000 });
       await page.close();
     }

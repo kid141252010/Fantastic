@@ -1170,16 +1170,17 @@ export function mountLyrics({ root, toggle, bar, player, getMeta, t, notify, onL
     if (focusButton) translationButton.focus({ preventScroll: true });
   }
 
+  const parseWithUiLanguage = (text) => {
+    const language = globalThis.AmI18n?.lang;
+    const prefLang = { 'zh-Hans': 'zh-Hans', 'zh-Hant': 'zh-Hant', en: 'en' }[language];
+    return prefLang ? parseTTML(text, undefined, prefLang) : parseTTML(text);
+  };
+
   /**
    * 按歌词来源取一首歌的歌词：{ song, text, source, authors, amllStatus }，没有歌词时只有 amllStatus。
    * 选了 AMLL 歌词库时先查它，未收录、请求失败或解析不了时记下原因，改用 Apple Music 歌词。
    */
   async function loadLyrics(id) {
-    const parseWithUiLanguage = (text) => {
-      const language = globalThis.AmI18n?.lang;
-      const prefLang = language === 'zh' || language === 'en' ? language : undefined;
-      return prefLang ? parseTTML(text, undefined, prefLang) : parseTTML(text);
-    };
     if (trackSource === 'qq') return qqLyrics(id, parseWithUiLanguage);
     // 这首歌各来源的结果记在 sources 里，来回切换来源时不重复请求；AMLL 歌词库未收录时不记，下次选择时重新查
     const cache = sources;
@@ -1211,6 +1212,21 @@ export function mountLyrics({ root, toggle, bar, player, getMeta, t, notify, onL
     return { ...parse(apple), amllStatus: status };
   }
 
+  function renderSong() {
+    view.getElement().lang = song.language;
+    const voices = song.lines.flatMap((line) => [line, line.background]);
+    has.translation = voices.some((voice) => voice.translation);
+    has.pronunciation = voices.some((voice) => voice.pronunciation || voice.pronunciationTokens.length);
+    syncOptions();
+    if (lyricsVisible) {
+      setLines();
+      view.setCurrentTime(currentTime(), true);
+      view.resetScroll();
+    } else {
+      view.setLyricLines([]);
+    }
+  }
+
   /** 首次打开时获取歌词（改歌词来源后重新获取）；加载中的重复点击被忽略，失败后可重试 */
   function fetchLyrics() {
     if (!request) {
@@ -1235,20 +1251,7 @@ export function mountLyrics({ root, toggle, bar, player, getMeta, t, notify, onL
           lyricsSource = result.source;
           amllStatus = result.amllStatus;
           amllAuthors = result.source === 'amll' ? (result.authors.length ? result.authors : song.authors) : [];
-          view.getElement().lang = song.language;
-          const voices = song.lines.flatMap((line) => [line, line.background]);
-          has.translation = voices.some((voice) => voice.translation);
-          has.pronunciation = voices.some((voice) => voice.pronunciation || voice.pronunciationTokens.length);
-          syncOptions();
-          // 展开界面里正在等这首歌的歌词时直接排版
-          if (lyricsVisible) {
-            setLines();
-            view.setCurrentTime(currentTime(), true);
-            view.resetScroll();
-          } else {
-            // 改歌词来源时可能已有上一来源的歌词行，清掉后再次显示时按新歌词排版（见 applyVisibility）
-            view.setLyricLines([]);
-          }
+          renderSong();
         })
         .catch((error) => {
           if (stale()) return;
@@ -1480,6 +1483,10 @@ export function mountLyrics({ root, toggle, bar, player, getMeta, t, notify, onL
     if (!menu.hidden) closeMenu(true); else hide();
   });
   onLangChange(() => {
+    if (song && lyricsText) {
+      song = parseWithUiLanguage(lyricsText);
+      renderSong();
+    }
     renderCredits();
     if (!menu.hidden) renderMenu();
     if (open) renderHeader();

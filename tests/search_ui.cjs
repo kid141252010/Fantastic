@@ -100,7 +100,7 @@ const shots = process.env.SEARCH_UI_SHOTS;
     // Mobile: no horizontal scroll
     const mobile = await browser.newPage({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
     let mobileFrame;
-    await mobile.addInitScript(() => localStorage.setItem('am-hook:lang', 'zh'));
+    await mobile.addInitScript(() => localStorage.setItem('am-hook:lang', 'zh-Hans'));
     mobileFrame = await openPage(mobile, base + '/?q=' + encodeURIComponent('taylor swift'));
     await mobileFrame.locator('.song-row').first().waitFor({ timeout: 15000 });
     assert.ok(await mobileFrame.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'no horizontal scroll on mobile');

@@ -140,7 +140,7 @@ export function mount({ root, url, signal, player, navigate, onLangChange, toast
   function formatDate(iso) {
     const date = new Date(iso);
     return Number.isNaN(date.getTime()) ? ''
-      : new Intl.DateTimeFormat(AmI18n.lang === 'zh' ? 'zh-CN' : 'en-US', { dateStyle: 'long' }).format(date);
+      : new Intl.DateTimeFormat(AmI18n.locale, { dateStyle: 'long' }).format(date);
   }
 
   const explicitBadge = () => el('span', { className: 'explicit', textContent: 'E', title: t('search.explicit') });
@@ -271,7 +271,7 @@ export function mount({ root, url, signal, player, navigate, onLangChange, toast
     const minutes = Math.round(tracks.reduce((sum, track) => sum + (track.attributes.durationInMillis || 0), 0) / 60000);
     const length = minutes >= 60 ? t('album.hours', { h: Math.floor(minutes / 60), m: minutes % 60 }) : t('album.minutes', { n: minutes });
     const line = [songCount && t('album.songs', { n: songCount }), videoCount && t('album.videos', { n: videoCount }), minutes && length]
-      .filter(Boolean).join(AmI18n.lang === 'zh' ? '，' : ', ');
+      .filter(Boolean).join(AmI18n.lang.startsWith('zh') ? '，' : ', ');
     $('footer').replaceChildren(...(line ? [el('p', { textContent: line })] : []));
     $('footer').hidden = !line;
   }

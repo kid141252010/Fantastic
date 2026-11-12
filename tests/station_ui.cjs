@@ -57,14 +57,15 @@ async function toggleLang(page) {
   const menu = page.locator('#nav-toggle');
   const mobile = await menu.isVisible();
   if (mobile) await menu.click();
-  await page.locator('[data-lang-toggle]').click();
+  await page.locator('[data-picker="uiLang"]').click();
+  await page.locator('#picker .picker-option').filter({ hasText: await page.evaluate(() => AmI18n.lang === 'en' ? '简体中文' : 'English') }).click();
   if (mobile) await page.keyboard.press('Escape');
 }
 
 (async () => {
   const browser = await chromium.launch({ channel: 'chrome', headless: true });
   try {
-    for (const width of [390, 1440]) for (const lang of ['zh', 'en']) {
+    for (const width of [390, 1440]) for (const lang of ['zh-Hans', 'en']) {
       const context = await browser.newContext({ viewport: { width, height: 900 } });
       await context.addInitScript((l) => {
         if (sessionStorage.getItem('am-test')) return;
@@ -117,7 +118,7 @@ async function toggleLang(page) {
       const errors = [];
       page.on('pageerror', (e) => errors.push(e.message));
       const fits = async (where) => assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `overflow ${where} ${width}/${lang}`);
-      const zh = lang === 'zh';
+      const zh = lang === 'zh-Hans';
 
       // The nav entry sits between Top Charts and Settings
       await page.goto('http://am.test/');
