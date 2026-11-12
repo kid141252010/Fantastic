@@ -20,7 +20,7 @@ const CHEVRON ='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strok
 const displayNames = new Map();
 /** 按界面语言显示的地区 / 语言名（Intl.DisplayNames），取不到时用 fallback */
 function displayName(type, code, fallback) {
-  const locale = AmI18n.lang === 'zh' ? 'zh-CN' : 'en';
+  const locale = AmI18n.locale;
   const key = `${locale}:${type}`;
   try {
     if (!displayNames.has(key)) displayNames.set(key, new Intl.DisplayNames([locale], { type, fallback: 'none' }));
@@ -53,6 +53,9 @@ export function mountSettings({ picker, scrim, checkStatus }) {
 
   /* ---------- 按钮上的当前值 ---------- */
   async function renderValues() {
+    for (const node of document.querySelectorAll('[data-setting-value="uiLang"]')) {
+      node.textContent = t('lang.button');
+    }
     const cc = AmI18n.storefront;
     const outside = AmI18n.regions.length > 0 && !AmI18n.regions.includes(cc);
     for (const node of document.querySelectorAll('[data-setting-value="storefront"]')) {
@@ -157,7 +160,7 @@ export function mountSettings({ picker, scrim, checkStatus }) {
       .filter((cc) => !regions.has(cc))
       .map((cc) => ({ cc, name: regionName(cc, map) }))
       .filter(({ cc, name }) => !filter || cc.includes(filter) || name.toLowerCase().includes(filter) || String(map[cc].name).toLowerCase().includes(filter))
-      .sort((a, b) => a.name.localeCompare(b.name, AmI18n.lang === 'zh' ? 'zh-CN' : 'en'));
+      .sort((a, b) => a.name.localeCompare(b.name, AmI18n.locale));
     return items.length ? group(null, items.map(({ cc }) => storefrontOption(cc, { star: true }))) : state(t('settings.noMatch'));
   }
 
@@ -225,6 +228,18 @@ export function mountSettings({ picker, scrim, checkStatus }) {
       }
     }
     body.replaceChildren(...parts);
+  }
+
+  function renderUiLang() {
+    title.textContent = t('lang.caption');
+    hint.textContent = '';
+    body.replaceChildren(group(null, [
+      ['zh-Hans', '简体中文'], ['zh-Hant', '繁體中文'], ['en', 'English'],
+    ].map(([code, label]) => option({
+      label,
+      checked: code === AmI18n.lang,
+      onPick: () => { AmI18n.setLang(code); close(true); },
+    }))));
   }
 
   async function renderAmpLang(seq) {
@@ -350,6 +365,7 @@ export function mountSettings({ picker, scrim, checkStatus }) {
     if (!open) return;
     const seq = ++renderSeq;
     if (open.kind === 'storefront') renderStorefront();
+    else if (open.kind === 'uiLang') renderUiLang();
     else if (open.kind === 'wrapper') renderWrapper();
     else void renderAmpLang(seq);
   }

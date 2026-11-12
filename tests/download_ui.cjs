@@ -71,7 +71,7 @@ async function newPage(browser, settings, init) {
   const errors = [];
   page.on('pageerror', (error) => errors.push(error.message));
   await page.addInitScript(([s, extra]) => {
-    localStorage.setItem('am-hook:lang', 'zh');
+    localStorage.setItem('am-hook:lang', 'zh-Hans');
     if (s) localStorage.setItem('am-hook:settings', JSON.stringify({ download: s }));
     if (extra) window.showDirectoryPicker = async () => (await navigator.storage.getDirectory()).getDirectoryHandle('picked', { create: true });
   }, [settings, !!init]);

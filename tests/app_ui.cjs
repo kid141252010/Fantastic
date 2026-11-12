@@ -45,7 +45,7 @@ const playing = () => { const p = window.AmApp.player; return !!p.current && !p.
     const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
     const errors = [];
     page.on('pageerror', (error) => errors.push(error.message));
-    await page.addInitScript(() => localStorage.setItem('am-hook:lang', 'zh'));
+    await page.addInitScript(() => localStorage.setItem('am-hook:lang', 'zh-Hans'));
     const frame = await openPage(page, base + albumPath);
     await frame.waitForFunction(() => !document.getElementById('title').classList.contains('skeleton'), null, { timeout: 20000 });
     let s = await state(page);
@@ -102,7 +102,8 @@ const playing = () => { const p = window.AmApp.player; return !!p.current && !p.
     // Song page: switching language updates the player bar; playing a single song ends the queue
     await frame.locator('.track:not(.video) .track-title').nth(2).click();
     await frame.locator('#variant-list .variant').first().waitFor({ timeout: 30000 });
-    await frame.locator('[data-lang-toggle]').click();
+    await frame.locator('[data-picker="uiLang"]').click();
+      await frame.locator('#picker .picker-option').filter({ hasText: 'English' }).click();
     await page.waitForFunction(() => /Play|Pause/.test(document.querySelector('#player .player-toggle').getAttribute('aria-label')), null, { timeout: 5000 });
     await frame.locator('#play-best').click();
     await page.waitForFunction(() => { const p = window.AmApp.player; return !p.queue && !p.transport().paused && p.current.id.includes(':'); }, null, { timeout: 60000 });

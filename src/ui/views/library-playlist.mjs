@@ -44,7 +44,7 @@ export function mount({ root, url, signal, player, navigate, toast, onLangChange
   const songs = () => (current() ? current().tracks.filter((track) => track.kind === 'song') : []);
 
   function formatDate(ms) {
-    return new Intl.DateTimeFormat(AmI18n.lang === 'zh' ? 'zh-CN' : 'en-US', { dateStyle: 'long' }).format(new Date(ms));
+    return new Intl.DateTimeFormat(AmI18n.locale, { dateStyle: 'long' }).format(new Date(ms));
   }
 
   /* ---------- 头部 ---------- */
@@ -119,7 +119,7 @@ export function mount({ root, url, signal, player, navigate, toast, onLangChange
     const songCount = list.tracks.filter((track) => track.kind === 'song').length;
     const videoCount = list.tracks.length - songCount;
     const line = [songCount && t('album.songs', { n: songCount }), videoCount && t('album.videos', { n: videoCount }), minutes && length]
-      .filter(Boolean).join(AmI18n.lang === 'zh' ? '，' : ', ');
+      .filter(Boolean).join(AmI18n.lang.startsWith('zh') ? '，' : ', ');
     $('footer').replaceChildren(...(line ? [el('p', { textContent: line })] : []));
     $('footer').hidden = !line;
   }

@@ -87,7 +87,7 @@ export function mount({ root, url, signal, player, navigate, onLangChange, toast
     const born = $('born');
     const birthday = artist?.birthday ? new Date(Number(artist.birthday)) : null;
     const bornText = birthday && !Number.isNaN(birthday.getTime())
-      ? t('qq.birthday', { date: birthday.toLocaleDateString(AmI18n.lang === 'zh' ? 'zh-CN' : 'en', { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'Asia/Shanghai' }) }) : '';
+      ? t('qq.birthday', { date: birthday.toLocaleDateString(AmI18n.locale, { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'Asia/Shanghai' }) }) : '';
     if (born) { born.hidden = !bornText; born.textContent = bornText; }
     block.hidden = !bio && !bornText;
     $('bio-text').textContent = bio;

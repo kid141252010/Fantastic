@@ -7,7 +7,7 @@ export const bodyClass = 'qq-mv-body';
 export const styles = ['/assets/views/qq-mv.css'];
 
 export function mount({ root, url, signal, player, navigate, onLangChange, toast }) {
-  const { t, lang } = window.AmI18n;
+  const { t } = window.AmI18n;
   const $ = (id) => root.querySelector(`#${id}`);
   const vid = url.pathname.match(/^\/qq-mv\/([0-9A-Za-z]{1,32})\/?$/)?.[1];
   const actions = createActions({ signal, player, navigate, toast });
@@ -42,7 +42,7 @@ export function mount({ root, url, signal, player, navigate, onLangChange, toast
     $('meta').textContent = [
       mv.publishDate,
       minutes,
-      mv.playCount ? t('qq.playCount', { n: Number(mv.playCount).toLocaleString(lang === 'zh' ? 'zh-CN' : 'en') }) : '',
+      mv.playCount ? t('qq.playCount', { n: Number(mv.playCount).toLocaleString(window.AmI18n.locale) }) : '',
     ].filter(Boolean).join(' · ');
     const desc = String(mv.description || '').trim();
     $('desc').hidden = !desc || desc === `${(mv.artists || []).map((a) => a.name).join(' / ')} - ${mv.name}`;

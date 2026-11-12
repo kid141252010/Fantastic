@@ -74,7 +74,7 @@ function notesOf(a) {
 function formatRange(start, end) {
   const s = new Date(start), e = new Date(end);
   if (Number.isNaN(s.getTime())) return '';
-  const locale = AmI18n.lang === 'zh' ? 'zh-CN' : 'en-US';
+  const locale = AmI18n.locale;
   const day = new Intl.DateTimeFormat(locale, { dateStyle: 'medium' }).format(s);
   const time = new Intl.DateTimeFormat(locale, { timeStyle: 'short' });
   return Number.isNaN(e.getTime()) ? `${day} ${time.format(s)}` : `${day} ${time.format(s)}–${time.format(e)}`;

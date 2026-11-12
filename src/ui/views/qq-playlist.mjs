@@ -10,7 +10,7 @@ export const bodyClass = 'album-page qq-album-page';
 export const styles = ['/assets/views/qq-album.css'];
 
 export function mount({ root, url, signal, player, navigate, onLangChange, toast }) {
-  const { t, lang } = window.AmI18n;
+  const { t } = window.AmI18n;
   const $ = (id) => root.querySelector(`#${id}`);
   const id = url.pathname.match(/^\/qq-playlist\/([0-9A-Za-z]{1,32})\/?$/)?.[1];
   const actions = createActions({ signal, player, navigate, toast });
@@ -47,7 +47,7 @@ export function mount({ root, url, signal, player, navigate, onLangChange, toast
     const count = info?.trackCount || tracks.length;
     $('sub').textContent = [
       count ? t('album.songs', { n: count }) : '',
-      updated && !Number.isNaN(updated.getTime()) ? t('qq.updated', { date: updated.toLocaleDateString(lang === 'zh' ? 'zh-CN' : 'en') }) : '',
+      updated && !Number.isNaN(updated.getTime()) ? t('qq.updated', { date: updated.toLocaleDateString(window.AmI18n.locale) }) : '',
     ].filter(Boolean).join(' · ');
     const notes = String(info?.description || '').trim();
     $('notes').hidden = !notes;

@@ -19,7 +19,7 @@ const albumPath = '/https://music.apple.com/cn/album/justice-triple-chucks-delux
       let frame;
       const errors = [];
       page.on('pageerror', (error) => errors.push(error.message));
-      await page.addInitScript((lang) => localStorage.setItem('am-hook:lang', lang), scheme === 'light' ? 'zh' : 'en');
+      await page.addInitScript((lang) => localStorage.setItem('am-hook:lang', lang), scheme === 'light' ? 'zh-Hans' : 'en');
       frame = await openPage(page, base + albumPath);
       await frame.waitForFunction(() => !document.getElementById('title').classList.contains('skeleton'), null, { timeout: 20000 });
 

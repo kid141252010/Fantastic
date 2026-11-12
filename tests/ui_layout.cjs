@@ -26,7 +26,8 @@ async function toggleLang(page) {
     await menu.click();
     assert.equal(await menu.getAttribute('aria-expanded'), 'true', 'menu button expands the navigation');
   }
-  await page.locator('[data-lang-toggle]').click();
+  await page.locator('[data-picker="uiLang"]').click();
+  await page.locator('#picker .picker-option').filter({ hasText: await page.evaluate(() => AmI18n.lang === 'en' ? '简体中文' : 'English') }).click();
   if (mobile) {
     await page.keyboard.press('Escape');
     assert.equal(await menu.getAttribute('aria-expanded'), 'false', 'Escape collapses the navigation');
@@ -56,8 +57,8 @@ async function checkNav(page, width) {
   let scenarios = 0;
   try {
     for (const width of [320, 390, 768, 1440]) {
-      for (const lang of ['zh', 'en']) {
-        const context = await browser.newContext({ viewport: { width, height: 844 }, colorScheme: lang === 'zh' ? 'light' : 'dark' });
+      for (const lang of ['zh-Hans', 'en']) {
+        const context = await browser.newContext({ viewport: { width, height: 844 }, colorScheme: lang === 'zh-Hans' ? 'light' : 'dark' });
         await context.addInitScript(lang => localStorage.setItem('am-hook:lang', lang), lang);
         await context.route('**/*', async route => {
           const url = new URL(route.request().url());
@@ -89,7 +90,7 @@ async function checkNav(page, width) {
         };
         await page.goto('http://am.test/');
         await fits('home');
-        if (width === 1440 && lang === 'zh') await page.screenshot({ path: 'target/ui-home.png', fullPage: true });
+        if (width === 1440 && lang === 'zh-Hans') await page.screenshot({ path: 'target/ui-home.png', fullPage: true });
         await page.locator('#form button').click();
         assert.equal(await page.locator('#input').getAttribute('aria-invalid'), 'true');
         // 首页只识别 Apple Music 链接，其余输入按关键词搜索

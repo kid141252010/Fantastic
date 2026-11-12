@@ -320,7 +320,7 @@ function navTree(parentId, collator) {
 }
 
 function renderNavPlaylists() {
-  const collator = new Intl.Collator(AmI18n.lang === 'zh' ? 'zh-CN' : 'en', { numeric: true, sensitivity: 'base' });
+  const collator = new Intl.Collator(AmI18n.locale, { numeric: true, sensitivity: 'base' });
   // 删除的文件夹不再记着展开
   for (const id of expandedFolders) if (!library.folder(id)) expandedFolders.delete(id);
   navPlaylists.replaceChildren(...navTree('', collator));
@@ -405,7 +405,7 @@ const statusList = statusBox.querySelector('.wrapper-status-regions');
 const statusRegionNames = new Map();
 /** 按界面语言显示的地区名（Intl.DisplayNames），取不到时为地区代码 */
 function statusRegionName(cc) {
-  const locale = AmI18n.lang === 'zh' ? 'zh-CN' : 'en';
+  const locale = AmI18n.locale;
   try {
     if (!statusRegionNames.has(locale)) statusRegionNames.set(locale, new Intl.DisplayNames([locale], { type: 'region', fallback: 'none' }));
     return statusRegionNames.get(locale).of(cc.toUpperCase()) || cc.toUpperCase();
