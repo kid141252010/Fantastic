@@ -15,7 +15,7 @@
 - 🐛 For AAC / ALAC, full-screen lyrics wait while a tap-to-seek or buffering is in progress instead of running ahead of the sound.
 - 🐛 Full-screen lyric word animations are realigned to playback once they start, fixing whole lines of word animations lagging behind the sound on phones when the line-change frame is slow.
 - 🐛 The translation / pronunciation switches in the lyrics options are saved in the browser and no longer reset on reload.
-- 🐛 Online lyrics use the "Lyrics language" setting; when empty, a Chinese UI requests Simplified Chinese translations, which were missing when the account storefront (e.g. ca) does not list Chinese.
+- 🐛 Online lyrics use the "Lyrics language" setting; when empty, a Chinese UI (Simplified or Traditional) requests Simplified Chinese translations, which were missing when the account storefront (e.g. ca) does not list Chinese.
 
 ## v0.6.8 (2026-11-09)
 

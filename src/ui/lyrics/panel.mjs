@@ -2,7 +2,7 @@
  * 在线播放的全屏播放界面：用 AMLL（Apple Music-like Lyrics，见 browser/amll）显示歌词，接到 AmPlayer 上。
  *
  *   歌词     AmWrapper.lyrics()：wrapper-lite /lyrics 的 TTML 原文（经服务端 GET /lyrics/<adamId>?language=<曲库语言>，或浏览器直连本地 wrapper-lite），
- *            language 取设置里的歌词语言，没填时中文界面取 zh-Hans-CN（wrapper-lite 不受地区语言列表限制），否则取歌曲所在地区的曲库语言
+ *            language 取设置里的歌词语言，没填时中文界面（简繁都）取 zh-Hans-CN（wrapper-lite 不受地区语言列表限制；繁中标签实测拿不到翻译），否则取歌曲所在地区的曲库语言
  *            （AmI18n.catalogLang：选定的语言，否则为地区默认语言），取不到时不传；首次打开歌词界面时才请求并缓存；没有歌词时隐藏按钮。
  *            歌词来源选 AMLL 歌词库时先由浏览器直接请求 AMLL TTML DB（https://amll.dev/reference/http-api/overview，允许跨域）的
  *            GET /v1/lyrics/get?appleMusicId=<adamId>，未收录或请求失败时仍用上面的 Apple Music 歌词。
@@ -1204,7 +1204,7 @@ export function mountLyrics({ root, toggle, bar, player, getMeta, t, notify, onL
       }
     }
     const apple = await remember('apple', async () => {
-      const language = appPrefs.get('download').lyricsLang || (globalThis.AmI18n?.lang === 'zh' ? 'zh-Hans-CN'
+      const language = appPrefs.get('download').lyricsLang || (globalThis.AmI18n?.lang?.startsWith('zh') ? 'zh-Hans-CN'
         : await (async () => globalThis.AmI18n?.catalogLang(getMeta()?.country || country))().catch(() => undefined));
       const text = await globalThis.AmWrapper.lyrics(id, language);
       return text == null ? null : { text, source: 'apple' };
