@@ -2153,6 +2153,257 @@ async fn lyrics_sources_select_expected_ttl_and_all_failures_are_not_cached() {
     task.abort();
 }
 
+fn cached_lyrics_for_revalidation() -> Lyrics {
+    Lyrics {
+        candidates: vec![
+            Lyric { source: "amll", text: "first".into() },
+            Lyric { source: "ttml", text: "second".into() },
+        ],
+        raw_qrc: true,
+        raw_trans: true,
+        raw_roma: true,
+        raw: RawLyrics {
+            qrc: Some("qrc".into()),
+            trans: Some("translation".into()),
+            roma: Some("romanization".into()),
+        },
+    }
+}
+
+#[test]
+fn lyrics_revalidation_replaces_changed_content() {
+    let cached = cached_lyrics_for_revalidation();
+    for raw_only in [false, true] {
+        let mut fresh = cached.clone();
+        if raw_only {
+            fresh.raw.qrc = Some("updated raw qrc".into());
+        } else {
+            fresh.candidates[0].text = "updated lyrics".into();
+        }
+        let ttl = Duration::from_secs(604800);
+        let (replacement, replacement_ttl) =
+            lyrics_revalidation_update(&cached, Ok((fresh.clone(), ttl))).unwrap();
+        assert!(replacement == fresh);
+        assert_eq!(replacement_ttl, ttl);
+    }
+}
+
+#[test]
+fn lyrics_revalidation_keeps_identical_content() {
+    let cached = cached_lyrics_for_revalidation();
+    assert!(lyrics_revalidation_update(
+        &cached, Ok((cached.clone(), Duration::from_secs(604800)))
+    ).is_none());
+}
+
+#[test]
+fn lyrics_revalidation_keeps_cached_content_on_failure() {
+    let cached = cached_lyrics_for_revalidation();
+    assert!(lyrics_revalidation_update(&cached, Err(unavailable())).is_none());
+}
+
+#[test]
+fn lyrics_revalidation_keeps_richer_cached_content_on_partial_fetch() {
+    let cached = cached_lyrics_for_revalidation();
+    let mut fresh = cached.clone();
+    fresh.candidates.retain(|candidate| candidate.source == "amll");
+    fresh.raw_qrc = false;
+    fresh.raw_trans = false;
+    fresh.raw_roma = false;
+    fresh.raw = RawLyrics::default();
+    assert!(lyrics_revalidation_update(&cached, Ok((fresh, Duration::from_secs(300)))).is_none());
+}
+
+#[test]
+fn lyrics_equality_includes_candidate_order_flags_and_unserialized_raw_fields() {
+    let cached = cached_lyrics_for_revalidation();
+    assert!(cached == cached.clone());
+    for field in 0..9 {
+        let mut fresh = cached.clone();
+        match field {
+            0 => fresh.candidates[0].source = "qrc",
+            1 => fresh.candidates[0].text.push_str(" changed"),
+            2 => fresh.candidates.swap(0, 1),
+            3 => fresh.raw_qrc = false,
+            4 => fresh.raw_trans = false,
+            5 => fresh.raw_roma = false,
+            6 => fresh.raw.qrc = Some("new qrc".into()),
+            7 => fresh.raw.trans = None,
+            8 => fresh.raw.roma = Some("new romanization".into()),
+            _ => unreachable!(),
+        }
+        assert!(fresh != cached, "field {field} must participate in equality");
+    }
+}
+
+async fn wait_for_lyrics_revalidation(qq: &Qq, mid: &str) {
+    tokio::time::timeout(Duration::from_secs(5), async {
+        while qq.lyrics_revalidating.lock().unwrap().contains(mid) {
+            tokio::time::sleep(Duration::from_millis(1)).await;
+        }
+    })
+    .await
+    .expect("lyrics revalidation did not finish");
+}
+
+#[tokio::test]
+async fn lyrics_cache_hits_revalidate_without_waiting_or_downgrading() {
+    for mode in ["changed", "raw", "identical", "failed", "partial", "context", "empty"] {
+        for endpoint in ["lyrics", "lyrics/raw?kind=qrc"] {
+            // The raw endpoint itself requires song context to name its download.
+            if mode == "context" && endpoint != "lyrics" {
+                continue;
+            }
+            let refreshing = Arc::new(AtomicUsize::new(0));
+            let calls = Arc::new(AtomicUsize::new(0));
+            let release = Arc::new(tokio::sync::Semaphore::new(0));
+            let upstream = {
+                let refreshing = refreshing.clone();
+                let calls = calls.clone();
+                let release = release.clone();
+                Router::new().fallback(any(move |request: Request<Body>| {
+                    let refreshing = refreshing.clone();
+                    let calls = calls.clone();
+                    let release = release.clone();
+                    async move {
+                        let refresh = refreshing.load(Ordering::SeqCst) != 0;
+                        let path = request.uri().path();
+                        if refresh {
+                            calls.fetch_add(1, Ordering::SeqCst);
+                            release.acquire().await.unwrap().forget();
+                            if mode == "failed"
+                                || (mode == "partial" && path == "/lyric/ttml")
+                                || (mode == "context" && path == "/extra/music/info")
+                            {
+                                return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+                            }
+                            if mode == "empty" && path != "/extra/music/info" {
+                                return StatusCode::NOT_FOUND.into_response();
+                            }
+                        }
+                        match path {
+                            "/v1/lyrics/get" => {
+                                let text = if refresh && matches!(mode, "changed" | "partial" | "context") {
+                                    "updated"
+                                } else {
+                                    "original"
+                                };
+                                Json(json!({"data":{"lyrics":format!(
+                                    "<tt><body><p begin=\"0\" end=\"1\">{text}</p></body></tt>"
+                                )}})).into_response()
+                            }
+                            "/lyric/ttml" => Json(json!({"content":
+                                "<tt><body><p begin=\"0\" end=\"1\">ttml</p></body></tt>"
+                            })).into_response(),
+                            "/lyric/new" => Json(json!({"data":{
+                                "qrc": if refresh && mode == "raw" { "[0,1000]qrc\n" } else { "[0,1000]qrc" },
+                                "qrctrans":"[00:00.00]translation",
+                                "qrcroma":"[0,1000]romanization"
+                            }})).into_response(),
+                            "/extra/music/info" => {
+                                let mut song = raw_song();
+                                song["mid"] = json!("revalidate");
+                                Json(json!({"data":[song]})).into_response()
+                            }
+                            _ => StatusCode::NOT_FOUND.into_response(),
+                        }
+                    }
+                }))
+            };
+            let Some((base, task)) = serve_local(upstream).await else { return; };
+            let mut config = AppState::new("http://127.0.0.1:1".into()).config;
+            config.qq_api = Some(base.clone());
+            config.amll_api = base;
+            let state = Arc::new(AppState::with_config(config));
+            let qq = state.qq.as_ref().unwrap();
+            let path = format!("/qq/song/revalidate/{endpoint}");
+
+            // The cold request still synchronously populates the shared cache.
+            let response = get(state.clone(), &path).await;
+            assert_eq!(response.status(), StatusCode::OK, "{mode}: {endpoint}");
+            let original_body = to_bytes(response.into_body(), 100_000).await.unwrap();
+            let cached = qq.lyrics.get("revalidate").unwrap();
+            assert_eq!(cached.candidates.len(), 3);
+            assert!(!qq.lyrics_revalidating.lock().unwrap().contains("revalidate"));
+            qq.lyrics.put_with_ttl("revalidate".into(), cached.clone(), Duration::from_secs(1200));
+            let expires = qq.lyrics.entries.lock().unwrap().peek("revalidate").unwrap().0;
+            if mode == "context" {
+                qq.songs.entries.lock().unwrap().clear();
+                qq.infos.entries.lock().unwrap().clear();
+            }
+            refreshing.store(1, Ordering::SeqCst);
+
+            let response = tokio::time::timeout(Duration::from_secs(2), get(state.clone(), &path))
+                .await.expect("cache hit waited for upstream");
+            assert_eq!(response.status(), StatusCode::OK);
+            assert_eq!(to_bytes(response.into_body(), 100_000).await.unwrap(), original_body);
+            assert!(qq.lyrics_revalidating.lock().unwrap().contains("revalidate"));
+            assert!(qq.lyrics.get("revalidate").unwrap() == cached);
+
+            if mode != "context" {
+                // Both handlers share the in-flight guard for this mid.
+                for endpoint in ["lyrics", "lyrics/raw?kind=qrc", "lyrics"] {
+                    let path = format!("/qq/song/revalidate/{endpoint}");
+                    let response = tokio::time::timeout(Duration::from_secs(2), get(state.clone(), &path))
+                        .await.expect("deduplicated cache hit waited for upstream");
+                    assert_eq!(response.status(), StatusCode::OK);
+                }
+            }
+            release.add_permits(16);
+            wait_for_lyrics_revalidation(qq, "revalidate").await;
+            assert_eq!(calls.load(Ordering::SeqCst), if mode == "context" { 4 } else { 3 }, "{mode}: {endpoint}");
+            let (new_expires, fresh) = qq.lyrics.entries.lock().unwrap().peek("revalidate").unwrap().clone();
+            match mode {
+                "changed" => {
+                    assert!(fresh.candidates[0].text.contains("updated"));
+                }
+                "raw" => {
+                    assert!(fresh != cached);
+                    assert_eq!(serde_json::to_value(&fresh).unwrap(), serde_json::to_value(&cached).unwrap());
+                    assert_eq!(fresh.raw.qrc.as_deref(), Some("[0,1000]qrc\n"));
+                }
+                "empty" => {
+                    assert!(fresh.candidates.is_empty());
+                    assert!(!fresh.raw_qrc && !fresh.raw_trans && !fresh.raw_roma);
+                    assert!(fresh.raw == RawLyrics::default());
+                }
+                _ => {
+                    assert!(fresh == cached, "{mode}: cached lyrics must survive");
+                    assert_eq!(new_expires, expires, "{mode}: expiry must be untouched");
+                }
+            }
+            if matches!(mode, "changed" | "raw" | "empty") {
+                let ttl = Duration::from_secs(if mode == "empty" { 3600 } else { 604800 });
+                let remaining = new_expires.duration_since(Instant::now());
+                assert!(remaining <= ttl && remaining > ttl - Duration::from_secs(5));
+            }
+            task.abort();
+        }
+    }
+}
+
+#[tokio::test]
+async fn lyrics_revalidation_guard_releases_mid_on_abort_and_panic() {
+    let state = state(true);
+    let qq = state.qq.as_ref().unwrap();
+    for panic in [false, true] {
+        qq.lyrics_revalidating.lock().unwrap().insert("guard".into());
+        let guard = LyricsRevalidation { state: state.clone(), mid: "guard".into() };
+        let task = tokio::spawn(async move {
+            let _guard = guard;
+            if panic {
+                panic!("simulated lyrics revalidation panic");
+            }
+            std::future::pending::<()>().await;
+        });
+        if !panic {
+            task.abort();
+        }
+        assert!(task.await.is_err());
+        assert!(!qq.lyrics_revalidating.lock().unwrap().contains("guard"));
+    }
+}
+
 #[tokio::test]
 async fn quality_probes_are_bounded_and_cache_negative_results() {
     let active = Arc::new(AtomicUsize::new(0));
