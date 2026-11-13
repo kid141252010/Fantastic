@@ -212,6 +212,7 @@ pub struct Qq {
     audio: Cache<Audio>,
     audio_failures: Cache<()>,
     lyrics: Cache<Lyrics>,
+    lyrics_revalidating: Mutex<HashSet<String>>,
 }
 impl Qq {
     pub fn new(base: &str, amll: &str, proxy: Option<&str>) -> Result<Self, String> {
@@ -267,6 +268,7 @@ impl Qq {
             audio: Cache::new(4096, 300),
             audio_failures: Cache::new(4096, 120),
             lyrics: Cache::new(1024, 604800),
+            lyrics_revalidating: Mutex::new(HashSet::new()),
         })
     }
     async fn request_with_status(
@@ -1300,12 +1302,12 @@ struct ArtistDetail {
     album_size: u64,
     mv_size: u64,
 }
-#[derive(Clone, Serialize)]
+#[derive(Clone, PartialEq, Serialize)]
 struct Lyric {
     source: &'static str,
     text: String,
 }
-#[derive(Clone, Serialize)]
+#[derive(Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct Lyrics {
     candidates: Vec<Lyric>,
@@ -1315,7 +1317,7 @@ struct Lyrics {
     #[serde(skip_serializing)]
     raw: RawLyrics,
 }
-#[derive(Clone, Default)]
+#[derive(Clone, Default, PartialEq)]
 struct RawLyrics {
     qrc: Option<String>,
     trans: Option<String>,
@@ -2901,6 +2903,8 @@ async fn fetch_new_lyrics(qq: &Qq, mid: &str) -> LyricsSource<Value> {
     }
 }
 
+const LYRICS_RETRY_TTL: Duration = Duration::from_secs(300);
+
 async fn fetch_lyrics(qq: &Qq, mid: &str) -> ApiResult<(Lyrics, Duration)> {
     // Fetch all upstreams and the cold song context together. The context is only
     // needed to filter QRC/LRC metadata, so a context failure does not fail lyrics.
@@ -2966,7 +2970,7 @@ async fn fetch_lyrics(qq: &Qq, mid: &str) -> ApiResult<(Lyrics, Duration)> {
         return Err(unavailable());
     }
     let ttl = if states.contains(&LyricsSourceState::Failed) || context_failed_with_candidates {
-        Duration::from_secs(300)
+        LYRICS_RETRY_TTL
     } else if states.iter().all(|state| *state == LyricsSourceState::None) {
         Duration::from_secs(3600)
     } else {
@@ -2983,6 +2987,47 @@ async fn fetch_lyrics(qq: &Qq, mid: &str) -> ApiResult<(Lyrics, Duration)> {
         ttl,
     ))
 }
+
+struct LyricsRevalidation {
+    state: Arc<AppState>,
+    mid: String,
+}
+
+impl Drop for LyricsRevalidation {
+    fn drop(&mut self) {
+        if let Some(qq) = self.state.qq.as_ref() {
+            qq.lyrics_revalidating.lock().unwrap().remove(&self.mid);
+        }
+    }
+}
+
+fn lyrics_revalidation_update(
+    cached: &Lyrics,
+    result: ApiResult<(Lyrics, Duration)>,
+) -> Option<(Lyrics, Duration)> {
+    let (fresh, ttl) = result.ok()?;
+    // The retry tier includes partial source and song-context failures.
+    // Keep both the cached payload and its expiry unless a clean fetch differs.
+    (ttl != LYRICS_RETRY_TTL && fresh != *cached).then_some((fresh, ttl))
+}
+
+fn revalidate_lyrics(state: Arc<AppState>, mid: String, cached: Lyrics) {
+    let Some(qq) = state.qq.as_ref() else { return; };
+    if !qq.lyrics_revalidating.lock().unwrap().insert(mid.clone()) {
+        return;
+    }
+    // Move the guard into the task so cancellation or panic also releases the mid.
+    let revalidation = LyricsRevalidation { state, mid };
+    tokio::spawn(async move {
+        let guard = revalidation;
+        let qq = guard.state.qq.as_ref().unwrap();
+        let result = fetch_lyrics(qq, &guard.mid).await;
+        if let Some((fresh, ttl)) = lyrics_revalidation_update(&cached, result) {
+            qq.lyrics.put_with_ttl(guard.mid.clone(), fresh, ttl);
+        }
+    });
+}
+
 async fn lyrics(
     State(state): State<Arc<AppState>>,
     Path(mid): Path<String>,
@@ -2990,6 +3035,7 @@ async fn lyrics(
     let qq = adapter(&state)?;
     check_mid(&mid)?;
     if let Some(data) = qq.lyrics.get(&mid) {
+        revalidate_lyrics(state.clone(), mid.clone(), data.clone());
         return Ok(Json(data));
     }
     let (data, ttl) = fetch_lyrics(qq, &mid).await?;
@@ -3005,6 +3051,7 @@ async fn raw_lyrics(
     check_mid(&mid)?;
     let kind = raw_lyrics_kind(query.kind.as_deref())?;
     let data = if let Some(data) = qq.lyrics.get(&mid) {
+        revalidate_lyrics(state.clone(), mid.clone(), data.clone());
         data
     } else {
         let (data, ttl) = fetch_lyrics(qq, &mid).await?;
