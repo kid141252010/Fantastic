@@ -9,6 +9,7 @@
 - ✨ "Sound Output" (Speaker / Bluetooth) and "Lyrics Lead" lyrics options: shift full-screen lyric timing in 10 ms steps (within ±2 s) to compensate for phones playing sound later than the reported position; Speaker and Bluetooth each remember their own value.
 
 ### Fixes
+- 🐛 Lyrics that carry both replacement lines and line-by-line translations handle them separately (e.g. QQ's "Hong Kong"), so a Traditional Chinese UI shows the Traditional translation; machine-generated translations / transliterations are labeled "generated automatically" instead of "by AI".
 - 🐛 On touch devices, tapping the cover of a search result row now plays it (a small play icon stays on the cover), and album / playlist cards show their play button, instead of opening the detail page.
 - 🐛 Lazily load ICU's cjdict for client-side lyric word segmentation and wrapping when the browser lacks CJK dictionary segmentation; loading failures do not interrupt lyrics.
 - 🐛 Cleanly rebuild the bundled AMLL so it actually includes the CJK single-character weak-boundary and mixed-script line-break fixes instead of stale build output.

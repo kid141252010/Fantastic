@@ -760,10 +760,13 @@ export function mountLyrics({ root, toggle, bar, player, getMeta, t, notify, onL
       names.textContent = song.credits.join(t('lyrics.creditsSeparator'));
       credits.append(label, names);
     }
-    if (song.translation.automatic && shown.translation) {
+    const autoTranslation = song.translation.automatic && shown.translation;
+    const autoPronunciation = song.pronunciation.automatic && shown.pronunciation;
+    if (autoTranslation || autoPronunciation) {
       const note = document.createElement('div');
       note.className = 'translation-note';
-      note.textContent = t('lyrics.aiTranslation');
+      note.textContent = t(autoTranslation && autoPronunciation ? 'lyrics.autoBoth'
+        : autoTranslation ? 'lyrics.autoTranslation' : 'lyrics.autoPronunciation');
       credits.append(note);
     }
     if (lyricsSource === 'amll') {
