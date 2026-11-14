@@ -423,11 +423,12 @@ body.home-page {
 .row-play svg { width: 18px; height: 18px; }
 .top-group .row-play { left: 16px; }
 .row-wrap:hover .row-play, .row-play:focus-visible { opacity: 1; }
-/* 触屏没有悬停：常显「更多」，播放点进页面再操作 */
+/* 触屏没有悬停：常显「播放」「更多」；歌曲行整块封面都是播放按钮，只在中间叠一个小圆形播放图标 */
 @media (hover: none) {
   .cover-actions { opacity: 1; background: none; }
   .cover-btn { width: 30px; height: 30px; pointer-events: auto; }
-  .cover-play, .row-play { display: none; }
+  .row-play { opacity: 1; background: none; }
+  .row-play svg { box-sizing: content-box; width: 12px; height: 12px; padding: 7px 6px 7px 8px; border-radius: 50%; background: rgba(0, 0, 0, .45); }
   .row-more { opacity: 1; }
 }
 

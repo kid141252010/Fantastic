@@ -9,6 +9,7 @@
 - ✨ "Sound Output" (Speaker / Bluetooth) and "Lyrics Lead" lyrics options: shift full-screen lyric timing in 10 ms steps (within ±2 s) to compensate for phones playing sound later than the reported position; Speaker and Bluetooth each remember their own value.
 
 ### Fixes
+- 🐛 On touch devices, tapping the cover of a search result row now plays it (a small play icon stays on the cover), and album / playlist cards show their play button, instead of opening the detail page.
 - 🐛 Lazily load ICU's cjdict for client-side lyric word segmentation and wrapping when the browser lacks CJK dictionary segmentation; loading failures do not interrupt lyrics.
 - 🐛 Cleanly rebuild the bundled AMLL so it actually includes the CJK single-character weak-boundary and mixed-script line-break fixes instead of stale build output.
 - 🐛 Better line breaks for single-character CJK words and balanced wrapping of mixed CJK/English lyrics.
