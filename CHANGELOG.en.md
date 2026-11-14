@@ -9,6 +9,7 @@
 - ✨ "Sound Output" (Speaker / Bluetooth) and "Lyrics Lead" lyrics options: shift full-screen lyric timing in 10 ms steps (within ±2 s) to compensate for phones playing sound later than the reported position; Speaker and Bluetooth each remember their own value.
 
 ### Fixes
+- 🐛 Refine only consecutive single-Han fallback lyric segments with frequency-based Jieba/cutword segmentation (HMM disabled), preserving existing multi-character cjdict words, then attach postpositions such as 之外 and 之间 to preceding Han text. Japanese and Korean segmentation is unchanged.
 - 🐛 Lyrics that carry both replacement lines and line-by-line translations handle them separately (e.g. QQ's "Hong Kong"), so a Traditional Chinese UI shows the Traditional translation; machine-generated translations / transliterations are labeled "generated automatically" instead of "by AI".
 - 🐛 On touch devices, tapping the cover of a search result row now plays it (no play icon is drawn over the cover) instead of opening the detail page.
 - 🐛 Lazily load ICU's cjdict for client-side lyric word segmentation and wrapping when the browser lacks CJK dictionary segmentation; loading failures do not interrupt lyrics.

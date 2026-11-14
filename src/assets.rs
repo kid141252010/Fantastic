@@ -122,6 +122,21 @@ pub static ASSETS: &[Asset] = &[
     asset!("/assets/lyrics/panel.mjs", JS, "lyrics/panel.mjs"),
     asset!("/assets/lyrics/word-segmenter.mjs", JS, "lyrics/word-segmenter.mjs"),
     asset!("/assets/lyrics/cjdict.tsv.gz", BIN, "lyrics/cjdict.tsv.gz"),
+    asset!(
+        "/assets/lyrics/jieba-words.txt.gz",
+        BIN,
+        "lyrics/jieba-words.txt.gz"
+    ),
+    asset!(
+        "/assets/lyrics/JIEBA-LICENSE.txt",
+        BIN,
+        "lyrics/JIEBA-LICENSE.txt"
+    ),
+    asset!(
+        "/assets/lyrics/LICENSE-cutword.txt",
+        BIN,
+        "lyrics/LICENSE-cutword.txt"
+    ),
     asset!("/assets/lyrics/CJDICT-LICENSE.txt", BIN, "lyrics/CJDICT-LICENSE.txt"),
     asset!("/assets/lyrics/ttml.mjs", JS, "lyrics/ttml.mjs"),
     asset!("/assets/lyrics/amll-core.mjs", JS, "lyrics/amll-core.mjs"),
