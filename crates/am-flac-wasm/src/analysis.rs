@@ -102,8 +102,8 @@ impl Analyzer {
             self.fft.run();
             let (re, im) = self.fft.input();
             let mag = |k: usize| re[k % N] * re[k % N] + im[k % N] * im[k % N];
-            for k in 0..=N / 2 {
-                self.power[k] += if b.is_some() { (mag(k) + mag(N - k)) / 2.0 } else { mag(k) };
+            for (k, p) in self.power.iter_mut().enumerate() {
+                *p += if b.is_some() { (mag(k) + mag(N - k)) / 2.0 } else { mag(k) };
             }
             self.windows += if b.is_some() { 2 } else { 1 };
         }
