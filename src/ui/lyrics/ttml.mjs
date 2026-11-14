@@ -67,8 +67,8 @@ function selectLanguage(candidates, prefLang) {
   return source;
 }
 
-function localization(metadata, collection, element, prefLang) {
-  const source = selectLanguage(children(child(metadata, collection), element), prefLang);
+function localization(candidates, prefLang) {
+  const source = selectLanguage(candidates, prefLang);
   return {
     language: attribute(source, XML, 'lang'),
     automatic: source?.getAttribute('automaticallyCreated') === 'true',
@@ -107,7 +107,11 @@ export function parseTTML(xml, Parser = globalThis.DOMParser, prefLang) {
     return [[id, { id, ...(type ? { type } : {}), ...(name ? { name } : {}) }]];
   }));
   const amllMeta = key => children(head, 'meta').filter(meta => meta.getAttribute('key') === key).map(meta => meta.getAttribute('value'));
-  const translation = localization(metadata, 'translations', 'translation', prefLang);
+  // 替换段（type="replacement"，如繁中原文的简体字形）与逐句翻译（subtitle）分开选：同一份 TTML 可能两种都有
+  const translations = children(child(metadata, 'translations'), 'translation');
+  const isReplacement = node => node.getAttribute('type') === 'replacement';
+  const translation = localization(translations.filter(node => !isReplacement(node)), prefLang);
+  const replacements = localization(translations.filter(isReplacement), prefLang);
   const chineseScript = language => {
     const [primary, ...parts] = normalizeLanguage(language).split('-');
     if (primary !== 'zh') return undefined;
@@ -116,9 +120,9 @@ export function parseTTML(xml, Parser = globalThis.DOMParser, prefLang) {
     })[part]).find(Boolean);
   };
   const preferredScript = chineseScript(prefLang);
-  const replacementScript = chineseScript(translation.language);
-  const skipReplacement = translation.type === 'replacement' && preferredScript && replacementScript && preferredScript !== replacementScript;
-  const pronunciation = localization(metadata, 'transliterations', 'transliteration', prefLang);
+  const replacementScript = chineseScript(replacements.language);
+  const skipReplacement = preferredScript && replacementScript && preferredScript !== replacementScript;
+  const pronunciation = localization(children(child(metadata, 'transliterations'), 'transliteration'), prefLang);
   // How much later each audio version plays than the lyric timing, e.g. <audio lyricOffset="0.929" role="spatial"/>
   // (Atmos and its binaural / downmixed renditions); ms, keyed by role
   const audioOffsets = Object.fromEntries(children(metadata, 'audio').flatMap((node) => {
@@ -134,8 +138,8 @@ export function parseTTML(xml, Parser = globalThis.DOMParser, prefLang) {
       const key = attribute(line, APPLE, 'key', `${sectionIndex}:${lineIndex}`);
       const pr = pronunciation.entries.get(key);
       // A replacement (e.g. zh-Hans-CN for a zh-Hant original) supersedes the lyrics, keeping its own word timing
-      const replacement = translation.type === 'replacement' && !skipReplacement ? translation.entries.get(key) : null;
-      const tr = replacement || skipReplacement ? null : translation.entries.get(key);
+      const replacement = skipReplacement ? null : replacements.entries.get(key);
+      const tr = translation.entries.get(key);
       const bgNode = children(line, 'span').find(isBackground);
       const background = readVoice(bgNode, children(tr, 'span').find(isBackground), children(pr, 'span').find(isBackground), prefLang);
       const main = readVoice(line, tr, pr, prefLang);

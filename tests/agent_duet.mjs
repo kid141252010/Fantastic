@@ -336,6 +336,18 @@ test('replacement decision uses the selected localization', () => {
   for (const translation of translations.children) translation.attributes.type = 'replacement';
   assert.equal(parseDocument(document, 'zh-Hant').lines[0].text, 'translation zh-Hant-TW');
 });
+for (const [prefLang, text, translation] of [
+  ['zh-Hant', 'translation zh-Hant-TW', 'translation zh-Hant'], ['zh-Hans', 'source', 'translation zh-Hans'],
+]) {
+  test(`replacement and subtitle translations are selected separately: ${prefLang}`, () => {
+    const document = fixture(['zh-Hant-TW', 'zh-Hans', 'zh-Hant'], []);
+    document.documentElement.children[1].children[0].children[0].children[0].nodeType = 1;
+    document.documentElement.children[0].children[0].children[0].children[0].children[0].attributes.type = 'replacement';
+    const parsed = parseDocument(document, prefLang);
+    assert.equal(parsed.lines[0].text, text);
+    assert.equal(parsed.lines[0].translation, translation);
+  });
+}
 for (const [language, prefLang, skip] of [
   ['zh-CN', 'zh-Hant', true], ['zh-SG', 'zh-Hant', true],
   ['zh-TW', 'zh-Hans', true], ['zh-HK', 'zh-Hans', true], ['zh-MO', 'zh-Hans', true],
