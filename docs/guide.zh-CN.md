@@ -1,10 +1,50 @@
-# 使用指南
+# Fantastic 使用指南
 
-中文 | [English](guide.md)
+[← 返回 README](../README.zh-CN.md) · 中文 | [English](guide.md)
+
+## 运行环境
+
+### 环境要求
+
+- 运行中的 [wrapper-lite](https://github.com/WorldObservationLog/wrapper) 密钥服务（默认 `http://127.0.0.1:12340`）
+- 支持 Web Worker 和 WebAssembly 的现代浏览器。播放使用 MediaSource（EC-3 PCM 回退使用 Web Audio）；MV 下载需要 OPFS。
+- Rust 2021 edition 工具链（仅从源码构建时需要）
+
+> [!NOTE]
+> OPFS 只在安全上下文中可用，也就是 HTTPS 或 `localhost` / `127.0.0.1`。通过 `http://<局域网 IP>` 访问时，歌曲下载退回内存 Blob（大文件占用较多内存），MV 无法下载；播放不受影响。
+
+### 打开 Apple Music 链接
+
+也可以把 Apple Music 链接直接拼在服务地址后面打开对应页面：
+
+| 首页输入 | 打开的页面 |
+|---|---|
+| `https://music.apple.com/cn/song/<slug>/<id>` | `/https://music.apple.com/cn/song/<slug>/<id>` |
+| `https://music.apple.com/cn/album/<slug>/<albumId>?i=<id>` | `/https://music.apple.com/cn/album/<slug>/<albumId>?i=<id>` |
+| `https://music.apple.com/cn/music-video/<slug>/<id>` | `/https://music.apple.com/cn/music-video/<slug>/<id>` |
+| `https://music.apple.com/cn/post/<id>` | `/https://music.apple.com/cn/post/<id>` |
+| `https://music.apple.com/cn/playlist/<slug>/<pl.id>` | `/https://music.apple.com/cn/playlist/<slug>/<pl.id>` |
+| `https://music.apple.com/cn/artist/<slug>/<id>` | `/https://music.apple.com/cn/artist/<slug>/<id>` |
+
+例如：`http://127.0.0.1:8888/https://music.apple.com/cn/music-video/super-bowl-lix-halftime-show-live/1836358807`。链接中的国家代码决定获取展示信息时使用的地区。电台、编辑页与排行榜的链接同样可以打开，见[页面一览](#页面一览)。
+
+部署与 QQ 音源配置见[部署说明](deployment.zh-CN.md)，命令行参数与接口见[参考](reference.zh-CN.md)，构建与测试见[开发说明](development.zh-CN.md)，目录与原理见[架构](architecture.zh-CN.md)。
+
+## QQ 音乐
+
+- **搜索**：歌曲、专辑、歌手、歌单、MV 五类结果，输入时实时联想；在搜索页一键切换音源。
+- **20 档音质**，按分组列出并显示文件大小，可逐档播放或下载：
+  - 无损：Hi-Res、无损 FLAC；空间音频：臻品母带、臻品全景声（V1 / V2）、360 Reality Audio
+  - 杜比全景声：AC-4（DA / AJOC 448 / AJOC 1500，浏览器支持时直接播放）、杜比 EAC3（经 JOC 管线在浏览器内渲染）
+  - DTS 5.1 / DTS:X，以及 AAC、OGG、MP3 320 / 128 等常规档位
+  - 首选音质不可用时自动按顺序降级
+- **歌词**：按 AMLL 歌词库 → TTML → QRC → LRC 依次取用，逐字 QRC 含翻译与罗马音，可下载原始 QRC / 翻译 / 注音。
+- **完整页面**：歌曲详情（发行时间、流派、语种、唱片公司、碟号曲序、简介）、专辑、歌手（热门歌曲、专辑、MV 分页）、歌单与 MV 播放页。
+- **隐私与安全**：QQ API 地址只存在于服务端（`--qq-api`），浏览器不直接访问；播放为 302 跳转、媒体由浏览器直连 QQ CDN，下载经服务端白名单转发。
 
 ## 界面与导航
 
-- 界面支持中文 / English，导航底部的「界面语言」一键切换（会记住选择；首次访问按浏览器语言决定）。切换时正在进行的播放和下载不受影响。
+- 界面支持简体中文 / 繁體中文 / English，导航底部的「界面语言」选择切换（会记住选择；首次访问按浏览器语言决定）。切换时正在进行的播放和下载不受影响。
 - 导航底部的设置，保存在 localStorage，不会过期：
   - 主地区：用于搜索（以及之后的功能）。wrapper-lite 账号所在地区排在最前（最佳体验），其次是收藏的地区（默认收藏 US / CN / JP）；其他地区收在「更多地区」里，展开后可筛选，每个地区右侧的星标可收藏 / 取消收藏。默认为 wrapper-lite 的第一个地区。
   - 曲库语言（amp-api 的 `l`，与界面语言相互独立）：默认为各地区的默认语言，可选项只有 `/amp/v1/storefronts` 中该地区的 `supportedLanguageTags`。按地区分别记住，歌词也使用它。

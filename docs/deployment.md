@@ -24,12 +24,12 @@ Alternatively the function can relay to a publicly reachable wrapper-lite, set t
 
 | Variable | Description |
 |---|---|
-| `AM_HOOK_WRAPPER_URL` | wrapper-lite URL. When set, pages default to the "Server" mode, like the binary; it may carry credentials (`https://<token>@host`) |
-| `AM_HOOK_WRAPPER_AUTH` | Optional `Authorization` for wrapper-lite requests, same rules as `--wrapper-auth` |
-| `AM_HOOK_WRAPPER_HINT` | Optional note above the local wrapper-lite settings, same as `--wrapper-hint` |
+| `FANTASTIC_WRAPPER_URL` | wrapper-lite URL. When set, pages default to the "Server" mode, like the binary; it may carry credentials (`https://<token>@host`) |
+| `FANTASTIC_WRAPPER_AUTH` | Optional `Authorization` for wrapper-lite requests, same rules as `--wrapper-auth` |
+| `FANTASTIC_WRAPPER_HINT` | Optional note above the local wrapper-lite settings, same as `--wrapper-hint` |
 
 > [!WARNING]
-> With `AM_HOOK_WRAPPER_URL` set, anyone who can open the site can use your wrapper-lite, that is, your Apple account. Restrict access with the platform's access control (Vercel Deployment Protection, Cloudflare Access). Function instances share no state, so there is no equivalent of `--wrapper-rate` / `--wrapper-concurrency` here.
+> With `FANTASTIC_WRAPPER_URL` set, anyone who can open the site can use your wrapper-lite, that is, your Apple account. Restrict access with the platform's access control (Vercel Deployment Protection, Cloudflare Access). Function instances share no state, so there is no equivalent of `--wrapper-rate` / `--wrapper-concurrency` here.
 
 Other differences from the binary:
 
@@ -41,7 +41,13 @@ Other differences from the binary:
 
 The "wrapper-lite" setting at the bottom of the navigation switches between two modes (saved in the browser):
 
-- **Server** (default): wrapper-lite requests are relayed by am-hook; rate, concurrency and `Authorization` come from the `--wrapper-*` options. Not offered on a [serverless deployment](#serverless-deployment-vercel--cloudflare) without `AM_HOOK_WRAPPER_URL`, or by a binary started with `--local-wrapper-only`.
+- **Server** (default): wrapper-lite requests are relayed by Fantastic; rate, concurrency and `Authorization` come from the `--wrapper-*` options. Not offered on a [serverless deployment](#serverless-deployment-vercel--cloudflare) without `FANTASTIC_WRAPPER_URL`, or by a binary started with `--local-wrapper-only`.
 - **Local**: the browser requests your own wrapper-lite directly (`/status`, `/m3u8`, `/key`, `/lyrics`, `/webplayback`, `/license`). The panel sets its URL, max requests per second, max concurrent requests and `Authorization` (same rules as `--wrapper-auth`). The limits apply to the current page only. The URL may carry credentials (such as `https://<token>@host`); as with `--wrapper-url`, they are sent as `Authorization: Basic …`, and a separately set `Authorization` takes precedence.
   - The requests are cross-origin: the wrapper-lite must allow CORS (send `Access-Control-Allow-Origin`, and allow the `Authorization` header in preflights if one is set), or install a browser extension that lifts CORS restrictions.
-  - MV master playlists are still fetched by am-hook with `User-Agent: AM`; the other MV requests (`/webplayback`, `/license`) go to the local wrapper-lite.
+  - MV master playlists are still fetched by Fantastic with `User-Agent: AM`; the other MV requests (`/webplayback`, `/license`) go to the local wrapper-lite.
+
+## QQ music source (optional)
+
+Configure `--qq-api https://example.invalid/api/web` or `FANTASTIC_QQ_API` on the Rust server. See [QQ source validation](qq-source-validation.md) for proxy behavior, request paths, playback redirects and lyric formats. Apple and QQ use separate playback queues.
+
+QQ has no client-side rate or concurrency limit; upstream services remain responsible for handling aggressive traffic.

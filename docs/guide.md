@@ -1,14 +1,54 @@
-# User Guide
+# Fantastic Guide
 
-[中文](guide.zh-CN.md) | English
+[← Back to README](../README.md) · [中文](guide.zh-CN.md) | English
+
+## Running
+
+### Requirements
+
+- A running [wrapper-lite](https://github.com/WorldObservationLog/wrapper) key server (default `http://127.0.0.1:12340`)
+- A modern browser with Web Workers and WebAssembly. Playback uses MediaSource (EC-3 PCM fallback uses Web Audio); MV downloads need OPFS.
+- Rust 2021 edition toolchain, only when building from source
+
+> [!NOTE]
+> OPFS is only available in a secure context: HTTPS, or `localhost` / `127.0.0.1`. Over `http://<LAN IP>`, song downloads fall back to in-memory Blobs (large files use more RAM) and MV downloads are unavailable. Playback is unaffected.
+
+### Opening Apple Music links
+
+Pages can also be opened directly by putting an Apple Music link after the server address:
+
+| Input on the home page | Page opened |
+|---|---|
+| `https://music.apple.com/cn/song/<slug>/<id>` | `/https://music.apple.com/cn/song/<slug>/<id>` |
+| `https://music.apple.com/cn/album/<slug>/<albumId>?i=<id>` | `/https://music.apple.com/cn/album/<slug>/<albumId>?i=<id>` |
+| `https://music.apple.com/cn/music-video/<slug>/<id>` | `/https://music.apple.com/cn/music-video/<slug>/<id>` |
+| `https://music.apple.com/cn/post/<id>` | `/https://music.apple.com/cn/post/<id>` |
+| `https://music.apple.com/cn/playlist/<slug>/<pl.id>` | `/https://music.apple.com/cn/playlist/<slug>/<pl.id>` |
+| `https://music.apple.com/cn/artist/<slug>/<id>` | `/https://music.apple.com/cn/artist/<slug>/<id>` |
+
+For example: `http://127.0.0.1:8888/https://music.apple.com/cn/music-video/super-bowl-lix-halftime-show-live/1836358807`. The country code in the link selects the storefront used for metadata. Station, editorial and chart links open too; see [Pages](#pages).
+
+See [Deployment](deployment.md) for serverless, local wrapper-lite and QQ configuration, [Reference](reference.md) for CLI options and endpoints, [Development](development.md) for builds and tests, and [Architecture](architecture.md) for the layout and internals.
+
+## QQ Music
+
+- **Search** across songs, albums, artists, playlists and MVs, with live suggestions; switch sources on the search page.
+- **20 quality tiers**, grouped with file sizes, each playable or downloadable:
+  - Lossless: Hi-Res, FLAC; spatial: Master (臻品母带), 360 Spatial (V1 / V2), 360 Reality Audio
+  - Dolby Atmos: AC-4 (DA / AJOC 448 / AJOC 1500, played natively where the browser supports it) and Dolby EAC3 (rendered in the browser through the JOC pipeline)
+  - DTS 5.1 / DTS:X, plus AAC, OGG and MP3 320 / 128
+  - Automatic fallback when the preferred quality is unavailable
+- **Lyrics** from the AMLL lyrics database → TTML → QRC → LRC; word-by-word QRC with translation and romanization, and raw QRC / translation / romanization downloads.
+- **Full pages**: song details (release date, genre, language, label, disc / track, intro), albums, artists (top songs, albums, MVs with paging), playlists and an MV player.
+- **Private by design**: the QQ API address lives only on the server (`--qq-api`); playback is a 302 so media streams straight from QQ's CDN, and downloads go through an allowlisted server proxy.
 
 ## Interface and Navigation
 
-- Chinese and English UI; the Interface button at the bottom of the navigation switches instantly (remembered; the first visit follows the browser language). Playback and downloads in progress are not interrupted.
+- Simplified Chinese, Traditional Chinese and English UI; the Interface picker at the bottom of the navigation switches instantly (remembered; the first visit follows the browser language). Playback and downloads in progress are not interrupted.
 - Settings at the bottom of the navigation, saved in localStorage with no expiry:
   - Primary storefront: used for search (and future features). The wrapper-lite account's storefronts are listed first as the best experience, then favorite storefronts (US / CN / JP by default); every other storefront sits under "More storefronts" with a filter, and the star next to each one adds or removes it from favorites. Defaults to the first wrapper-lite storefront.
   - Catalog language (amp-api `l`, independent of the UI language): defaults to each storefront's default language; the choices are only that storefront's `supportedLanguageTags` from `/amp/v1/storefronts`. Chosen per storefront, and also used for lyrics.
-- The home page shows wrapper-lite status and your recent searches (click to search again, or remove them one by one); its footer links to this GitHub repository and credits the projects am-hook builds on.
+- The home page shows wrapper-lite status and your recent searches (click to search again, or remove them one by one); its footer links to this GitHub repository and credits the projects Fantastic builds on.
 - Search: the home input takes either a link or keywords (the same amp-api requests as music.apple.com). Typing shows suggested terms and direct results; results are grouped into top results, artists, albums, songs, playlists and music videos, with "Load more". Search uses the primary storefront, which can also be changed from the button next to the results. `/` focuses the input; the term is kept in the address bar as `?q=`, so Back / Forward and sharing work. Search lives only on the home page; other pages have a Back button at the top instead, which returns to the previous page (or to the home page when the page was opened directly from a link).
 - The address bar, page title and browser Back / Forward follow the current page, so links can be shared and a reload stays on the same page.
 - How it works: like music.apple.com, the site is a single-page app. Every page URL gets `app.html`, which owns the player bar, audio, decryption workers and lyrics view; a client-side router (`app.mjs`) takes over in-site links, changes the address with `history.pushState` and swaps page views (`web/views/`) without reloading the document. It relies on no request headers, so it works the same over `http://<LAN IP>`.
