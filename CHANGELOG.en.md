@@ -4,7 +4,7 @@
 
 ### Added
 - ✨ A language picker with Simplified and Taiwan Traditional Chinese, migration of saved Simplified Chinese preferences, and script-aware lyric localization and replacement handling.
-- ✨ Optional QQ music source configuration (`--qq-api` / `AM_HOOK_QQ_API` and `--qq-proxy` / `AM_HOOK_QQ_PROXY`), static quality capabilities and lyrics fallbacks.
+- ✨ Optional QQ music source configuration (`--qq-api` / `FANTASTIC_QQ_API` and `--qq-proxy` / `FANTASTIC_QQ_PROXY`), static quality capabilities and lyrics fallbacks.
 - ✨ A "CJK–Latin spacing" lyrics option (on by default) that automatically adjusts spacing between CJK and Latin text.
 - ✨ "Sound Output" (Speaker / Bluetooth) and "Lyrics Lead" lyrics options: shift full-screen lyric timing in 10 ms steps (within ±2 s) to compensate for phones playing sound later than the reported position; Speaker and Bluetooth each remember their own value.
 
@@ -19,6 +19,25 @@
 - 🐛 Full-screen lyric word animations are realigned to playback once they start, fixing whole lines of word animations lagging behind the sound on phones when the line-change frame is slow.
 - 🐛 The translation / pronunciation switches in the lyrics options are saved in the browser and no longer reset on reload.
 - 🐛 Online lyrics use the "Lyrics language" setting; when empty, a Chinese UI (Simplified or Traditional) requests Simplified Chinese translations, which were missing when the account storefront (e.g. ca) does not list Chinese.
+
+## v0.7.0 (2026-11-12)
+
+### Changed
+- ♻️ The front end moves from `src/ui/` to `web/`, grouped by area (`player/`, `decrypt/`, `media/`, `flac/`, `ec3/`, `joc/`, `mv/`, `download/`, `lyrics/`, `views/`), and `/assets/<path>` is always `web/<path>`, so a URL in a stack trace or the network panel names its file. Page URLs and API endpoints are unchanged; asset URLs change with it (pages load content-hashed URLs, so an upgrade picks them up by itself)
+- ♻️ The asset table (`src/assets.rs`) lists one path per file and derives the content type from the extension; tests fail when a file under `web/` is not registered or a relative import points at no file. `src/ui.rs` is renamed `src/handlers.rs` and `browser/` is renamed `vendor/`
+- ✅ The Node tests are grouped by what they need into `tests/unit`, `tests/ui` and `tests/live`, run with `node tests/run.mjs unit|ui|live`; CI runs every unit test. Stale assertions in the library UI and single-page app tests are fixed
+- 📝 The README is trimmed to an overview, quick start and the deploy buttons; the user guide, deployment, reference, architecture (now with a feature-to-file map and the source layout) and development docs move to `docs/`, in English and Chinese
+
+## v0.6.9 (2026-11-10)
+
+### New
+- ✨ Custom lyrics fonts (settings → Playback → Lyrics font, also switchable from the lyrics menu): the lyrics screen uses the selected font, with the system font filling in missing characters. Fonts are stored only in this browser's IndexedDB; upload ttf / otf / woff / woff2 / ttc (weights of one family are merged into one entry, with name, weight, italic and variable weight range read from the font), enter a font file or @font-face CSS URL (Google Fonts, 中文网字计划 result.css), use an installed font, or add one from the built-in 中文网字计划 catalog (67 families). Split web fonts download and save only the subsets the lyrics use, and the lyrics wait for them before layout so they don't flash; "Download all" makes a font work offline. The library and selection sync across tabs
+- ✨ Lyrics language and pronunciation script for playback (settings → Playback → Lyrics), separate from the download options; the lyrics screen refetches when they change
+- ✨ Redesigned download lyrics settings: embed and save are two cards like Cover, sharing the LRC options (line / word timing, translation, pronunciation) with a live preview; embedded lyrics can be TTML (with a warning that most players only read LRC); lyrics and metadata languages are picked from the storefront's languages; new pronunciation script option (only Latin, Hangul and Kana currently return pronunciations)
+- ✨ Back off when wrapper-lite rate limits (429): new downloads pause per Retry-After (else exponential backoff), then run at half concurrency until 3 tracks succeed; throttled tracks are requeued without using up retries, and lyrics requests wait instead of being dropped. The server forwards /parse/song's 429 and Retry-After instead of turning it into a 500
+
+### Fixes
+- 🐛 Binaural and downmix AAC are no longer attenuated a second time by the "ALAC / AAC volume" trim: they are rendered from the Atmos mix and are about as loud as it. The setting is renamed "Non-spatial volume"
 
 ## v0.6.8 (2026-11-09)
 

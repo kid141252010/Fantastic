@@ -3,9 +3,9 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { gzipSync } = require('node:zlib');
 const source = path.join(process.argv[2], 'src-tauri/crates/lyric-segmenter/data');
-const output = path.join(__dirname, '../src/ui/lyrics');
+const output = path.join(__dirname, '../web/lyrics');
 async function build() {
-  const { cutJieba } = await import('../src/ui/lyrics/word-segmenter.mjs');
+  const { cutJieba } = await import('../web/lyrics/word-segmenter.mjs');
   const frequencies = new Map();
   let total = 0;
   let maxLength = 0;

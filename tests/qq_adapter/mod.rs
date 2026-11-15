@@ -830,7 +830,7 @@ fn synthetic_wet_lyric_new_aligns_translation_and_romanization_in_amll_inline_fo
         let rows = lyric_rows(text);
         assert_eq!(rows.len(), 4, "auxiliary rows must not create lyric lines");
         // These roles must be direct <p> children, after the timed main spans,
-        // per src/ui/lyrics/ttml.mjs readVoice/inline (also tests/lyrics_ui.cjs).
+        // per web/lyrics/ttml.mjs readVoice/inline (also tests/lyrics_ui.cjs).
         for (row, start, translation, roman) in [
             (rows[0], "1.000", "今晚", "oneul bam"),
             (

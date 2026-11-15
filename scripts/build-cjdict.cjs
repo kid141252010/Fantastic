@@ -11,7 +11,7 @@ const entries = lines.slice(first).filter(line => line.trim());
 for (const entry of entries) {
   if (!/^\S+\t\d+$/.test(entry) || Number(entry.split('\t')[1]) > 255) throw new Error('Invalid dictionary entry');
 }
-const output = path.join(__dirname, '../src/ui/lyrics');
+const output = path.join(__dirname, '../web/lyrics');
 const data = Buffer.from(entries.join('\n') + '\n');
 const compressed = gzipSync(data, { level: 9 });
 fs.writeFileSync(path.join(output, 'cjdict.tsv.gz'), compressed);

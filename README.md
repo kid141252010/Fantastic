@@ -13,7 +13,7 @@
 
 [中文](README.zh-CN.md) | English
 
-![Fantastic: the New page on desktop and an album page on a phone](docs/home.png)
+![Fantastic: the New page on desktop and an album page on a phone](docs/screenshots/home.png)
 
 </div>
 
@@ -56,9 +56,7 @@ The QQ Music source is served by Fantastic itself: the server proxies a QQ API t
   - [Command-Line Options](#command-line-options)
   - [Server Endpoints](#server-endpoints)
 - [Development](#development)
-  - [Building](#building)
-  - [Testing](#testing)
-  - [Project Layout](#project-layout)
+- [Documentation](#documentation)
 - [Community](#community)
 - [License](#license)
 
@@ -124,31 +122,22 @@ Pages can also be opened directly by putting an Apple Music link after the serve
 | `https://music.apple.com/cn/playlist/<slug>/<pl.id>` | `/https://music.apple.com/cn/playlist/<slug>/<pl.id>` |
 | `https://music.apple.com/cn/artist/<slug>/<id>` | `/https://music.apple.com/cn/artist/<slug>/<id>` |
 
-For example: `http://127.0.0.1:8888/https://music.apple.com/cn/music-video/super-bowl-lix-halftime-show-live/1836358807`. The country code in the link selects the storefront used for metadata. Station, editorial and chart links open too; see [Pages](#pages).
+For example: `http://127.0.0.1:8888/https://music.apple.com/cn/music-video/super-bowl-lix-halftime-show-live/1836358807`. The country code in the link selects the storefront used for metadata. Station, editorial and chart links open too; see [Pages](docs/guide.md#pages).
 
-## Deployment
+## Deploying without the binary
 
-The binary from [Quick Start](#quick-start) is the full-featured option: it relays wrapper-lite with rate limits (see [Command-Line Options](#command-line-options)) and works over plain `http://<LAN IP>`. The alternatives below need no binary.
-
-### Serverless Deployment (Vercel / Cloudflare)
-
-If you would rather not run the binary, the same pages can be deployed to a serverless platform: the platform hosts the static assets and the backend shrinks to a single function (the amp-api catalog proxy, the MV master fetch and the station endpoints). Pick either platform:
+The same pages also run on a serverless platform: the platform hosts the static files and the backend shrinks to a single function. The build needs only Node.
 
 | Platform | One click | CLI |
 |---|---|---|
 | Vercel | [![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fitouakirai%2Fam-hook) | `npx vercel --prod` |
 | Cloudflare Workers | [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/itouakirai/am-hook) | `npx wrangler deploy` |
 
-When deploying a fork, replace the repository URL in the button links with your own. The build needs only Node (`node scripts/build-static.mjs` builds `dist/` from `src/ui/`), not Rust; see [vercel.json](vercel.json) and [wrangler.toml](wrangler.toml) for the configuration.
+A function cannot reach a wrapper-lite on your machine, so pages use your local wrapper-lite directly, or the function relays to a public one set through environment variables. See [Deployment](docs/deployment.md) for both, and for how a serverless deployment differs from the binary.
 
-**wrapper-lite**: a function on the platform cannot reach a wrapper-lite on your machine, so by default only the [local mode](#using-a-local-wrapper-lite) is offered. Enter your own wrapper-lite URL in the "wrapper-lite" setting at the bottom of the navigation and the browser sends the requests itself:
+## Documentation
 
-- The page is served over HTTPS, so the browser only lets it request `http://127.0.0.1` / `http://localhost` or HTTPS URLs; `http://<LAN IP>` is blocked as mixed content (if wrapper-lite runs on another machine, put it behind HTTPS or use the binary). Some browsers restrict loopback addresses too, and Chrome may first ask for permission to access the local network.
-- wrapper-lite must allow cross-origin requests (see [Using a local wrapper-lite](#using-a-local-wrapper-lite)).
-
-Alternatively the function can relay to a publicly reachable wrapper-lite, set through the platform's environment variables (on Cloudflare use `npx wrangler secret put <NAME>`; on Vercel redeploy after changing them):
-
-| Variable | Description |
+| Document | Contents |
 |---|---|
 | `FANTASTIC_WRAPPER_URL` | wrapper-lite URL. When set, pages default to the "Server" mode, like the binary; it may carry credentials (`https://<token>@host`) |
 | `FANTASTIC_WRAPPER_AUTH` | Optional `Authorization` for wrapper-lite requests, same rules as `--wrapper-auth` |
@@ -189,7 +178,7 @@ QQ has no client-side rate or concurrency limit; upstream services remain respon
 - The home page shows wrapper-lite status and your recent searches (click to search again, or remove them one by one); its footer links to this GitHub repository and credits the projects Fantastic builds on.
 - Search: the home input takes either a link or keywords (the same amp-api requests as music.apple.com). Typing shows suggested terms and direct results; results are grouped into top results, artists, albums, songs, playlists and music videos, with "Load more". Search uses the primary storefront, which can also be changed from the button next to the results. `/` focuses the input; the term is kept in the address bar as `?q=`, so Back / Forward and sharing work. Search lives only on the home page; other pages have a Back button at the top instead, which returns to the previous page (or to the home page when the page was opened directly from a link).
 - The address bar, page title and browser Back / Forward follow the current page, so links can be shared and a reload stays on the same page.
-- How it works: like music.apple.com, the site is a single-page app. Every page URL gets `app.html`, which owns the player bar, audio, decryption workers and lyrics view; a client-side router (`app.mjs`) takes over in-site links, changes the address with `history.pushState` and swaps page views (`src/ui/views/`) without reloading the document. It relies on no request headers, so it works the same over `http://<LAN IP>`.
+- How it works: like music.apple.com, the site is a single-page app. Every page URL gets `app.html`, which owns the player bar, audio, decryption workers and lyrics view; a client-side router (`app.mjs`) takes over in-site links, changes the address with `history.pushState` and swaps page views (`web/views/`) without reloading the document. It relies on no request headers, so it works the same over `http://<LAN IP>`.
 
 ### Player
 
@@ -222,8 +211,8 @@ Every page below is a route of the single-page app; the server returns `app.html
 | `/https://music.apple.com/<cc>/room/<id>`, `.../multi-room/<id>`, `.../grouping/<id>`, `.../curator/<slug>/<id>` | Editorial pages, routed like music.apple.com: a room is a section's See All (all contents in a grid, paged on scroll); multi-room (`editorial/{cc}/multirooms`, header art + sections), grouping (`editorial/{cc}/groupings/{id}`, e.g. Music Videos and genre pages) and curator (`catalog/{cc}?ids[apple-curators]=`: its grouping's sections, or its playlists) reuse the New layout. Legacy links in editorial data (`collection/...?fcId=`, `viewGrouping?id=`, `viewFeature?id=`) open these pages in app; stations open the station page here, and other content the site cannot open links to Apple Music. Pasting these links on the home page opens them too |
 | `/radio` | Radio (Radio in the sidebar): the same editorial sections as music.apple.com/{cc}/radio for the primary storefront, plus Your Stations with a media-user-token; `/https://music.apple.com/<cc>/radio` is for a fixed storefront |
 | `/https://music.apple.com/<cc>/station/<slug>/ra.<id>` | Station page: the next songs of personal and editorial stations, or the music video layout with playback and downloads for live radio and episodes (see [Radio and Stations](#radio-and-stations)) |
-| `/library[/<section>]`, `/library/artists/<name>`, `/library/playlist/p.<id>`, `/library/favorite-songs`, `/library/playlist-folder/f.<id>` | Library pages (sections `recently-added`, `artists`, `albums`, `songs`, `music-videos`, `all-playlists`), local playlists, Favorite Songs and playlist folders. Library data lives in the browser's IndexedDB (`src/ui/library.mjs`); see [Library and Playlists](#library-and-playlists) |
-| `/settings` | Settings (download settings and more). Settings live in the browser (`src/ui/prefs.mjs`); see [Batch Downloads and Settings](#batch-downloads-and-settings) |
+| `/library[/<section>]`, `/library/artists/<name>`, `/library/playlist/p.<id>`, `/library/favorite-songs`, `/library/playlist-folder/f.<id>` | Library pages (sections `recently-added`, `artists`, `albums`, `songs`, `music-videos`, `all-playlists`), local playlists, Favorite Songs and playlist folders. Library data lives in the browser's IndexedDB (`web/library.mjs`); see [Library and Playlists](#library-and-playlists) |
+| `/settings` | Settings (download settings and more). Settings live in the browser (`web/prefs.mjs`); see [Batch Downloads and Settings](#batch-downloads-and-settings) |
 
 ### Songs
 
@@ -313,13 +302,13 @@ Like music.apple.com's Library and Playlists, but **stored only in your browser*
   - Tags: which fields to embed (title, artist, album, album artist, composer, genre, release date, track #, disc #, lyrics, cover, copyright, label, UPC, ISRC, rating, song / album / artist IDs), sort-order tags, original album info or playlist info for playlist tracks, dropping the " - EP" / " - Single" suffix from album names (tags, file and folder names alike; off by default), metadata language
   - Cover art: JPEG / PNG and size, set separately for the embedded cover and the separate `cover.jpg` / `cover.png`
   - Lyrics: separate `.lrc` / `.ttml`, word timing (enhanced LRC), translation / pronunciation lines, lyrics language
-- **Downloading**: the download button on album and playlist pages (next to Play and Shuffle) opens a dialog to change the quality for this download and pick tracks (all songs by default, and the music videos unless that is turned off in Settings; unreleased tracks cannot be picked); songs, music videos, albums and playlists can also be downloaded from every More menu (track rows, search results, shelves…); "Download decrypted file" on the song page goes through the same download manager (`src/ui/downloads.mjs`) and is tagged too.
+- **Downloading**: the download button on album and playlist pages (next to Play and Shuffle) opens a dialog to change the quality for this download and pick tracks (all songs by default, and the music videos unless that is turned off in Settings; unreleased tracks cannot be picked); songs, music videos, albums and playlists can also be downloaded from every More menu (track rows, search results, shelves…); "Download decrypted file" on the song page goes through the same download manager (`web/download/downloads.mjs`) and is tagged too.
   - After each song is decrypted in the browser, `media.wasm` writes the iTunes tags (`moov.udta.meta.ilst`, the go-mp4tag fields) with cover art and lyrics into `moov` while converting to a progressive MP4, so the file is not rewritten a second time; cover art and lyrics are fetched alongside the audio and simply left out if unavailable
   - Metadata comes from amp-api `songs?ids=…&include=albums,artists` and `music-videos?ids=…` (one request per 100 tracks): composer, ISRC, track / disc numbers, and the album's UPC, copyright, label and track count
   - Music videos are downloaded like the reference `mvDownloader`: the MV master from wrapper-lite, the video and audio picked by the settings, then decrypted, muxed and defragmented by the MV engine into an `.mp4` named with the same templates (`{codec}` / `{quality}` describe the video and audio, e.g. `2160p HEVC Dolby Vision · Dolby Atmos`). Tags follow the reference `writeMVMP4Tags` (album info from the album or playlist, `PERFORMER`, `RELEASETIME`, the MV thumbnail as cover art) plus media type Music Video (`stik` 6). They need OPFS
   - ZIPs copy nothing: one Blob is assembled from the files in OPFS and the headers, with CRC-32 computed while defrag writes each file
-- **Download center** (`src/ui/download-center.mjs`): stays at the bottom of the page like the player bar (above it) and keeps going across navigation; shows overall progress, speed and the current job, and expands into a list of albums / playlists / songs with each track's state, where you can cancel, retry (a job or a single track), save the finished part of a job with failures, save again or remove. Temporary files are deleted on removal or when the tab closes; closing the tab during a download asks for confirmation.
-- **ALAC check**: the waveform button in the header of album, playlist and song pages, and "Check ALAC" in a song's More menu, check each track's best ALAC stream (`src/ui/alac-check.mjs`, dialog in `views/alac-check-dialog.mjs`) without requesting `/key`. Nothing starts until you press Start: select all, none or some of the tracks. The dialog shows the region, the album / playlist / song ID, each track's song ID and the check time, and the report can be copied as text.
+- **Download center** (`web/download/center.mjs`): stays at the bottom of the page like the player bar (above it) and keeps going across navigation; shows overall progress, speed and the current job, and expands into a list of albums / playlists / songs with each track's state, where you can cancel, retry (a job or a single track), save the finished part of a job with failures, save again or remove. Temporary files are deleted on removal or when the tab closes; closing the tab during a download asks for confirmation.
+- **ALAC check**: the waveform button in the header of album, playlist and song pages, and "Check ALAC" in a song's More menu, check each track's best ALAC stream (`web/alac-check.mjs`, dialog in `views/alac-check-dialog.mjs`) without requesting `/key`. Nothing starts until you press Start: select all, none or some of the tracks. The dialog shows the region, the album / playlist / song ID, each track's song ID and the check time, and the report can be copied as text.
   - **Web API and wrapper-lite masters**: by default only amp-api's `extendedAssetUrls.enhancedHls` is used, without wrapper-lite. The two can be packaged differently, and the wrapper-lite one sometimes has a better ALAC (song `1679278167`: 24-bit / 48 kHz on the web, also 24-bit / 96 kHz via wrapper-lite). With the option on, the wrapper-lite master is checked too; when both give the same best ALAC media m3u8 it is checked once, otherwise both are listed and the better one is marked. The song page's quality list (from wrapper-lite) is also compared with the web API's master, and qualities only wrapper-lite has are tagged "wrapper-lite only"
   - **Check while downloading** (Settings, off by default): ALAC downloads are checked as they download: the moofs and escape-frame ends are read from the raw segments before decryption and repair, with no extra requests. The result shows in the download center and goes into the custom tag `----:com.apple.iTunes:ALAC_CHECK` (name configurable), e.g. `result=damaged; noEnd=25; hidden=0; oversize=0; frames=2108; escapes=25; format=16/44100; bad=#124@11.517:noEnd,…; packaged=…; endTagRepair=on; checked=…`
   - **Damaged escape-frame ends** ([AppleMusicDecrypt#136](https://github.com/WorldObservationLog/AppleMusicDecrypt/issues/136)): Apple packages ALAC into an output buffer only as large as one frame of raw PCM, so the 4 extra bytes of an escape (uncompressed) frame are copied after the buffer is freed and hold heap metadata. The master m3u8 comes from amp-api's `extendedAssetUrls.enhancedHls`; only the moof at the start of each segment (a few KB) is downloaded, and for samples larger than one frame of PCM (16388 bytes in 16-bit stereo, 24580 in 24-bit) only the last 4 bytes, which cbcs leaves unencrypted because it encrypts whole 16-byte blocks only. If the PCM is not followed by the END tag `111` the frame is reported as "END tag missing" (FFmpeg and others drop it); with `111` but non-zero padding as "Hidden damage" (it decodes, but the last sample is wrong). Frame numbers, times and the last 4 bytes are listed
@@ -344,9 +333,9 @@ flowchart LR
 
 ### Songs: browser-side decryption
 
-In the browser (`src/ui/decrypt.js`):
+In the browser (`web/decrypt/decrypt.js`):
 
-1. With the master m3u8 URL from wrapper-lite, the browser fetches the master directly from the Apple CDN and parses its variants (`src/ui/wrapper.js`).
+1. With the master m3u8 URL from wrapper-lite, the browser fetches the master directly from the Apple CDN and parses its variants (`web/wrapper.js`).
 2. The media m3u8 is fetched directly from `aod.itunes.apple.com` (the CDN allows CORS and Range requests) and parsed into the init segment, fragment byte ranges and the key used by each fragment.
 3. Fragments under the prefetch key (`skd://itunes.apple.com/P000000000/s1/e1`, usually only the first one, sometimes more) use the template embedded in the wasm; once the playlist switches to the track key, the rest use the track template from `/key`.
 4. Fragments are fetched with Range requests and decrypted in place by a Worker pool (one `hook.wasm` instance per Worker). The decryption code lives in `crates/am-mp4`.
@@ -361,7 +350,7 @@ Box handling: FairPlay metadata boxes (`sinf`, `senc`, `saiz`, `saio`, `pssh`, a
 
 Some songs (for example `1569279827`) have no master m3u8: wrapper-lite `/m3u8` returns a whole `.m4p` file. As in the reference downloader (`internal/widevine-rip`), they are played and downloaded from the 256 kbps AAC-LC stream used for web playback:
 
-1. `songMaster` (`src/ui/wrapper.js`) sees that the URL is not an `.m3u8` (it is not fetched) and asks `/webplayback` (`/mv/webplayback/<adamId>` in server mode) for the media m3u8, offered as the only variant (`AAC · 256 kbps`, tagged "AAC-LC only"). A failed `/m3u8` request (HTTP 500, unreachable, …) is reported as an error and retried by batch downloads, never downgraded. Download settings are ignored for these songs, as in the reference; the file is marked as a fallback when another quality was preferred.
+1. `songMaster` (`web/wrapper.js`) sees that the URL is not an `.m3u8` (it is not fetched) and asks `/webplayback` (`/mv/webplayback/<adamId>` in server mode) for the media m3u8, offered as the only variant (`AAC · 256 kbps`, tagged "AAC-LC only"). A failed `/m3u8` request (HTTP 500, unreachable, …) is reported as an error and retried by batch downloads, never downgraded. Download settings are ignored for these songs, as in the reference; the file is marked as a fallback when another quality was preferred.
 2. Its `EXT-X-KEY` is a `data:` URI with the key ID and the fragments are CENC (AES-CTR). The media Worker builds a Widevine license request (`crates/am-media/src/widevine.rs`, a port of the reference CDM with its built-in device; same `media_challenge` / `media_license` entry points as the MV PlayReady path) and sends it to wrapper-lite `/license` without `drm-type`. If Widevine fails, a PlayReady request for the same key ID is tried.
 3. Fragments are decrypted with the content key in place by the same Worker pool (`hook_decrypt_cenc`, `cenc::decrypt_fragment_in_place`), keeping byte lengths, so playback, seeking and downloads work exactly as above.
 
@@ -426,152 +415,30 @@ Page URLs (see [Pages](#pages)) all return the single-page app `app.html`. The A
 
 ## Development
 
-### Building
-
-```sh
-cargo build --release
-```
-
-The binary is written to `target/release/fantastic` (`fantastic.exe` on Windows). All browser assets, including the prebuilt WASM modules, are committed under `src/ui/` and embedded into the binary, so a normal build needs only Rust. Rebuild the assets only after changing their sources:
-
-| Asset | Source | Rebuild |
-|---|---|---|
-| `hook.wasm`, `flac.wasm`, `media.wasm` | `crates/am-wasm`, `crates/am-flac-wasm`, `crates/am-media-wasm` (and `am-mp4`, `am-alac`, `temari`, `am-media`) | `rustup target add wasm32-unknown-unknown` and [binaryen](https://github.com/WebAssembly/binaryen)'s `wasm-opt` (or `WASM_OPT="npx -y -p binaryen@123.0.0 wasm-opt"`), then `scripts/build-wasm.sh`. `hook.wasm` and `media.wasm` use the `wasm` profile in `Cargo.toml` (size-optimized, with the decryption hot spots temari and AES kept at `opt-level` 3) |
-| `mv-cea608.mjs` | `browser/cea608` | `node scripts/build-cea608.cjs <path-to-typescript-package>` |
-| `lyrics/amll-core.mjs`, `lyrics/amll.css` | `@applemusic-like-lyrics/core`, see [browser/amll](browser/amll/README.md) | `node scripts/build-amll.cjs <node_modules>` |
-| `ec3.wasm`, `ec3-runtime.mjs` | `@mediabunny/ac3` 1.59.1 | `node scripts/extract-ec3.mjs`, see [EC3-SOURCE.md](src/ui/EC3-SOURCE.md) |
-| `joc.wasm` | `crates/joc-wasm`, `crates/joc-core` (from [am-hook-joc](https://github.com/TheM14/am-hook-joc)) | `scripts/build-wasm.sh`, like `hook.wasm`; `joc-core` stays at `opt-level` 3 because it renders in real time. `joc-hrtf-*.jochrtf` are compiled SADIE II fields, see [JOC-NOTICE.md](src/ui/JOC-NOTICE.md) |
-
-### Testing
+Front-end sources live under `web/`: `/assets/<path>` maps directly to `web/<path>`. Register new files in `src/assets.rs`'s `ASSETS`.
+Node tests are grouped into `tests/unit/` (offline, CI), `tests/ui/` (offline Playwright), and `tests/live/` (a real server), with shared helpers in `tests/support/`.
+The unit suite includes QQ sources, playback quality, lyric localization and word segmentation regressions.
 
 ```sh
 cargo test --workspace
-cargo clippy --workspace --all-targets -- -D warnings   # CI runs this too; the workspace is warning-free
+cargo clippy --workspace --all-targets -- -D warnings
+node tests/run.mjs unit
+node tests/run.mjs ui
 ```
 
-Unit tests cover the browser media core (PlayReady and Widevine license decryption, CENC/CBCS including the length-preserving in-place path, caption repair, defragmentation), URL parsing, m3u8 parsing, MP4 box patching (including that the in-place wasm path matches the parallel path), cache deduplication and the MV endpoints. `crates/joc-core` checks the JOC renderer bit-exactly against am-hook-joc's reference digests on a fixture of real Atmos metadata (Speaker 2.0, binaural, reset, every HRTF field). Offline integration tests also check that Apple CDN URLs are not proxied.
+After changing a wasm crate, run `scripts/build-wasm.sh` and commit the outputs under `web/`. Do not run `cargo fmt`.
+See [Development](docs/development.md) and the [AMLL build notes](vendor/amll/README.md).
 
-Tests that require the live Apple CDN or wrapper-lite are ignored by default and do not run in GitHub Actions. Run them locally with Apple CDN access and wrapper-lite available (default `http://127.0.0.1:12340`, override with `FANTASTIC_WRAPPER`):
+## Documentation
 
-```sh
-cargo test --test e2e_test -- --ignored
-```
-
-These tests verify lyrics.
-
-Browser-side tests are plain Node scripts. `<playwright>` is the path to a Playwright package; when `[base]` is omitted, the MV and radio live tests default to `http://127.0.0.1:18888` and the others to `FANTASTIC_URL` or `http://127.0.0.1:8888` (the ALAC tests only read `FANTASTIC_URL`).
-
-<details>
-<summary><b>Offline, Node only</b></summary>
-
-| Command | Covers |
-|---|---|
-| `node --test tests/player_*.cjs` | Player |
-| `node tests/mv_hls.cjs`, `node tests/mv_captions.cjs` | MV playlists and captions |
-| `node --test tests/serverless.mjs` | The serverless backend and the `dist/` layout; also run in CI |
-| `node --test tests/download_core.mjs` | ZIP / ZIP64, iTunes tags, file name templates, album name suffix |
-| `node --test tests/alac_check.mjs` | ALAC check: escape-frame end verdicts (including the cases from issue #136), moof / init parsing, the prefetch key in multi-DRM playlists, bandwidth verdicts; also run by CI |
-| `node --test tests/joc_wasm.mjs` | `src/ui/joc.wasm` against the same reference digests as `crates/joc-core`, all 20 HRTF fields, an invalid HRTF, and the real-time factor of both modes; also run by CI |
-
-</details>
-
-<details>
-<summary><b>Offline, Playwright + Chrome with local fixtures</b></summary>
-
-| Command | Covers |
-|---|---|
-| `node tests/ui_layout.cjs <playwright>` | Page layout |
-| `node tests/lyrics_ui.cjs <playwright>` | Lyrics view |
-| `node tests/mv_ui.cjs <playwright>` | MV page |
-| `node tests/library_ui.cjs <playwright>` | Library and playlists: add, playlists, reorder, persistence, export / import and file validation, favorites, folders and drag-and-drop, database upgrade |
-| `node tests/station_ui.cjs <playwright>` | Radio and station pages: nav position, live shelf and Your Stations, the first media-user-token prompt, next songs and refills, episode and live layouts, Settings |
-
-</details>
-
-<details>
-<summary><b>Live (running Fantastic, wrapper-lite, Apple CDN access)</b></summary>
-
-| Command | Covers |
-|---|---|
-| `node tests/mv_live.cjs <playwright> [base]`, `node tests/mv_captions_live.cjs <playwright> [base]` | MV playback and captions |
-| `node tests/alac_recovery.cjs <playwright>`, `node tests/alac_source_recovery.cjs <playwright>` | ALAC end-tag repair |
-| `node tests/alac_check_ui.cjs <playwright> [base]` | Album page ALAC check: the two damaged frames of Shadows In The Night from issue #136, packaging date, first-15-seconds analysis, copied report, no `/key` request (wrapper-lite not needed) |
-| `node tests/aac_lc_live.cjs <playwright> [base]` | A song without a master: AAC-LC variant, Widevine license, playback and seeking in server and local modes, download to `target/` |
-| `node tests/search_ui.cjs <playwright> [base]`, `node tests/album_ui.cjs <playwright> [base]`, `node tests/playlist_ui.cjs <playwright> [base]`, `node tests/artist_ui.cjs <playwright> [base]`, `node tests/browse_ui.cjs <playwright> [base]` | Search, album, playlist, artist and browse pages (need access to music.apple.com) |
-| `node tests/app_ui.cjs <playwright> [base]` | Single-page app: playback across navigation, queue, Back / Forward, lyrics |
-| `node tests/download_ui.cjs <playwright> [base]` | Batch downloads: settings, album ZIP tags / cover / lyrics, folder mode, playlists and .m3u8, music videos, cancel / retry; needs wrapper-lite with the cn region |
-| `node tests/radio_live.cjs <playwright> [base] [token-file]` | Stations: needs a media-user-token from token-file, `FANTASTIC_MEDIA_USER_TOKEN` or `target/my-media-user-token.txt`; genre and personal stations, Widevine license / playback / seeking / M4A download of an episode from recently played radio, and live radio simulated over its segments |
-
-</details>
-
-### Project Layout
-
-<details>
-<summary><b>Source tree</b></summary>
-
-```
-src/
-  cli.rs               CLI argument parsing
-  main.rs              Server startup
-  lib.rs               Router construction
-  limit.rs             Per-client-IP rate and concurrency limits for relayed wrapper-lite requests
-  assets.rs            Embedded front-end assets: one table (`ASSETS`) drives both the routes and the MIME types; add a browser file by adding one line
-  amp.rs               amp-api catalog proxy (fetches and refreshes the music.apple.com web developer token) and station endpoints (media-user-token and license relays)
-  log.rs               Request log
-  links.rs             Apple Music link parsing and page-path matching (shared regex fragments; log.rs reuses them to classify requests)
-  state.rs             Configuration and shared clients
-  updater.rs           --check-update / --auto-update (GitHub Releases)
-  wrapper.rs           wrapper-lite client (master m3u8, decryption templates, lyrics)
-  ui.rs                Web endpoints (status, parse, templates, lyrics, MV relays; fallback serves the single-page app for Apple Music page paths)
-  ui/
-    app.html / app.mjs Single-page app: persistent player bar and lyrics view; the client-side router takes over in-site links and swaps page views
-    views/             Page views: <name>.html markup, <name>.mjs script (home / song / mv / album / playlist / artist / browse: New, Radio and editorial pages, styles in browse.css; station: station pages)
-    app.css / mv.css   Styles
-    i18n.js            Chinese / English strings; primary storefront and catalog language settings
-    settings.mjs       Primary storefront / catalog language picker
-    prefs.mjs          Settings store (download settings and more, localStorage); the page is views/settings.mjs
-    downloads.mjs      Batch download manager (quality choice, metadata, cover art and lyrics, save modes); download-center.mjs is the persistent download center, views/download-dialog.mjs the album / playlist download dialog
-    mp4-tags.mjs / zip.mjs / naming.mjs / lrc.mjs   iTunes tags (ilst), uncompressed ZIP (with ZIP64), file name templates, TTML to LRC
-    library.mjs        Library and playlist store (IndexedDB, cross-tab sync, import / export format and validation); pages in views/library*.mjs, shared dialogs and menus in views/library-ui.mjs
-    player.js          Song player (MSE) and playback queue; page views use the persistent player via scope()
-    motion-art.mjs     Motion artwork on album, playlist and artist pages (editorialVideo HLS via MSE)
-    decrypt.js         Song decryption: m3u8 parsing, Worker pool, templates, download and OPFS
-    hook-worker.js     Worker: wasm decryption and OPFS writes
-    hook.wasm          Build output of crates/am-wasm
-    flac.wasm / flac-transcode-worker.js / flac-init.bin   ALAC-to-FLAC playback; decoding for the ALAC check
-    alac-check.mjs     album page ALAC check (damaged escape-frame ends, packaging, real bit depth and bandwidth); dialog in views/alac-check-dialog.mjs
-    ec3.wasm / ec3-runtime.mjs / ec3-decode-worker.js      EC-3 PCM fallback
-    joc.wasm / joc-decode-worker.js / joc-hrtf-*.jochrtf   Dolby Atmos object rendering (JOC): build output of crates/joc-wasm and the SADIE II HRTF fields
-    joc-output-worklet.js / joc-scene.mjs                  AudioWorklet output for low-latency JOC playback, and the spatial scene (virtual head and objects)
-    lyrics/            Lyrics view (bundled AMLL, see browser/amll; ttml.mjs parses TTML, panel.mjs wires it to the player, backdrop*.mjs draw the dynamic artwork background, pulse.mjs drives the beat pulse)
-    station.mjs        Station endpoints needing a media-user-token: storing and asking for the token, next tracks, play assets, license request formats
-    mv-radio.mjs       Station HLS playback and downloads (live radio and episodes, sharing the media Worker with MVs)
-    mv-hls.mjs / mv-engine.mjs                            MV playlist parsing and track selection, playback, download
-    media-worker.js / media.wasm                          Worker for MVs and song defragmentation; build output of crates/am-media-wasm
-    mv-captions.mjs / mv-cea608.mjs                       CEA-608 captions
-crates/
-  am-mp4/              ISOBMFF parsing, box patching, sample decryption (shared by server and wasm); embeds the prefetch-key template
-  am-alac/             Conservative ALAC end-tag repair
-  am-wasm/             Browser C ABI exports of am-mp4 (wasm32-unknown-unknown)
-  am-flac-wasm/        ALAC packet decoder and FLAC frame writer for the browser; PCM analysis (real bit depth, bandwidth, analysis.rs)
-  am-media/            Browser media core: PlayReady, Widevine, CENC/CBCS, caption repair, MP4 muxing and defragmentation
-  am-media-wasm/       Browser C ABI exports of am-media
-  temari/              Vendored Temari FairPlay decryption library
-  joc-core/            E-AC-3 JOC object reconstruction, Speaker 2.0 and binaural rendering (from am-hook-joc)
-  joc-wasm/            Browser C ABI exports of joc-core
-browser/
-  cea608/              Vendored hls.js CEA-608 parser
-  amll/                AMLL lyric player bundle entry and build notes
-serverless/
-  core.mjs             Serverless backend (amp-api proxy, MV master, station endpoints, optional wrapper-lite relay), the counterpart of amp.rs and ui.rs
-  cloudflare.mjs       Cloudflare Worker entry (wrangler.toml)
-api/handler.mjs        Vercel Edge Function entry (vercel.json)
-scripts/               WASM / asset build scripts; build-static.mjs builds dist/ for serverless deployments from the asset table in assets.rs
-tests/                 Rust integration tests and Node browser tests (app.cjs holds the shared page helpers)
-docs/                  Release guide (RELEASE.md) and README screenshots
-```
-
-</details>
+| Document | Contents |
+| --- | --- |
+| [User Guide](docs/guide.md) | Navigation, player, pages, lyrics, music videos, radio, library, downloads and settings |
+| [Deployment](docs/deployment.md) | Vercel / Cloudflare, environment variables, using a local wrapper-lite |
+| [Reference](docs/reference.md) | Command-line options and server endpoints |
+| [Architecture](docs/architecture.md) | How decryption and playback work, which file implements what, the source layout |
+| [Development](docs/development.md) | Building the binary and the WASM modules, adding front-end files, running the tests |
+| [Changelog](CHANGELOG.en.md) | Changes in every release |
 
 ## Community
 
@@ -581,4 +448,4 @@ Questions, feedback and discussion: the Telegram group [@apple_music_alac](https
 
 Fantastic is licensed under the [GNU Affero General Public License v3.0 only](LICENSE) (AGPL-3.0-only), because the web UI embeds the AGPL-licensed [AMLL](https://github.com/amll-dev/applemusic-like-lyrics) lyric player. If you run a modified version as a network service, you must offer its users the corresponding source.
 
-Bundled third-party components keep their own licenses: `crates/temari` (MIT), the hls.js CEA-608 parser (Apache-2.0, `browser/cea608/LICENSE`), `@mediabunny/ac3` (MPL-2.0, `src/ui/EC3-LICENSE.txt`), AMLL with its dependencies (AGPL-3.0-only, `browser/amll`), the JOC renderer from am-hook-joc (AGPL-3.0-only or MIT, `crates/joc-core/LICENSE`), the lyric artwork background from YouLyPlus (MIT, notice in `src/ui/lyrics/backdrop-render.mjs`) and the SADIE II HRTF fields (Apache-2.0, see `src/ui/JOC-NOTICE.md`).
+Bundled third-party components keep their own licenses: `crates/temari` (MIT), the hls.js CEA-608 parser (Apache-2.0, `vendor/cea608/LICENSE`), `@mediabunny/ac3` (MPL-2.0, `web/ec3/LICENSE.txt`), AMLL with its dependencies (AGPL-3.0-only, `vendor/amll`), the JOC renderer from am-hook-joc (AGPL-3.0-only or MIT, `crates/joc-core/LICENSE`), the lyric artwork background from YouLyPlus (MIT, notice in `web/lyrics/backdrop-render.mjs`) and the SADIE II HRTF fields (Apache-2.0, see `web/joc/NOTICE.md`).

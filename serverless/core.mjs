@@ -1,11 +1,11 @@
-// fantastic 的 serverless 后端（Vercel Edge Function 与 Cloudflare Worker 共用），对应二进制里的 src/amp.rs 与 src/ui.rs。
+// fantastic 的 serverless 后端（Vercel Edge Function 与 Cloudflare Worker 共用），对应二进制里的 src/amp.rs 与 src/handlers.rs。
 // 只用 Web 标准接口（fetch / Request / Response），平台差异由入口处理：api/handler.mjs（Vercel）、serverless/cloudflare.mjs。
 //
 // 与二进制的区别：
 // - 没有常驻进程：amp-api 的响应缓存交给平台 CDN（响应带 `s-maxage`），不做连接保活与后台预热；
 //   developer token 缓存在实例内存里，平台提供 `tokenStore` 时跨实例共享。
 // - wrapper-lite 转发是可选的：设置了环境变量 FANTASTIC_WRAPPER_URL 才启用（可另设 FANTASTIC_WRAPPER_AUTH），
-//   否则页面默认由浏览器直连用户自己的 wrapper-lite（见 src/ui/wrapper.js）。实例之间不共享状态，不限速、不限并发。
+//   否则页面默认由浏览器直连用户自己的 wrapper-lite（见 web/wrapper.js）。实例之间不共享状态，不限速、不限并发。
 
 const WEB_ORIGIN = 'https://music.apple.com';
 const API_ORIGIN = 'https://amp-api-edge.music.apple.com';
@@ -495,13 +495,16 @@ async function mvLicense(wrapper, request) {
 }
 
 /** 歌曲的 TTML 歌词：向 wrapper-lite `/lyrics` 获取后原样返回 XML。没有歌词时返回 404 */
-async function lyrics(wrapper, adamId, language) {
+async function lyrics(wrapper, adamId, language, script) {
   if (!/^[0-9]+$/.test(adamId)) return fail(400, 'Invalid adamId');
-  if (language && (language.length > 35 || !/^[0-9A-Za-z-]+$/.test(language))) return fail(400, 'Invalid language');
+  const badTag = (tag) => tag && (tag.length > 35 || !/^[0-9A-Za-z-]+$/.test(tag));
+  if (badTag(language)) return fail(400, 'Invalid language');
+  // script：发音用的文字（如 ko-Hang；wrapper-lite 默认 en-Latn）
+  if (badTag(script)) return fail(400, 'Invalid script');
   const notFound = () => json(404, { code: 1, msg: 'lyrics not found' });
   let reply;
   try {
-    reply = await wrapperSend(wrapper, `/lyrics?${query(language ? { adamId, language } : { adamId })}`, { timeout: 15000 });
+    reply = await wrapperSend(wrapper, `/lyrics?${query({ adamId, ...(language ? { language } : {}), ...(script ? { script } : {}) })}`, { timeout: 15000 });
   } catch (error) {
     return fail(502, `Request to wrapper-lite failed: ${error.message}`);
   }
@@ -546,7 +549,7 @@ function wrapperRoute(method, path, url, request, wrapper) {
     if (id === null) return fail(400, 'Invalid adamId');
     if (match[1] === 'parse/song') handler = () => songMaster(wrapper, id);
     else if (match[1] === 'parse/mv') handler = () => mvMasterById(wrapper, id);
-    else if (match[1] === 'lyrics') handler = () => lyrics(wrapper, id, url.searchParams.get('language') ?? '');
+    else if (match[1] === 'lyrics') handler = () => lyrics(wrapper, id, url.searchParams.get('language') ?? '', url.searchParams.get('script') ?? '');
     else handler = () => (validMvId(id) ? forward(wrapper, `/webplayback?${query({ adamId: id })}`) : fail(400, 'Invalid adamId'));
   }
   if (!handler) return null;
@@ -572,7 +575,7 @@ export async function handle(request, env = {}, platform = {}) {
   const wrapper = wrapperConfig(env);
 
   if (method === 'GET') {
-    // 部署环境，页面在 wrapper.js 之前加载（二进制由 src/ui.rs 的 host_js_handler 生成）
+    // 部署环境，页面在 wrapper.js 之前加载（二进制由 src/handlers.rs 的 host_js_handler 生成）
     if (path === '/assets/host.js') {
       const host = { serverWrapper: wrapper !== null };
       const hint = String(env?.FANTASTIC_WRAPPER_HINT ?? '').trim();

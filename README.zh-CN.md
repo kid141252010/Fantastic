@@ -13,7 +13,7 @@
 
 中文 | [English](README.md)
 
-![Fantastic：桌面端的新发现页与手机上的专辑页](docs/home.zh-CN.png)
+![Fantastic：桌面端的新发现页与手机上的专辑页](docs/screenshots/home.zh-CN.png)
 
 </div>
 
@@ -56,9 +56,7 @@ QQ 音源由 Fantastic 服务端提供：服务端代理一个只有服务端知
   - [命令行参数](#命令行参数)
   - [服务端接口](#服务端接口)
 - [开发](#开发)
-  - [构建](#构建)
-  - [测试](#测试)
-  - [项目结构](#项目结构)
+- [文档](#文档)
 - [交流群](#交流群)
 - [许可证](#许可证)
 
@@ -124,31 +122,22 @@ fantastic --listen 0.0.0.0:8888 --wrapper-url http://127.0.0.1:12340
 | `https://music.apple.com/cn/playlist/<slug>/<pl.id>` | `/https://music.apple.com/cn/playlist/<slug>/<pl.id>` |
 | `https://music.apple.com/cn/artist/<slug>/<id>` | `/https://music.apple.com/cn/artist/<slug>/<id>` |
 
-例如：`http://127.0.0.1:8888/https://music.apple.com/cn/music-video/super-bowl-lix-halftime-show-live/1836358807`。链接中的国家代码决定获取展示信息时使用的地区。电台、编辑页与排行榜的链接同样可以打开，见[页面一览](#页面一览)。
+例如：`http://127.0.0.1:8888/https://music.apple.com/cn/music-video/super-bowl-lix-halftime-show-live/1836358807`。链接中的国家代码决定获取展示信息时使用的地区。电台、编辑页与排行榜的链接同样可以打开，见[页面一览](docs/guide.zh-CN.md#页面一览)。
 
-## 部署
+## 不用二进制部署
 
-[快速开始](#快速开始)中的二进制功能最完整：转发 wrapper-lite 时可以限速限并发（见[命令行参数](#命令行参数)），通过普通的 `http://<局域网 IP>` 也能使用。下面的方式不需要二进制。
-
-### Serverless 部署（Vercel / Cloudflare）
-
-不想运行二进制的话，可以把同一套页面部署到 serverless 平台：静态资源由平台托管，后端只剩一个函数（amp-api 目录代理、MV master 获取与电台接口）。两个平台任选其一：
+同样的页面也可以部署到 serverless 平台：平台托管静态文件，后端缩减为一个函数。构建只需要 Node。
 
 | 平台 | 一键部署 | 命令行 |
 |---|---|---|
 | Vercel | [![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fitouakirai%2Fam-hook) | `npx vercel --prod` |
 | Cloudflare Workers | [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/itouakirai/am-hook) | `npx wrangler deploy` |
 
-部署 fork 时把按钮链接里的仓库地址换成自己的。构建只需要 Node（`node scripts/build-static.mjs` 由 `src/ui/` 生成 `dist/`），不需要 Rust；配置见 [vercel.json](vercel.json) 与 [wrangler.toml](wrangler.toml)。
+平台上的函数访问不到你本机的 wrapper-lite，因此页面直接使用你的本地 wrapper-lite，或者由函数转发到通过环境变量设置的公网 wrapper-lite。两种方式以及 serverless 部署与二进制的区别见[部署](docs/deployment.zh-CN.md)。
 
-**wrapper-lite**：平台上的函数访问不到你本机的 wrapper-lite，所以默认只有[本地模式](#使用本地-wrapper-lite)——在导航底部的「wrapper-lite」设置里填写自己的 wrapper-lite 地址，请求由浏览器直接发出：
+## 文档
 
-- 页面是 HTTPS 的，浏览器只允许它请求 `http://127.0.0.1` / `http://localhost` 或 HTTPS 地址；`http://<局域网 IP>` 会被当作混合内容拦截（wrapper-lite 在另一台机器上时需要给它加 HTTPS，或改用二进制）。部分浏览器对回环地址也有限制，Chrome 可能会先询问是否允许访问本地网络。
-- wrapper-lite 需允许跨源请求（见[使用本地 wrapper-lite](#使用本地-wrapper-lite)）。
-
-也可以让函数转发到一个公网可达的 wrapper-lite，在平台的环境变量里设置（Cloudflare 用 `npx wrangler secret put <名称>`；Vercel 修改后需重新部署）：
-
-| 环境变量 | 说明 |
+| 文档 | 内容 |
 |---|---|
 | `FANTASTIC_WRAPPER_URL` | wrapper-lite 地址。设置后页面默认使用「服务端」模式，与二进制相同；可带用户信息（`https://<token>@host`） |
 | `FANTASTIC_WRAPPER_AUTH` | 可选，wrapper-lite 请求的 `Authorization`，规则与 `--wrapper-auth` 相同 |
@@ -189,7 +178,7 @@ QQ 不设置客户端限流；激进流量由上游服务自行处理。
 - 首页显示 wrapper-lite 状态，以及最近搜索的关键词（点击可再次搜索，也可逐条删除）；页面底部有本项目的 GitHub 链接和对所用开源项目的致谢。
 - 搜索：首页输入框既能粘贴链接，也能按关键词搜索（与 music.apple.com 相同的 amp-api 请求）。输入时显示补全词与直达结果；结果按最佳结果、艺人、专辑、歌曲、歌单、MV 分组，可「加载更多」。搜索使用主地区，也可在结果旁的按钮里修改。按 `/` 聚焦输入框；搜索词记在地址栏 `?q=` 中，可前进 / 后退与分享。搜索只在首页；其他页面顶部是「返回」按钮，回到上一页（直接打开链接进入时回到首页）。
 - 地址栏、页面标题和浏览器前进 / 后退跟随当前页面，链接可以直接分享，刷新后仍停留在当前页。
-- 实现方式：与 music.apple.com 相同，整站是单页应用。服务端对所有页面地址都返回 `app.html`，播放条、音频、解密 Worker 和歌词界面常驻其中；站内链接由前端路由（`app.mjs`）接管，用 `history.pushState` 改地址并切换页面视图（`src/ui/views/`），文档不重新加载。不依赖任何请求头，通过 `http://<局域网 IP>` 访问时同样有效。
+- 实现方式：与 music.apple.com 相同，整站是单页应用。服务端对所有页面地址都返回 `app.html`，播放条、音频、解密 Worker 和歌词界面常驻其中；站内链接由前端路由（`app.mjs`）接管，用 `history.pushState` 改地址并切换页面视图（`web/views/`），文档不重新加载。不依赖任何请求头，通过 `http://<局域网 IP>` 访问时同样有效。
 
 ### 播放器
 
@@ -222,8 +211,8 @@ QQ 不设置客户端限流；激进流量由上游服务自行处理。
 | `/https://music.apple.com/<cc>/room/<id>`、`.../multi-room/<id>`、`.../grouping/<id>`、`.../curator/<slug>/<id>` | 编辑页，路由与 music.apple.com 相同：room 为区块的「查看全部」（全部内容的网格，滚动时分页加载）；multi-room（`editorial/{cc}/multirooms`，头图 + 区块）、grouping（`editorial/{cc}/groupings/{id}`，如「音乐视频」与各风格页）与 curator（`catalog/{cc}?ids[apple-curators]=`：其分组的区块，或全部歌单）沿用新发现的排版。编辑数据中的旧式链接（`collection/...?fcId=`、`viewGrouping?id=`、`viewFeature?id=`）在站内打开这些页面；电台打开本站的电台页，其他本站无法打开的内容链接到 Apple Music。在首页粘贴这些链接同样可以打开 |
 | `/radio` | 广播（侧边栏的「广播」）：与 music.apple.com/{cc}/radio 相同的编辑区块，使用主地区，填过 media-user-token 时另有「你的电台」；`/https://music.apple.com/<cc>/radio` 为固定地区 |
 | `/https://music.apple.com/<cc>/station/<slug>/ra.<id>` | 电台页：个人 / 编辑电台为接下来几首的曲目列表，直播电台与广播单集为 MV 页布局的播放与下载（见[广播与电台](#广播与电台)） |
-| `/library[/<分类>]`、`/library/artists/<名称>`、`/library/playlist/p.<id>`、`/library/favorite-songs`、`/library/playlist-folder/f.<id>` | 资料库页面（分类 `recently-added`、`artists`、`albums`、`songs`、`music-videos`、`all-playlists`）、本地歌单、喜爱的歌曲与歌单文件夹。资料库数据保存在浏览器的 IndexedDB 中（`src/ui/library.mjs`），见[资料库与歌单](#资料库与歌单) |
-| `/settings` | 设置中心（下载设置等）。设置保存在浏览器中（`src/ui/prefs.mjs`），见[批量下载与设置中心](#批量下载与设置中心) |
+| `/library[/<分类>]`、`/library/artists/<名称>`、`/library/playlist/p.<id>`、`/library/favorite-songs`、`/library/playlist-folder/f.<id>` | 资料库页面（分类 `recently-added`、`artists`、`albums`、`songs`、`music-videos`、`all-playlists`）、本地歌单、喜爱的歌曲与歌单文件夹。资料库数据保存在浏览器的 IndexedDB 中（`web/library.mjs`），见[资料库与歌单](#资料库与歌单) |
+| `/settings` | 设置中心（下载设置等）。设置保存在浏览器中（`web/prefs.mjs`），见[批量下载与设置中心](#批量下载与设置中心) |
 
 ### 歌曲
 
@@ -313,13 +302,13 @@ QQ 不设置客户端限流；激进流量由上游服务自行处理。
   - 标签：可选写入的字段（标题、艺人、专辑、专辑艺人、作曲、流派、发行日期、曲目号、碟号、歌词、封面、版权、厂牌、UPC、ISRC、分级、歌曲 / 专辑 / 艺人 ID），排序字段，歌单曲目使用原专辑信息或歌单信息，去掉专辑名末尾的「 - EP」/「 - Single」（标签与文件名、文件夹名一致，默认关闭），元数据语言
   - 封面：JPEG / PNG 与尺寸，嵌入的封面和另存的 `cover.jpg` / `cover.png` 分开设置
   - 歌词：另存 `.lrc` / `.ttml`、逐字（增强型 LRC）、附带翻译 / 发音、歌词语言
-- **下载**：专辑页与歌单页的下载按钮（播放、随机播放旁）打开对话框，可临时改音质并选择曲目（默认全部歌曲，以及设置中没有关闭时的 MV；未发行的曲目不能选择）；各处的「更多」菜单（曲目行、搜索结果、货架等）中的歌曲、MV、专辑与歌单也可直接下载；歌曲页各音质的「下载解密文件」同样经下载管理器（`src/ui/downloads.mjs`）进行，带标签。
+- **下载**：专辑页与歌单页的下载按钮（播放、随机播放旁）打开对话框，可临时改音质并选择曲目（默认全部歌曲，以及设置中没有关闭时的 MV；未发行的曲目不能选择）；各处的「更多」菜单（曲目行、搜索结果、货架等）中的歌曲、MV、专辑与歌单也可直接下载；歌曲页各音质的「下载解密文件」同样经下载管理器（`web/download/downloads.mjs`）进行，带标签。
   - 每首歌在浏览器内解密后，`media.wasm` 在整理为标准 MP4 时把 iTunes 标签（`moov.udta.meta.ilst`，字段同 go-mp4tag）连同封面、歌词一起写入 `moov`，不需要第二次改写文件；封面与歌词与音频同时获取，取不到时只是不写入
   - 元数据来自 amp-api `songs?ids=…&include=albums,artists` 与 `music-videos?ids=…`（每 100 首一次请求）：作曲、ISRC、曲目号 / 碟号，以及所属专辑的 UPC、版权、厂牌与曲目数
   - MV 的下载同参考实现的 `mvDownloader`：从 wrapper-lite 取 MV master，按设置选视频与音轨，由 MV 引擎解密、合并并整理为 `.mp4`，文件名使用同样的模板（`{codec}` / `{quality}` 为视频与音频规格，如 `2160p HEVC Dolby Vision · Dolby Atmos`）。标签同参考实现的 `writeMVMP4Tags`（专辑信息取自专辑或歌单，另写 `PERFORMER`、`RELEASETIME`，封面为 MV 缩略图），媒体类型为音乐视频（`stik` 6）。需要 OPFS
   - ZIP 不复制数据：由 OPFS 中的各个文件与头部拼成一个 Blob，CRC-32 在 defrag 写出时顺带计算
-- **下载中心**（`src/ui/download-center.mjs`）：与播放条一样常驻在页面底部（播放条上方），站内跳转时下载不中断；显示总进度、速度与当前任务，展开后列出各专辑 / 歌单 / 单曲及每首歌的状态，可以取消、重试（整个任务或单首）、有失败曲目时仍然保存已完成的部分、再次保存、移除。移除或关闭标签页时删除临时文件；下载进行中关闭标签页会提示。
-- **ALAC 检测**：专辑页、歌单页与歌曲页头部的波形按钮，以及歌曲「更多」菜单里的「检测 ALAC」，逐首检测最高音质的 ALAC（`src/ui/alac-check.mjs`，对话框见 `views/alac-check-dialog.mjs`），不请求 `/key`。打开后不自动开始，可全选、全不选或勾选部分曲目；显示地区、专辑 / 歌单 / 歌曲 ID、每首的歌曲 ID 与检测时间，可复制文字报告。
+- **下载中心**（`web/download/center.mjs`）：与播放条一样常驻在页面底部（播放条上方），站内跳转时下载不中断；显示总进度、速度与当前任务，展开后列出各专辑 / 歌单 / 单曲及每首歌的状态，可以取消、重试（整个任务或单首）、有失败曲目时仍然保存已完成的部分、再次保存、移除。移除或关闭标签页时删除临时文件；下载进行中关闭标签页会提示。
+- **ALAC 检测**：专辑页、歌单页与歌曲页头部的波形按钮，以及歌曲「更多」菜单里的「检测 ALAC」，逐首检测最高音质的 ALAC（`web/alac-check.mjs`，对话框见 `views/alac-check-dialog.mjs`），不请求 `/key`。打开后不自动开始，可全选、全不选或勾选部分曲目；显示地区、专辑 / 歌单 / 歌曲 ID、每首的歌曲 ID 与检测时间，可复制文字报告。
   - **网页版与 wrapper-lite 的 master**：默认只用 amp-api 的 `extendedAssetUrls.enhancedHls`，不经过 wrapper-lite。两者可能是不同的打包，wrapper-lite 给出的有时音质更高（如歌曲 `1679278167`：网页版只有 24-bit / 48 kHz，wrapper-lite 的另有 24-bit / 96 kHz），勾选后同时检测 wrapper-lite 的 master；两边最高音质 ALAC 的 media m3u8 相同时只检测一次，不同时分别列出并标明哪边音质更高。歌曲页的音质列表（来自 wrapper-lite）也会取网页版的 master 比较，只在 wrapper-lite 中有的音质标为「仅 wrapper-lite」
   - **下载时检测**（设置中心，默认关闭）：下载 ALAC 时同时检测实际下载的那一份：原始分段在解密、修复之前顺带读出 moof 与原样帧末尾，不另发请求。结论显示在下载中心，并写入自定义标签 `----:com.apple.iTunes:ALAC_CHECK`（名称可改），内容如 `result=damaged; noEnd=25; hidden=0; oversize=0; frames=2108; escapes=25; format=16/44100; bad=#124@11.517:noEnd,…; packaged=…; endTagRepair=on; checked=…`
   - **原样帧末尾缺陷**（[AppleMusicDecrypt#136](https://github.com/WorldObservationLog/AppleMusicDecrypt/issues/136)）：Apple 打包时输出缓冲区只有一帧原始 PCM 大，原样帧（未压缩帧）多出的末尾 4 字节在缓冲区释放后才被复制，内容是堆管理数据。master m3u8 取自 amp-api 的 `extendedAssetUrls.enhancedHls`；每个分段只下载开头的 moof（几 KB），长度超过一帧 PCM 的 sample（16-bit 立体声 16388 字节、24-bit 24580 字节）再只读末尾 4 字节——cbcs 只加密整 16 字节块，这 4 字节是明文。PCM 之后不是 END 标记 `111` 的为「缺 END 标记」（FFmpeg 等会丢弃该帧）；是 `111` 但填充位不为零的为「隐藏缺陷」（解码不报错，最后一个样本已损坏）。列出帧号、时间与末尾 4 字节
@@ -344,9 +333,9 @@ flowchart LR
 
 ### 歌曲：浏览器端解密
 
-浏览器端流程（`src/ui/decrypt.js`）：
+浏览器端流程（`web/decrypt/decrypt.js`）：
 
-1. 从 wrapper-lite 取得 master m3u8 地址后，浏览器直接从 Apple CDN 获取 master 并解析出各音质变体（`src/ui/wrapper.js`）。
+1. 从 wrapper-lite 取得 master m3u8 地址后，浏览器直接从 Apple CDN 获取 master 并解析出各音质变体（`web/wrapper.js`）。
 2. 直接从 `aod.itunes.apple.com` 获取 media m3u8（CDN 允许跨域和 Range 请求），解析出 init 段、各分片的字节范围，以及每个分片对应的 key。
 3. 预取 key（`skd://itunes.apple.com/P000000000/s1/e1`）下的分片（通常只有第一个，也可能更多）使用内嵌在 wasm 中的模板，播放列表换成轨道 key 后，其余分片使用经 `/key` 获取的轨道模板。
 4. 分片用 Range 请求拉取，交给 Worker 池（每个 Worker 一个 `hook.wasm` 实例）原地解密；解密逻辑位于 `crates/am-mp4`。
@@ -361,7 +350,7 @@ box 处理：FairPlay 元数据 box（`sinf`、`senc`、`saiz`、`saio`、`pssh`
 
 有些歌曲（例如 `1569279827`）没有 master m3u8：wrapper-lite `/m3u8` 返回整首的 `.m4p` 文件。与参考实现（`internal/widevine-rip`）相同，这类歌曲改用网页播放的 256 kbps AAC-LC 播放和下载：
 
-1. `songMaster`（`src/ui/wrapper.js`）发现地址不是 `.m3u8`（不会去下载它），改向 `/webplayback`（服务端模式为 `/mv/webplayback/<adamId>`）取得 media m3u8，作为唯一的变体（`AAC · 256 kbps`，标注「仅 AAC-LC」）。`/m3u8` 请求失败（HTTP 500、连不上等）不会降级，而是报错，由批量下载自动重试。与参考实现一样，下载时不论音质设置都下载它；首选其他音质时标记为已降级。
+1. `songMaster`（`web/wrapper.js`）发现地址不是 `.m3u8`（不会去下载它），改向 `/webplayback`（服务端模式为 `/mv/webplayback/<adamId>`）取得 media m3u8，作为唯一的变体（`AAC · 256 kbps`，标注「仅 AAC-LC」）。`/m3u8` 请求失败（HTTP 500、连不上等）不会降级，而是报错，由批量下载自动重试。与参考实现一样，下载时不论音质设置都下载它；首选其他音质时标记为已降级。
 2. 它的 `EXT-X-KEY` 是带 KID 的 `data:` URI，分片为 CENC（AES-CTR）。媒体 Worker 生成 Widevine license 请求（`crates/am-media/src/widevine.rs`，移植自参考实现的 CDM 与内置设备；与 MV 的 PlayReady 共用 `media_challenge` / `media_license`），不带 `drm-type` 发给 wrapper-lite `/license`。Widevine 失败时再用同一 KID 试 PlayReady。
 3. 分片由同一个 Worker 池用内容密钥原地解密（`hook_decrypt_cenc`、`cenc::decrypt_fragment_in_place`），字节长度不变，因此播放、跳转与下载都与上面相同。
 
@@ -426,152 +415,30 @@ box 处理：FairPlay 元数据 box（`sinf`、`senc`、`saiz`、`saio`、`pssh`
 
 ## 开发
 
-### 构建
-
-```sh
-cargo build --release
-```
-
-二进制位于 `target/release/fantastic`（Windows 下为 `fantastic.exe`）。浏览器端资源（包括预编译的 WASM）都提交在 `src/ui/` 下并内嵌进二进制，普通构建只需要 Rust。只有修改对应源码后才需要重新生成：
-
-| 产物 | 源码 | 重新生成 |
-|---|---|---|
-| `hook.wasm`、`flac.wasm`、`media.wasm` | `crates/am-wasm`、`crates/am-flac-wasm`、`crates/am-media-wasm`（及 `am-mp4`、`am-alac`、`temari`、`am-media`） | `rustup target add wasm32-unknown-unknown`，并安装 [binaryen](https://github.com/WebAssembly/binaryen) 的 `wasm-opt`（或 `WASM_OPT="npx -y -p binaryen@123.0.0 wasm-opt"`），然后运行 `scripts/build-wasm.sh`。`hook.wasm` 与 `media.wasm` 使用 `Cargo.toml` 中的 `wasm` profile（按体积优化，解密热点 temari 与 AES 保持 `opt-level` 3） |
-| `mv-cea608.mjs` | `browser/cea608` | `node scripts/build-cea608.cjs <typescript 包路径>` |
-| `lyrics/amll-core.mjs`、`lyrics/amll.css` | `@applemusic-like-lyrics/core`，见 [browser/amll](browser/amll/README.md) | `node scripts/build-amll.cjs <node_modules 路径>` |
-| `ec3.wasm`、`ec3-runtime.mjs` | `@mediabunny/ac3` 1.59.1 | `node scripts/extract-ec3.mjs`，见 [EC3-SOURCE.md](src/ui/EC3-SOURCE.md) |
-| `joc.wasm` | `crates/joc-wasm`、`crates/joc-core`（来自 [am-hook-joc](https://github.com/TheM14/am-hook-joc)） | 与 `hook.wasm` 相同，运行 `scripts/build-wasm.sh`；`joc-core` 要实时渲染，保持 `opt-level` 3。`joc-hrtf-*.jochrtf` 是编译好的 SADIE II HRTF 场，见 [JOC-NOTICE.md](src/ui/JOC-NOTICE.md) |
-
-### 测试
+前端源码位于 `web/`，资源地址 `/assets/<路径>` 与 `web/<路径>` 一一对应；新文件须在 `src/assets.rs` 的 `ASSETS` 登记。
+Node 测试按 `tests/unit/`（离线、CI）、`tests/ui/`（Playwright 离线界面）、`tests/live/`（真实服务）分组，共用 `tests/support/`。
+QQ 音源、播放音质、歌词本地化与分词回归测试都在 unit 组中。
 
 ```sh
 cargo test --workspace
-cargo clippy --workspace --all-targets -- -D warnings   # CI 也会运行；workspace 现为零警告
+cargo clippy --workspace --all-targets -- -D warnings
+node tests/run.mjs unit
+node tests/run.mjs ui
 ```
 
-单元测试覆盖浏览器媒体核心（PlayReady 与 Widevine license 解密、CENC/CBCS（含长度不变的原地解密）、字幕修复、defrag）、URL 解析、m3u8 解析、MP4 box 修补（含 wasm 原地解密路径与并行路径结果一致）、缓存去重和 MV 接口。`crates/joc-core` 用真实全景声元数据制作的样本逐位比对 am-hook-joc 的参考摘要（Speaker 2.0、双耳、reset、每组 HRTF）。离线集成测试还检查 Apple CDN 地址不会被代理。
+修改 wasm 相关 crate 后运行 `scripts/build-wasm.sh` 并提交 `web/` 下的产物；不要运行 `cargo fmt`。
+详见[开发说明](docs/development.zh-CN.md)与 [AMLL 构建说明](vendor/amll/README.md)。
 
-需要真实 Apple CDN 或 wrapper-lite 的测试默认忽略，不在 GitHub Actions 中运行。请在本地能访问 Apple CDN 且 wrapper-lite 已启动时运行（默认 `http://127.0.0.1:12340`，可用环境变量 `FANTASTIC_WRAPPER` 覆盖）：
+## 文档
 
-```sh
-cargo test --test e2e_test -- --ignored
-```
-
-这些测试验证歌词。
-
-浏览器端测试是普通的 Node 脚本。`<playwright>` 为 Playwright 包路径；在线测试的 `[base]` 省略时：MV 与电台测试默认 `http://127.0.0.1:18888`，其余测试默认 `FANTASTIC_URL` 或 `http://127.0.0.1:8888`（ALAC 测试只读 `FANTASTIC_URL`）。
-
-<details>
-<summary><b>离线，仅需 Node</b></summary>
-
-| 命令 | 覆盖内容 |
-|---|---|
-| `node --test tests/player_*.cjs` | 播放器 |
-| `node tests/mv_hls.cjs`、`node tests/mv_captions.cjs` | MV 清单与字幕 |
-| `node --test tests/serverless.mjs` | serverless 后端与 `dist/` 的生成，CI 也会运行 |
-| `node --test tests/download_core.mjs` | ZIP / ZIP64、iTunes 标签、文件名模板与专辑名后缀 |
-| `node --test tests/alac_check.mjs` | ALAC 检测：原样帧末尾的判定（含 issue #136 中的实例）、moof / init 解析、多 DRM 清单中的预取密钥、频宽结论；CI 也会运行 |
-| `node --test tests/joc_wasm.mjs` | `src/ui/joc.wasm` 与 `crates/joc-core` 相同的参考摘要、20 组 HRTF、无效 HRTF，以及两种模式的实时倍率；CI 也会运行 |
-
-</details>
-
-<details>
-<summary><b>离线，Playwright + Chrome 与本地 fixture</b></summary>
-
-| 命令 | 覆盖内容 |
-|---|---|
-| `node tests/ui_layout.cjs <playwright>` | 页面布局 |
-| `node tests/lyrics_ui.cjs <playwright>` | 歌词界面 |
-| `node tests/mv_ui.cjs <playwright>` | MV 页 |
-| `node tests/library_ui.cjs <playwright>` | 资料库与歌单：添加、歌单、排序、刷新后保留、导出 / 导入与文件校验、喜爱、文件夹与拖放、数据库升级 |
-| `node tests/station_ui.cjs <playwright>` | 广播与电台页：导航位置、直播货架与「你的电台」、首次填写 media-user-token、接下来的几首与续取、单集与直播的布局、设置中心 |
-
-</details>
-
-<details>
-<summary><b>在线（需运行 Fantastic、wrapper-lite 并能访问 Apple CDN）</b></summary>
-
-| 命令 | 覆盖内容 |
-|---|---|
-| `node tests/mv_live.cjs <playwright> [base]`、`node tests/mv_captions_live.cjs <playwright> [base]` | MV 播放与字幕 |
-| `node tests/alac_recovery.cjs <playwright>`、`node tests/alac_source_recovery.cjs <playwright>` | ALAC 包尾修复 |
-| `node tests/alac_check_ui.cjs <playwright> [base]` | 专辑页 ALAC 检测：issue #136 中 Shadows In The Night 的两个缺陷帧、打包日期、前 15 秒分析、复制报告，且不请求 `/key`（不需要 wrapper-lite） |
-| `node tests/aac_lc_live.cjs <playwright> [base]` | 没有 master 的歌曲：AAC-LC 变体、Widevine license、服务端与本地模式下的播放与跳转、下载到 `target/` |
-| `node tests/search_ui.cjs <playwright> [base]`、`node tests/album_ui.cjs <playwright> [base]`、`node tests/playlist_ui.cjs <playwright> [base]`、`node tests/artist_ui.cjs <playwright> [base]`、`node tests/browse_ui.cjs <playwright> [base]` | 搜索、专辑、歌单、艺人与浏览页（需能访问 music.apple.com） |
-| `node tests/app_ui.cjs <playwright> [base]` | 单页应用：跳转后继续播放、队列、前进 / 后退、歌词 |
-| `node tests/download_ui.cjs <playwright> [base]` | 批量下载：设置中心、专辑 ZIP 的标签 / 封面 / 歌词、文件夹模式、歌单与 .m3u8、MV、取消 / 重试；需要 cn 地区的 wrapper-lite |
-| `node tests/radio_live.cjs <playwright> [base] [token 文件]` | 电台：需要 media-user-token，取自 token 文件、`FANTASTIC_MEDIA_USER_TOKEN` 或 `target/my-media-user-token.txt`；风格电台与个人电台、最近播放中的广播单集的 Widevine license / 播放 / 跳转 / M4A 下载，以及用单集分片模拟的直播 |
-
-</details>
-
-### 项目结构
-
-<details>
-<summary><b>源码目录</b></summary>
-
-```
-src/
-  cli.rs               命令行参数解析
-  main.rs              服务启动
-  lib.rs               路由构建
-  limit.rs             按客户端 IP 限制转发 wrapper-lite 的请求频率与并发
-  assets.rs            内嵌前端资源：一张表（`ASSETS`）同时决定路由与 MIME，新增浏览器文件只需加一行
-  amp.rs               amp-api 目录接口代理（自动获取并刷新 music.apple.com 网页版 developer token）与电台接口（转发 media-user-token 与 license 请求）
-  log.rs               请求日志
-  links.rs             Apple Music 链接解析与页面路径判定（共用的正则片段，log.rs 也复用它给请求归类）
-  state.rs             配置与共享客户端
-  updater.rs           --check-update / --auto-update（GitHub Releases）
-  wrapper.rs           wrapper-lite 请求客户端（master m3u8、解密模板、歌词）
-  ui.rs                Web 接口（状态、解析、模板、歌词、MV 转发；fallback 为 Apple Music 页面路径返回单页应用）
-  ui/
-    app.html / app.mjs 单页应用：常驻播放条与歌词界面；前端路由接管站内链接并切换页面视图
-    views/             页面视图：<name>.html 页面内容、<name>.mjs 页面脚本（home / song / mv / album / playlist / artist / browse：新发现、广播与编辑页，样式在 browse.css；station：电台页）
-    app.css / mv.css   样式
-    i18n.js            中英文文案；主地区与曲库语言设置
-    settings.mjs       主地区 / 曲库语言选择面板
-    prefs.mjs          设置中心的存储（下载设置等，localStorage）；页面在 views/settings.mjs
-    downloads.mjs      批量下载管理器（音质选择、元数据、封面与歌词、保存方式）；download-center.mjs 为常驻的下载中心，views/download-dialog.mjs 为专辑 / 歌单页的下载对话框
-    mp4-tags.mjs / zip.mjs / naming.mjs / lrc.mjs   iTunes 标签（ilst）、不压缩的 ZIP（含 ZIP64）、文件名模板、TTML 转 LRC
-    library.mjs        资料库与歌单的存储（IndexedDB、标签页间同步、导入 / 导出格式与校验）；页面在 views/library*.mjs，共用的对话框与菜单在 views/library-ui.mjs
-    player.js          歌曲播放器（MSE）与播放队列；页面视图经 scope() 使用常驻的播放器
-    motion-art.mjs     专辑、歌单、艺人页的动态封面（editorialVideo HLS，MSE 播放）
-    decrypt.js         歌曲解密：m3u8 解析、Worker 池、模板、下载与 OPFS
-    hook-worker.js     Worker：调用 wasm 解密、写入 OPFS
-    hook.wasm          crates/am-wasm 的编译产物
-    flac.wasm / flac-transcode-worker.js / flac-init.bin   ALAC 转 FLAC 播放；ALAC 检测的解码分析
-    alac-check.mjs     专辑页的 ALAC 检测（原样帧末尾缺陷、打包信息、实际位深与频宽）；对话框在 views/alac-check-dialog.mjs
-    ec3.wasm / ec3-runtime.mjs / ec3-decode-worker.js      EC-3 PCM 回退
-    joc.wasm / joc-decode-worker.js / joc-hrtf-*.jochrtf   杜比全景声对象渲染（JOC）：crates/joc-wasm 的编译产物与 SADIE II HRTF 场
-    joc-output-worklet.js / joc-scene.mjs                  JOC 低延迟播放的 AudioWorklet 输出端，空间声场界面（虚拟头部与对象）
-    lyrics/            歌词界面（打包好的 AMLL，见 browser/amll；ttml.mjs 解析 TTML，panel.mjs 接入播放器，backdrop*.mjs 绘制封面动态背景，pulse.mjs 负责节拍律动）
-    station.mjs        电台需要 media-user-token 的接口：token 的保存与填写、next-tracks、play assets、license 请求格式
-    mv-radio.mjs       电台的 HLS 播放与下载（直播与广播单集，与 MV 共用媒体 Worker）
-    mv-hls.mjs / mv-engine.mjs                            MV 清单解析与选轨、播放与下载
-    media-worker.js / media.wasm                          MV 与歌曲 defrag 共用的 Worker；crates/am-media-wasm 的编译产物
-    mv-captions.mjs / mv-cea608.mjs                       CEA-608 字幕
-crates/
-  am-mp4/              ISOBMFF 解析、box 修补、sample 解密（服务端与 wasm 共用）；内嵌预取 key 模板
-  am-alac/             保守的 ALAC 包尾修复
-  am-wasm/             am-mp4 的浏览器端 C ABI 导出（wasm32-unknown-unknown）
-  am-flac-wasm/        浏览器端 ALAC 解码与 FLAC frame 写入；PCM 分析（实际位深、频宽，analysis.rs）
-  am-media/            浏览器媒体核心：PlayReady、Widevine、CENC/CBCS、字幕修复、MP4 合并与 defrag
-  am-media-wasm/       am-media 的浏览器端 C ABI 导出
-  temari/              内置的 Temari FairPlay 解密库
-  joc-core/            E-AC-3 JOC 对象重建、Speaker 2.0 与双耳渲染（来自 am-hook-joc）
-  joc-wasm/            joc-core 的浏览器 C ABI 导出
-browser/
-  cea608/              来自 hls.js 的 CEA-608 解析器
-  amll/                AMLL 歌词播放器的打包入口与构建说明
-serverless/
-  core.mjs             serverless 后端（amp-api 代理、MV master、电台接口、可选的 wrapper-lite 转发），对应 amp.rs 与 ui.rs
-  cloudflare.mjs       Cloudflare Worker 入口（wrangler.toml）
-api/handler.mjs        Vercel Edge Function 入口（vercel.json）
-scripts/               WASM / 资源构建脚本；build-static.mjs 按 assets.rs 的资源表生成 serverless 部署的 dist/
-tests/                 Rust 集成测试与 Node 浏览器测试（app.cjs 为打开页面的公用函数）
-docs/                  发布指南（RELEASE.md）与 README 截图
-```
-
-</details>
+| 文档 | 内容 |
+| --- | --- |
+| [使用指南](docs/guide.zh-CN.md) | 导航、播放器、各页面、歌词、MV、广播、资料库、下载与设置 |
+| [部署](docs/deployment.zh-CN.md) | Vercel / Cloudflare、环境变量、使用本地 wrapper-lite |
+| [参考](docs/reference.zh-CN.md) | 命令行参数与服务端接口 |
+| [架构](docs/architecture.zh-CN.md) | 解密与播放的原理、每个功能由哪些文件实现、目录结构 |
+| [开发](docs/development.zh-CN.md) | 构建二进制与 WASM、新增前端文件、运行测试 |
+| [更新日志](CHANGELOG.md) | 每个版本的变化 |
 
 ## 交流群
 
@@ -581,4 +448,4 @@ docs/                  发布指南（RELEASE.md）与 README 截图
 
 Fantastic 以 [GNU Affero 通用公共许可证 v3.0（仅此版本）](LICENSE)（AGPL-3.0-only）发布，因为 Web 界面内嵌了以 AGPL 授权的 [AMLL](https://github.com/amll-dev/applemusic-like-lyrics) 歌词播放器。如果将修改后的版本作为网络服务运行，需要向其用户提供对应的源代码。
 
-内置的第三方组件保留各自的许可证：`crates/temari`（MIT）、hls.js CEA-608 解析器（Apache-2.0，`browser/cea608/LICENSE`）、`@mediabunny/ac3`（MPL-2.0，`src/ui/EC3-LICENSE.txt`）、AMLL 及其依赖（AGPL-3.0-only，`browser/amll`）、来自 am-hook-joc 的 JOC 渲染器（AGPL-3.0-only 或 MIT，`crates/joc-core/LICENSE`）、来自 YouLyPlus 的歌词封面背景（MIT，声明见 `src/ui/lyrics/backdrop-render.mjs`），以及 SADIE II HRTF 场（Apache-2.0，见 `src/ui/JOC-NOTICE.md`）。
+内置的第三方组件保留各自的许可证：`crates/temari`（MIT）、hls.js CEA-608 解析器（Apache-2.0，`vendor/cea608/LICENSE`）、`@mediabunny/ac3`（MPL-2.0，`web/ec3/LICENSE.txt`）、AMLL 及其依赖（AGPL-3.0-only，`vendor/amll`）、来自 am-hook-joc 的 JOC 渲染器（AGPL-3.0-only 或 MIT，`crates/joc-core/LICENSE`）、来自 YouLyPlus 的歌词封面背景（MIT，声明见 `web/lyrics/backdrop-render.mjs`），以及 SADIE II HRTF 场（Apache-2.0，见 `web/joc/NOTICE.md`）。
