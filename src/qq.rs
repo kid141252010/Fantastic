@@ -2886,30 +2886,6 @@ async fn fetch_amll_lyrics(qq: &Qq, mid: &str) -> LyricsSource<String> {
         .map_or_else(LyricsSource::none, LyricsSource::found)
 }
 
-async fn fetch_ttml_lyrics(qq: &Qq, mid: &str) -> LyricsSource<String> {
-    let raw = match qq
-        .request_with_status(
-            "/lyric/ttml",
-            &[("platform", "qq".into()), ("mid", mid.to_owned())],
-        )
-        .await
-    {
-        Ok(raw) => raw,
-        Err(RequestError::Upstream(StatusCode::NOT_FOUND)) => {
-            return LyricsSource::none();
-        }
-        Err(_) => {
-            tracing::debug!("qq TTML lyrics source failed");
-            return LyricsSource::failed();
-        }
-    };
-    raw.get("content")
-        .and_then(Value::as_str)
-        .filter(|text| ttml_fetchable(text))
-        .map(str::to_owned)
-        .map_or_else(LyricsSource::none, LyricsSource::found)
-}
-
 async fn fetch_new_lyrics(qq: &Qq, mid: &str) -> LyricsSource<Value> {
     let raw = match qq
         .request_with_status(
@@ -2956,15 +2932,16 @@ async fn fetch_lyrics(qq: &Qq, mid: &str) -> ApiResult<(Lyrics, Duration)> {
             }
         }
     };
-    let (amll, ttml, new, (song, context_failed)) = tokio::join!(
+    // 只取 AMLL 歌词库与 /lyric/new（QRC、LRC）；上游 /lyric/ttml 不再请求
+    let (amll, new, (song, context_failed)) = tokio::join!(
         fetch_amll_lyrics(qq, mid),
-        fetch_ttml_lyrics(qq, mid),
         fetch_new_lyrics(qq, mid),
         context,
     );
-    let mut candidates: Vec<_> = [("amll", amll.value), ("ttml", ttml.value)]
+    let mut candidates: Vec<_> = amll
+        .value
+        .map(|text| Lyric { source: "amll", text })
         .into_iter()
-        .filter_map(|(source, text)| Some(Lyric { source, text: text? }))
         .collect();
     let mut raw_lyrics = RawLyrics::default();
     let mut context_failed_with_candidates = false;
@@ -2997,7 +2974,7 @@ async fn fetch_lyrics(qq: &Qq, mid: &str) -> ApiResult<(Lyrics, Duration)> {
             new_state = LyricsSourceState::None;
         }
     }
-    let states = [amll.state, ttml.state, new_state];
+    let states = [amll.state, new_state];
     if states
         .iter()
         .all(|state| *state == LyricsSourceState::Failed)

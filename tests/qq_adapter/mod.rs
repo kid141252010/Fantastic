@@ -404,7 +404,6 @@ async fn ttml_fetch_preserves_upstream_documents_and_rejects_unsafe_documents() 
         let text = document(mid);
         match request.uri().path() {
             "/v1/lyrics/get" => Json(json!({"data": {"lyrics": text}})).into_response(),
-            "/lyric/ttml" => Json(json!({"content": text})).into_response(),
             _ => StatusCode::NOT_FOUND.into_response(),
         }
     }));
@@ -416,18 +415,11 @@ async fn ttml_fetch_preserves_upstream_documents_and_rejects_unsafe_documents() 
     let amll = fetch_amll_lyrics(&qq, "raw").await;
     assert!(matches!(amll.state, LyricsSourceState::Success));
     assert_eq!(amll.value.as_deref(), Some(RAW));
-    let ttml = fetch_ttml_lyrics(&qq, "raw").await;
-    assert!(matches!(ttml.state, LyricsSourceState::Success));
-    assert_eq!(ttml.value.as_deref(), Some(RAW));
 
     for mid in ["doctype", "entity", "oversized"] {
         assert!(
             matches!(fetch_amll_lyrics(&qq, mid).await.state, LyricsSourceState::None),
             "AMLL {mid}"
-        );
-        assert!(
-            matches!(fetch_ttml_lyrics(&qq, mid).await.state, LyricsSourceState::None),
-            "TTML {mid}"
         );
     }
     task.abort();
@@ -2148,7 +2140,7 @@ async fn lyrics_sources_select_expected_ttl_and_all_failures_are_not_cached() {
     for _ in 0..2 {
         assert_eq!(get(state.clone(), "/qq/song/fail/lyrics").await.status(), StatusCode::BAD_GATEWAY);
     }
-    assert!(calls.load(Ordering::SeqCst) >= 8, "failed lyrics are retried and not cached");
+    assert!(calls.load(Ordering::SeqCst) >= 6, "failed lyrics are retried and not cached");
     assert!(state.qq.as_ref().unwrap().lyrics.get("fail").is_none());
     task.abort();
 }
@@ -2272,7 +2264,7 @@ async fn lyrics_cache_hits_revalidate_without_waiting_or_downgrading() {
                             calls.fetch_add(1, Ordering::SeqCst);
                             release.acquire().await.unwrap().forget();
                             if mode == "failed"
-                                || (mode == "partial" && path == "/lyric/ttml")
+                                || (mode == "partial" && path == "/lyric/new")
                                 || (mode == "context" && path == "/extra/music/info")
                             {
                                 return StatusCode::INTERNAL_SERVER_ERROR.into_response();
@@ -2323,7 +2315,7 @@ async fn lyrics_cache_hits_revalidate_without_waiting_or_downgrading() {
             assert_eq!(response.status(), StatusCode::OK, "{mode}: {endpoint}");
             let original_body = to_bytes(response.into_body(), 100_000).await.unwrap();
             let cached = qq.lyrics.get("revalidate").unwrap();
-            assert_eq!(cached.candidates.len(), 3);
+            assert_eq!(cached.candidates.len(), 2);
             assert!(!qq.lyrics_revalidating.lock().unwrap().contains("revalidate"));
             qq.lyrics.put_with_ttl("revalidate".into(), cached.clone(), Duration::from_secs(1200));
             let expires = qq.lyrics.entries.lock().unwrap().peek("revalidate").unwrap().0;
@@ -2353,10 +2345,9 @@ async fn lyrics_cache_hits_revalidate_without_waiting_or_downgrading() {
             wait_for_lyrics_revalidation(qq, "revalidate").await;
             // QQ API 返回 5xx 时一次请求内会重试 2 次（共 3 次）；AMLL 源（/v1/lyrics/get）不重试
             let expected = match mode {
-                "failed" => 7,  // /lyric/ttml、/lyric/new 各 3 次
-                "partial" => 5, // /lyric/ttml 3 次
-                "context" => 6, // /extra/music/info 3 次
-                _ => 3,
+                "failed" | "partial" => 4, // /lyric/new 3 次
+                "context" => 5, // /extra/music/info 3 次
+                _ => 2,
             };
             assert_eq!(calls.load(Ordering::SeqCst), expected, "{mode}: {endpoint}");
             let (new_expires, fresh) = qq.lyrics.entries.lock().unwrap().peek("revalidate").unwrap().clone();

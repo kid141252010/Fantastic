@@ -242,7 +242,8 @@ async fn lyrics_use_source_priority_and_cache_partial_failures() {
         .iter()
         .map(|candidate| candidate["source"].as_str().unwrap())
         .collect();
-    assert_eq!(sources, ["amll", "ttml", "qrc", "lrc"]);
+    assert_eq!(sources, ["amll", "qrc", "lrc"]);
+    assert!(!calls.lock().unwrap().contains_key("/lyric/ttml"));
     assert_eq!(calls.lock().unwrap()["/v1/lyrics/get"], 1);
     task.abort();
 
@@ -255,8 +256,8 @@ async fn lyrics_use_source_priority_and_cache_partial_failures() {
             let path = request.uri().path().to_owned();
             *counts.lock().unwrap().entry(path.clone()).or_default() += 1;
             match path.as_str() {
-                "/v1/lyrics/get" | "/lyric/new" => StatusCode::BAD_GATEWAY.into_response(),
-                "/lyric/ttml" => Json(json!({"content":valid_ttml("fallback")})).into_response(),
+                "/lyric/new" => StatusCode::BAD_GATEWAY.into_response(),
+                "/v1/lyrics/get" => Json(json!({"data":{"lyrics":valid_ttml("fallback")}})).into_response(),
                 "/extra/music/info" => Json(lyric_info("partial")).into_response(),
                 _ => StatusCode::NOT_FOUND.into_response(),
             }
@@ -269,11 +270,11 @@ async fn lyrics_use_source_priority_and_cache_partial_failures() {
         let response = get(state.clone(), "/qq/song/partial/lyrics").await;
         assert_eq!(response.status(), StatusCode::OK);
         let body = json_body(response).await;
-        assert_eq!(body["candidates"][0]["source"], "ttml");
+        assert_eq!(body["candidates"][0]["source"], "amll");
     }
     let calls = calls.lock().unwrap();
     assert_eq!(calls["/v1/lyrics/get"], 1);
-    assert_eq!(calls["/lyric/ttml"], 1);
+    assert!(!calls.contains_key("/lyric/ttml"));
     // QQ API 的 5xx 在一次请求内会重试 2 次（共 3 次），第二次请求仍由缓存提供
     assert_eq!(calls["/lyric/new"], 3);
     assert_eq!(calls["/extra/music/info"], 1);
@@ -393,7 +394,6 @@ async fn raw_lyrics_cold_path_caches_payload_and_preserves_field_names() {
     assert_eq!(calls["/extra/music/info"], 1);
     let queries = queries.lock().unwrap();
     assert!(queries.iter().any(|query| query.contains("qqMusicId=rawcold")));
-    assert!(queries.iter().any(|query| query.contains("mid=rawcold")));
     assert!(queries.iter().any(|query| query.contains("id=rawcold")));
     assert!(queries.iter().any(|query| query.contains("mids=rawcold")));
     task.abort();
