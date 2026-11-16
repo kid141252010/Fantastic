@@ -13,7 +13,8 @@ jobs:
   test:
     strategy:
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        # macOS 用 Intel runner：macos-latest（arm64）容量不足时任务会排队到被取消
+        os: [ubuntu-latest, windows-latest, macos-15-intel]
 
     runs-on: ${{ matrix.os }}
 

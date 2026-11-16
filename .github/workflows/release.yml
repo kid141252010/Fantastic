@@ -21,11 +21,12 @@ jobs:
             target: x86_64-unknown-linux-gnu
             artifact_name: fantastic
             asset_name: fantastic-linux-x86_64
-          - os: macos-latest
+          # macOS 两个目标都在 Intel runner 上构建（aarch64 交叉编译）：macos-latest（arm64）容量不足时任务会排队到被取消
+          - os: macos-15-intel
             target: x86_64-apple-darwin
             artifact_name: fantastic
             asset_name: fantastic-macos-x86_64
-          - os: macos-latest
+          - os: macos-15-intel
             target: aarch64-apple-darwin
             artifact_name: fantastic
             asset_name: fantastic-macos-aarch64
