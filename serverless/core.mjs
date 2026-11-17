@@ -471,14 +471,16 @@ function wrapperEndpoint(rawUrl, auth) {
 
 const query = (params) => new URLSearchParams(params).toString();
 
-async function wrapperSend(wrapper, path, { method = 'GET', body, timeout = WRAPPER_TIMEOUT } = {}) {
-  const send = async (endpoint) => {
-    const headers = {};
-    if (endpoint.auth) headers.authorization = endpoint.auth;
-    if (body !== undefined) headers['content-type'] = 'application/json';
-    const res = await fetch(endpoint.base + path, { method, headers, body, signal: AbortSignal.timeout(timeout) });
-    return { status: res.status, ok: res.ok, text: await res.text() };
-  };
+async function wrapperSendOnce(wrapper, path, { method = 'GET', body, timeout = WRAPPER_TIMEOUT } = {}) {
+  const headers = {};
+  if (wrapper.auth) headers.authorization = wrapper.auth;
+  if (body !== undefined) headers['content-type'] = 'application/json';
+  const res = await fetch(wrapper.base + path, { method, headers, body, signal: AbortSignal.timeout(timeout) });
+  return { status: res.status, ok: res.ok, text: await res.text() };
+}
+
+async function wrapperSend(wrapper, path, options) {
+  const send = (endpoint) => wrapperSendOnce(endpoint, path, options);
   let reply;
   try {
     reply = await send(wrapper);
@@ -512,16 +514,20 @@ async function wrapperData(wrapper, path) {
 }
 
 async function status(wrapper) {
-  try {
-    const value = parse((await wrapperSend(wrapper, '/status')).text);
-    if (value?.code === 0) {
-      return json(200, {
-        code: 0,
-        msg: typeof value.msg === 'string' ? value.msg : 'SUCCESS',
-        regions: value.data?.regions ?? [],
-      });
-    }
-  } catch {}
+  // 并行查询，合并时仍按主服、备用的顺序；不让单边故障丢掉另一边的地区
+  const values = await Promise.all([wrapper, wrapper.fallback].filter(Boolean).map(async (endpoint) => {
+    try {
+      const reply = await wrapperSendOnce(endpoint, '/status');
+      const value = parse(reply.text);
+      return reply.ok && value?.code === 0 ? value : null;
+    } catch { return null; }
+  }));
+  const value = values.find(Boolean);
+  if (value) {
+    const regions = [...new Set(values.flatMap((v) => Array.isArray(v?.data?.regions) ? v.data.regions : [])
+      .filter((cc) => typeof cc === 'string').map((cc) => cc.toLowerCase()).filter((cc) => /^[a-z]{2}$/.test(cc)))];
+    return json(200, { code: 0, msg: typeof value.msg === 'string' ? value.msg : 'SUCCESS', regions });
+  }
   return json(502, { code: 1, msg: 'wrapper-lite unavailable', regions: [] });
 }
 

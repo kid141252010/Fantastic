@@ -306,7 +306,7 @@ pub async fn key_handler(
 }
 
 /// `/status` 的结果在所有客户端间共用这么久：页面定时轮询它，不计入按 IP 限流（见 limit.rs），
-/// 缓存后不论有多少客户端、刷得多快，wrapper-lite 每个周期最多收到一次 `/status`
+/// 缓存后不论有多少客户端、刷得多快，主备 wrapper-lite 各每个周期最多收到一次 `/status`
 const STATUS_TTL: std::time::Duration = std::time::Duration::from_secs(10);
 
 /// 最近一次 `/status` 的结果：取得时间、状态码、响应体与日志备注
@@ -327,26 +327,15 @@ pub async fn status_handler(State(state): State<Arc<AppState>>) -> Response<Body
         "wrapperUrl": state.config.wrapper_url,
     });
     let mut status = StatusCode::BAD_GATEWAY;
-    let mut note = String::from("wrapper-lite unavailable");
+    let note;
 
-    match state.wrapper.send(state.wrapper.get("/status").timeout(std::time::Duration::from_secs(10))).await {
-        Ok(reply) => {
-            if let Ok(value) = reply.json::<serde_json::Value>() {
-                if value.get("code").and_then(serde_json::Value::as_i64) == Some(0) {
-                    note = format!("regions {}", log::regions_summary(&value));
-                    status = StatusCode::OK;
-                    body["code"] = json!(0);
-                    body["msg"] = value
-                        .get("msg")
-                        .and_then(serde_json::Value::as_str)
-                        .unwrap_or("SUCCESS")
-                        .into();
-                    body["regions"] = value
-                        .pointer("/data/regions")
-                        .cloned()
-                        .unwrap_or_else(|| json!([]));
-                }
-            }
+    match state.wrapper.fetch_status(std::time::Duration::from_secs(10)).await {
+        Ok(value) => {
+            note = format!("regions {}", log::regions_summary(&value));
+            status = StatusCode::OK;
+            body["code"] = json!(0);
+            body["msg"] = value.get("msg").and_then(serde_json::Value::as_str).unwrap_or("SUCCESS").into();
+            body["regions"] = value.pointer("/data/regions").cloned().unwrap_or_else(|| json!([]));
         }
         Err(error) => note = format!("wrapper-lite request failed: {error}"),
     }

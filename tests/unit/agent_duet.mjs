@@ -35,6 +35,18 @@ for (const language of ['zh-Hant', 'zh-TW', 'zh-HK', 'zh-MO', 'ZH_tw']) {
     assert.equal(AmI18n.t('lang.button'), '繁體中文');
   });
 }
+test('merged wrapper regions default to the first primary region and preserve a manual storefront', () => {
+  const context = loadI18n('en');
+  const store = new Map();
+  context.localStorage = { getItem: (key) => store.get(key) ?? null, setItem: (key, value) => store.set(key, value) };
+  const { AmI18n } = context;
+  assert.equal(AmI18n.storefront, 'us');
+  AmI18n.setRegions(['cn', 'jp', 'us']);
+  assert.equal(AmI18n.storefront, 'cn');
+  AmI18n.setStorefront('de');
+  AmI18n.setRegions(['jp', 'us']);
+  assert.equal(AmI18n.storefront, 'de');
+});
 test('direct language selection preserves saved Simplified Chinese preferences', () => {
   const { AmI18n, writes } = loadI18n('zh-TW', 'zh');
   assert.equal(AmI18n.lang, 'zh-Hans');

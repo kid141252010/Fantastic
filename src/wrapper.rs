@@ -1,4 +1,4 @@
-//! wrapper-lite 客户端。所有对 wrapper-lite 的请求都经 [`Wrapper::send`] 发出：
+//! wrapper-lite 客户端。业务请求经 [`Wrapper::send`] 发出，状态由 [`Wrapper::fetch_status`] 合并主备：
 //! 限制并发数与每秒请求数（wrapper-lite 可能有调用频率限制），并附带可选的 `Authorization` 请求头。
 //! 排队情况记在 [`QueueStats`] 与 [`QUEUE_WAIT`] 中，由命令行日志输出（见 `log.rs`）。
 
@@ -164,6 +164,40 @@ impl Wrapper {
 
     pub fn post(&self, path: &str) -> RequestBuilder {
         self.request(Method::POST, path)
+    }
+
+    /// 主备各查一次状态并合并地区，保持主服在前；单边不可用时仍返回另一边的地区
+    pub async fn fetch_status(&self, timeout: Duration) -> Result<serde_json::Value, String> {
+        let (primary, fallback) = tokio::join!(self.status_once(timeout), async {
+            match &self.fallback {
+                Some(fallback) => Some(fallback.status_once(timeout).await),
+                None => None,
+            }
+        });
+        let mut payload = primary.as_ref().ok()
+            .or_else(|| fallback.as_ref().and_then(|reply| reply.as_ref().ok()))
+            .cloned().ok_or("wrapper-lite unavailable")?;
+        let mut regions = Vec::new();
+        for value in primary.into_iter().chain(fallback.into_iter().flatten()) {
+            if let Some(list) = value.pointer("/data/regions").and_then(serde_json::Value::as_array) {
+                for region in list.iter().filter_map(serde_json::Value::as_str) {
+                    let region = region.to_ascii_lowercase();
+                    if region.len() == 2 && region.bytes().all(|ch| ch.is_ascii_lowercase()) && !regions.contains(&region) {
+                        regions.push(region);
+                    }
+                }
+            }
+        }
+        payload["data"] = serde_json::json!({ "regions": regions });
+        Ok(payload)
+    }
+
+    async fn status_once(&self, timeout: Duration) -> Result<serde_json::Value, String> {
+        let reply = self.send_once(self.get("/status").timeout(timeout)).await.map_err(|e| e.to_string())?;
+        if reply.failed(false) {
+            return Err("wrapper-lite unavailable".into());
+        }
+        reply.json().map_err(|e| e.to_string())
     }
 
     /// 在并发与速率限制内发送请求并读完响应体。先取并发名额再占速率配额，

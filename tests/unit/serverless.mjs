@@ -388,11 +388,12 @@ test('wrapper fallback retries failures, isolates credentials and preserves requ
       return reply({ code: 0, data: { regions: ['us'], license: 'AAAA', ctx: 'test' } });
     }
   });
-  assert.deepEqual((await (await get('/status', env)).json()).regions, ['cn']);
+  const playbackRegions = async () => (await (await get('/mv/webplayback/7', env)).json()).data.regions;
+  assert.deepEqual(await playbackRegions(), ['cn']);
   assert.equal(calls.length, 1, 'healthy primary never contacts fallback');
   for (failure of ['network', 'timeout', 'http', 'rate', 'code', 'json']) {
-    assert.deepEqual((await (await get('/status', env)).json()).regions, ['us'], failure);
-    assert.equal(calls.at(-1).url, 'https://backup.test/backup/status');
+    assert.deepEqual(await playbackRegions(), ['us'], failure);
+    assert.equal(calls.at(-1).url, 'https://backup.test/backup/webplayback?adamId=7');
     assert.equal(calls.at(-1).headers.authorization, undefined);
   }
   failure = 'http';
@@ -416,7 +417,7 @@ test('wrapper fallback retries failures, isolates credentials and preserves requ
   }
   failure = null;
   const before = calls.length;
-  assert.deepEqual((await (await get('/status', env)).json()).regions, ['cn']);
+  assert.deepEqual(await playbackRegions(), ['cn']);
   assert.equal(calls.length, before + 1, 'later requests still start with the primary');
   failure = 'http';
   backupFailure = true;
@@ -425,6 +426,32 @@ test('wrapper fallback retries failures, isolates credentials and preserves requ
   assert.equal((await failed.json()).msg, 'backup failed');
   const host = await (await get('/assets/host.js', authEnv)).text();
   assert(!host.includes('private-token') && !host.includes('public-token'), 'server credentials never reach the page');
+});
+
+test('status merges both wrappers, deduplicates regions and keeps primary order despite response order', async () => {
+  const env = {
+    FANTASTIC_WRAPPER_URL: 'https://primary.test', FANTASTIC_WRAPPER_AUTH: 'primary-token',
+    FANTASTIC_WRAPPER_FALLBACK_URL: 'https://backup.test', FANTASTIC_WRAPPER_FALLBACK_AUTH: 'backup-token',
+  };
+  let failed = 0;
+  const calls = stub(async (url, init) => {
+    const primary = url === 'https://primary.test/status';
+    assert(primary || url === 'https://backup.test/status');
+    assert.equal(init.headers.authorization, primary ? 'Bearer primary-token' : 'Bearer backup-token');
+    if (failed & (primary ? 1 : 2)) return reply({ code: 0, data: { regions: ['gb'] } }, { status: 502 });
+    if (primary) await new Promise((resolve) => setTimeout(resolve, 20));
+    return reply({ code: 0, data: { regions: primary ? ['CN', 'jp', 'cn', 'bad', 7] : ['US', 'JP', 'de'] } });
+  });
+  for (const [mode, expected, status] of [
+    [0, ['cn', 'jp', 'us', 'de'], 200], [1, ['us', 'jp', 'de'], 200], [2, ['cn', 'jp'], 200], [3, [], 502],
+  ]) {
+    failed = mode;
+    const before = calls.length;
+    const response = await get('/status', env);
+    assert.equal(response.status, status);
+    assert.deepEqual((await response.json()).regions, expected);
+    assert.equal(calls.length, before + 2, 'one probe per endpoint, without fallback retries');
+  }
 });
 
 test('Cloudflare entry: caches amp responses, serves the app shell for page paths, 404s the rest', async () => {
