@@ -18,7 +18,7 @@ pub struct Cli {
 
     /// URL of wrapper-lite key server. With --local-wrapper-only, the address
     /// pre-filled in the page instead (users can change it)
-    #[arg(short, long, env = "FANTASTIC_WRAPPER_URL", default_value = "http://127.0.0.1:12340")]
+    #[arg(short, long, env = "FANTASTIC_WRAPPER_URL", hide_env_values = true, default_value = "http://127.0.0.1:12340")]
     pub wrapper_url: String,
 
     /// Do not relay wrapper-lite requests: pages only use a wrapper-lite the browser
@@ -48,7 +48,7 @@ pub struct Cli {
     pub wrapper_auth: Option<String>,
 
     /// 优先 wrapper 请求失败时使用的兜底地址；不设置则关闭兜底
-    #[arg(long, env = "FANTASTIC_WRAPPER_FALLBACK_URL")]
+    #[arg(long, env = "FANTASTIC_WRAPPER_FALLBACK_URL", hide_env_values = true)]
     pub wrapper_fallback_url: Option<String>,
 
     /// 兜底 wrapper 的 Authorization，规则同 --wrapper-auth；不继承优先服务的凭据
