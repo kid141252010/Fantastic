@@ -66,6 +66,15 @@ impl Reply {
     pub fn json<'a, T: Deserialize<'a>>(&'a self) -> serde_json::Result<T> {
         serde_json::from_slice(&self.body)
     }
+
+    fn failed(&self, lyrics: bool) -> bool {
+        let code = self.json::<serde_json::Value>().ok().and_then(|v| v.get("code")?.as_i64());
+        // 没有歌词是正常结果，不额外消耗公益服额度
+        if lyrics && (self.status == StatusCode::NOT_FOUND || (self.status.is_success() && code == Some(404))) {
+            return false;
+        }
+        !self.status.is_success() || code != Some(0)
+    }
 }
 
 pub struct Wrapper {
@@ -77,11 +86,21 @@ pub struct Wrapper {
     stats: QueueStats,
     /// 见 [`ABANDONED_HOLD`]；测试中改短
     abandoned_hold: Duration,
+    fallback: Option<Box<Wrapper>>,
 }
 
 impl Wrapper {
     /// `config.wrapper_auth` 应已经过 [`normalize_authorization`]
     pub fn new(config: &Config) -> Self {
+        let fallback = config.wrapper_fallback.as_ref().map(|fallback| {
+            let mut next = config.clone();
+            next.wrapper_url = fallback.url.clone();
+            next.wrapper_auth = fallback.auth.clone();
+            next.wrapper_rate = fallback.rate;
+            next.wrapper_concurrency = fallback.concurrency;
+            next.wrapper_fallback = None;
+            Box::new(Self::new(&next))
+        });
         // 每个请求使用新连接、不保留空闲连接：wrapper-lite 常经 QEMU 用户态网络转发端口，
         // 空闲的转发连接可能被静默丢弃，复用时请求会一直挂到超时；本机建立连接的开销可以忽略
         let client = Client::builder()
@@ -107,6 +126,7 @@ impl Wrapper {
             rate: (config.wrapper_rate > 0).then(|| RateLimit::new(config.wrapper_rate as usize)),
             stats: QueueStats::default(),
             abandoned_hold: ABANDONED_HOLD,
+            fallback,
         }
     }
 
@@ -150,6 +170,31 @@ impl Wrapper {
     /// 使速率按实际发出时间计算（排队等待并发名额的请求不会在名额释放后集中发出）。
     /// 发出后没有正常结束的请求，并发名额按 [`ABANDONED_HOLD`] 延后归还（见 [`Slot`]）。
     pub async fn send(&self, request: RequestBuilder) -> Result<Reply, reqwest::Error> {
+        // 从逻辑路径重建兜底请求，保留查询、正文和超时，不把优先服务的鉴权复制过去
+        let backup = self.fallback.as_ref().and_then(|fallback| {
+            let mut original = request.try_clone()?.build().ok()?;
+            let base = reqwest::Url::parse(&self.url).ok()?;
+            let path = original.url().path().strip_prefix(base.path().trim_end_matches('/'))?;
+            let mut target = fallback.request(original.method().clone(), path).build().ok()?;
+            target.url_mut().set_query(original.url().query());
+            target.headers_mut().extend(original.headers().iter()
+                .filter(|(name, _)| *name != AUTHORIZATION)
+                .map(|(name, value)| (name.clone(), value.clone())));
+            *target.body_mut() = original.body_mut().take();
+            *target.timeout_mut() = original.timeout().copied();
+            Some((fallback, RequestBuilder::from_parts(fallback.client.clone(), target)))
+        });
+        let lyrics = request.try_clone().and_then(|r| r.build().ok()).is_some_and(|r| r.url().path().ends_with("/lyrics"));
+        let result = self.send_once(request).await;
+        if result.as_ref().map_or(true, |reply| reply.failed(lyrics)) {
+            if let Some((fallback, request)) = backup {
+                return fallback.send_once(request).await;
+            }
+        }
+        result
+    }
+
+    async fn send_once(&self, request: RequestBuilder) -> Result<Reply, reqwest::Error> {
         let queued = Instant::now();
         let waiting = Gauge::enter(&self.stats.waiting_concurrency);
         let permit = match &self.concurrency {
@@ -465,12 +510,106 @@ mod tests {
             wrapper_rate: rate,
             wrapper_concurrency: concurrency,
             wrapper_auth: auth.map(str::to_owned),
+            wrapper_fallback: None,
             wrapper_relay: true,
             wrapper_hint: None,
             client_rate: 0,
             client_concurrency: 0,
             client_ip_header: None,
         }
+    }
+
+    #[tokio::test]
+    async fn test_fallback_preserves_request_and_isolates_credentials() {
+        use axum::{body::Body, http::Request, response::{IntoResponse, Response}};
+        use crate::state::WrapperFallbackConfig;
+
+        let mode = Arc::new(AtomicUsize::new(0));
+        let primary_mode = mode.clone();
+        let primary = axum::Router::new().fallback(move |request: Request<Body>| {
+            let mode = primary_mode.load(Ordering::SeqCst);
+            async move {
+                assert_eq!(request.headers()[AUTHORIZATION], "Bearer private-token");
+                assert!(request.uri().path().starts_with("/primary/"));
+                let (status, body) = match mode {
+                    0 => (StatusCode::OK, r#"{"code":0,"data":{"from":"primary"}}"#),
+                    1 => (StatusCode::BAD_GATEWAY, "gateway down"),
+                    2 => (StatusCode::TOO_MANY_REQUESTS, r#"{"code":1,"msg":"rate limited"}"#),
+                    3 => (StatusCode::OK, r#"{"code":-1,"msg":"upstream failed"}"#),
+                    4 => (StatusCode::OK, "not JSON"),
+                    5 => {
+                        tokio::time::sleep(Duration::from_millis(500)).await;
+                        (StatusCode::OK, r#"{"code":0}"#)
+                    }
+                    6 => (StatusCode::OK, r#"{"code":404,"msg":"no lyrics"}"#),
+                    _ => (StatusCode::NOT_FOUND, "no lyrics"),
+                };
+                (status, body).into_response()
+            }
+        });
+        let calls = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let received = calls.clone();
+        let backup = axum::Router::new().fallback(move |request: Request<Body>| {
+            let received = received.clone();
+            async move {
+                let (parts, body) = request.into_parts();
+                let body = axum::body::to_bytes(body, 4096).await.unwrap();
+                received.lock().unwrap().push((parts.method, parts.uri.to_string(), parts.headers, body));
+                Response::new(Body::from(r#"{"code":0,"data":{"from":"fallback"}}"#))
+            }
+        });
+        async fn serve(app: axum::Router) -> String {
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let url = format!("http://{}", listener.local_addr().unwrap());
+            tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+            url
+        }
+        let mut config = config(format!("{}/primary", serve(primary).await), 0, 0, Some("Bearer private-token"));
+        config.wrapper_fallback = Some(WrapperFallbackConfig {
+            url: format!("{}/backup", serve(backup).await), auth: None, rate: 0, concurrency: 1,
+        });
+        let wrapper = Wrapper::new(&config);
+        let read = |reply: Reply| reply.json::<serde_json::Value>().unwrap()["data"]["from"].as_str().unwrap().to_owned();
+        assert_eq!(read(wrapper.send(wrapper.get("/status")).await.unwrap()), "primary");
+        assert!(calls.lock().unwrap().is_empty());
+        for failure in 1..=5 {
+            mode.store(failure, Ordering::SeqCst);
+            let reply = wrapper.send(wrapper.get("/key").query(&[("uri", "skd://a/b?c=1&d=2")]).timeout(Duration::from_millis(200))).await.unwrap();
+            assert_eq!(read(reply), "fallback", "failure mode {failure}");
+        }
+        for missing in [6, 7] {
+            mode.store(missing, Ordering::SeqCst);
+            wrapper.send(wrapper.get("/lyrics")).await.unwrap();
+        }
+        assert_eq!(calls.lock().unwrap().len(), 5, "missing lyrics do not trigger fallback");
+        mode.store(1, Ordering::SeqCst);
+        let license = serde_json::json!({ "challenge": "AAAA", "uri": "data:;base64,AA==" });
+        wrapper.send(wrapper.post("/license").json(&license)).await.unwrap();
+        {
+            let calls = calls.lock().unwrap();
+            assert!(calls.iter().all(|(_, _, headers, _)| !headers.contains_key(AUTHORIZATION)), "primary credentials must not reach fallback");
+            let first = &calls[0];
+            assert_eq!(first.0, Method::GET);
+            assert_eq!(first.1, "/backup/key?uri=skd%3A%2F%2Fa%2Fb%3Fc%3D1%26d%3D2");
+            let last = calls.last().unwrap();
+            assert_eq!(last.0, Method::POST);
+            assert_eq!(last.1, "/backup/license");
+            assert_eq!(last.2["content-type"], "application/json");
+            assert_eq!(serde_json::from_slice::<serde_json::Value>(&last.3).unwrap(), license);
+        }
+        // 新请求仍然先试优先服务
+        mode.store(0, Ordering::SeqCst);
+        assert_eq!(read(wrapper.send(wrapper.get("/status")).await.unwrap()), "primary");
+        assert_eq!(calls.lock().unwrap().len(), 6);
+
+        // 优先服务连不上时也能兜底，且只发送备用服务自己的凭据
+        let closed = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        config.wrapper_url = format!("http://{}", closed.local_addr().unwrap());
+        drop(closed);
+        config.wrapper_fallback.as_mut().unwrap().auth = Some("Bearer public-token".into());
+        let wrapper = Wrapper::new(&config);
+        assert_eq!(read(wrapper.send(wrapper.get("/status")).await.unwrap()), "fallback");
+        assert_eq!(calls.lock().unwrap().last().unwrap().2[AUTHORIZATION], "Bearer public-token");
     }
 
     #[tokio::test]

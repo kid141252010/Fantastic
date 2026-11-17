@@ -4,6 +4,30 @@
 
 The binary from [Quick Start](../README.md#quick-start) is the full-featured option: it relays wrapper-lite with rate limits (see [Command-Line Options](reference.md#command-line-options)) and works over plain `http://<LAN IP>`. The alternatives below need no binary.
 
+## Self-hosted primary with a public fallback
+
+Set `FANTASTIC_WRAPPER_URL` (or `--wrapper-url` for the binary) to your self-hosted wrapper-lite and `FANTASTIC_WRAPPER_FALLBACK_URL` to a public service. Each service has its own authorization; the fallback never inherits the primary token:
+
+```sh
+export FANTASTIC_WRAPPER_URL='http://127.0.0.1:12340'
+export FANTASTIC_WRAPPER_AUTH='self-hosted-token'
+export FANTASTIC_WRAPPER_FALLBACK_URL='https://public-wrapper.example'
+export FANTASTIC_WRAPPER_FALLBACK_AUTH='public-service-token'
+./fantastic
+```
+
+Omit the corresponding `AUTH` for services without authentication. No public service is built in; without a fallback URL, only the primary is used. The binary still defaults to `http://127.0.0.1:12340` for the primary; serverless deployments must configure the primary URL too.
+
+Every request starts with the primary. Connection failures, timeouts, HTTP errors, invalid JSON or nonzero application error codes trigger one attempt on the fallback. Missing lyrics (HTTP 404 / `code: 404`) are a normal result and do not trigger fallback. Later requests start with the primary again; a primary timeout must expire before fallback begins. If both fail, the fallback error is returned. Browser-local mode bypasses this server-side fallback.
+
+The binary limits each service separately: `--wrapper-rate` / `--wrapper-concurrency` for the primary (both default to 24), and `--wrapper-fallback-rate` / `--wrapper-fallback-concurrency` for the fallback (both default to 1; adjust to the public service's quota, or use 0 for unlimited). For example:
+
+```sh
+./fantastic --wrapper-url http://127.0.0.1:12340 \
+  --wrapper-fallback-url https://public-wrapper.example \
+  --wrapper-fallback-rate 1 --wrapper-fallback-concurrency 1
+```
+
 ## Serverless Deployment (Vercel / Cloudflare)
 
 If you would rather not run the binary, the same pages can be deployed to a serverless platform: the platform hosts the static assets and the backend shrinks to a single function (the amp-api catalog proxy, the MV master fetch and the station endpoints). Pick either platform:
@@ -26,6 +50,8 @@ Alternatively the function can relay to a publicly reachable wrapper-lite, set t
 |---|---|
 | `FANTASTIC_WRAPPER_URL` | wrapper-lite URL. When set, pages default to the "Server" mode, like the binary; it may carry credentials (`https://<token>@host`) |
 | `FANTASTIC_WRAPPER_AUTH` | Optional `Authorization` for wrapper-lite requests, same rules as `--wrapper-auth` |
+| `FANTASTIC_WRAPPER_FALLBACK_URL` | Optional public / backup wrapper-lite URL tried when the primary fails |
+| `FANTASTIC_WRAPPER_FALLBACK_AUTH` | Optional `Authorization` for the fallback only; never inherits primary credentials |
 | `FANTASTIC_WRAPPER_HINT` | Optional note above the local wrapper-lite settings, same as `--wrapper-hint` |
 
 > [!WARNING]

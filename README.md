@@ -106,6 +106,7 @@ Open `http://127.0.0.1:8888/` and paste an Apple Music link or search. You can a
 
 - No binary: deploy with one click to [Vercel / Cloudflare](docs/deployment.md#serverless-deployment-vercel--cloudflare) (without the QQ source).
 - No server-side wrapper-lite: switch the page to a [local wrapper-lite](docs/deployment.md#using-a-local-wrapper-lite) that the browser calls directly.
+- Supports a [self-hosted primary with a public fallback](docs/deployment.md#self-hosted-primary-with-a-public-fallback): configure URLs and authorization separately; failed primary requests automatically retry on the backup.
 - QQ proxying, request paths and lyric formats: [QQ source spec](docs/qq-source-validation.md) and [QQ quality spec](docs/qq-quality-validation.md) (Chinese).
 
 ## Documentation

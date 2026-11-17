@@ -8,7 +8,11 @@
 |---|---|---|
 | `-l, --listen <ADDR>` | `0.0.0.0:8888` | Listen address |
 | `-p, --port <PORT>` | optional | Overrides the port in `--listen` when set |
-| `-w, --wrapper-url <URL>` | `http://127.0.0.1:12340` | wrapper-lite key server base URL |
+| `-w, --wrapper-url <URL>` | `http://127.0.0.1:12340` | Primary wrapper-lite URL; also `FANTASTIC_WRAPPER_URL` |
+| `--wrapper-fallback-url <URL>` | unset | Fallback wrapper URL; also `FANTASTIC_WRAPPER_FALLBACK_URL`. Unset disables fallback |
+| `--wrapper-fallback-auth <VALUE>` | not sent | Independent fallback authorization, same rules as `--wrapper-auth`; also `FANTASTIC_WRAPPER_FALLBACK_AUTH` |
+| `--wrapper-fallback-rate <N>` | `1` | Max requests per second to the fallback wrapper; 0 = unlimited |
+| `--wrapper-fallback-concurrency <N>` | `1` | Max concurrent requests to the fallback wrapper; 0 = unlimited |
 | `--qq-api <URL>` | unset | Server-only QQ API base URL; also `FANTASTIC_QQ_API` |
 | `--qq-proxy <URL>` | unset | Server-only HTTP/SOCKS proxy for QQ API, AMLL, covers and media; also `FANTASTIC_QQ_PROXY` |
 | `--wrapper-rate <N>` | `24` | Max requests per second to wrapper-lite (any 1-second window; extra requests wait in order). 0 = unlimited |

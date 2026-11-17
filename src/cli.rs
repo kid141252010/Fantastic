@@ -18,7 +18,7 @@ pub struct Cli {
 
     /// URL of wrapper-lite key server. With --local-wrapper-only, the address
     /// pre-filled in the page instead (users can change it)
-    #[arg(short, long, default_value = "http://127.0.0.1:12340")]
+    #[arg(short, long, env = "FANTASTIC_WRAPPER_URL", default_value = "http://127.0.0.1:12340")]
     pub wrapper_url: String,
 
     /// Do not relay wrapper-lite requests: pages only use a wrapper-lite the browser
@@ -46,6 +46,22 @@ pub struct Cli {
     /// Not sent by default
     #[arg(long, env = "FANTASTIC_WRAPPER_AUTH", hide_env_values = true)]
     pub wrapper_auth: Option<String>,
+
+    /// 优先 wrapper 请求失败时使用的兜底地址；不设置则关闭兜底
+    #[arg(long, env = "FANTASTIC_WRAPPER_FALLBACK_URL")]
+    pub wrapper_fallback_url: Option<String>,
+
+    /// 兜底 wrapper 的 Authorization，规则同 --wrapper-auth；不继承优先服务的凭据
+    #[arg(long, env = "FANTASTIC_WRAPPER_FALLBACK_AUTH", hide_env_values = true)]
+    pub wrapper_fallback_auth: Option<String>,
+
+    /// 兜底 wrapper 每秒请求上限，0 表示不限
+    #[arg(long, default_value_t = 1)]
+    pub wrapper_fallback_rate: u32,
+
+    /// 兜底 wrapper 同时请求上限，0 表示不限
+    #[arg(long, default_value_t = 1)]
+    pub wrapper_fallback_concurrency: usize,
 
     /// HTTP API address of AMLL TTML DB. The browser connects directly to it to fetch
     /// lyrics when the page lyrics source is set to the AMLL lyrics library
@@ -115,6 +131,15 @@ impl Cli {
             Some(raw) => crate::wrapper::normalize_authorization(raw)?,
             None => None,
         };
+        let wrapper_fallback = match self.wrapper_fallback_url.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+            Some(url) => Some(crate::state::WrapperFallbackConfig {
+                url: url.trim_end_matches('/').to_owned(),
+                auth: self.wrapper_fallback_auth.as_deref().map(crate::wrapper::normalize_authorization).transpose()?.flatten(),
+                rate: self.wrapper_fallback_rate,
+                concurrency: self.wrapper_fallback_concurrency,
+            }),
+            None => None,
+        };
         Ok(Config {
             wrapper_url: self.wrapper_url.trim_end_matches('/').to_string(),
             amll_api: self.amll_api.trim_end_matches('/').to_string(),
@@ -124,6 +149,7 @@ impl Cli {
             wrapper_rate: self.wrapper_rate,
             wrapper_concurrency: self.wrapper_concurrency,
             wrapper_auth,
+            wrapper_fallback,
             wrapper_relay: !self.local_wrapper_only,
             wrapper_hint: self.wrapper_hint.as_deref().map(str::trim).filter(|h| !h.is_empty()).map(str::to_owned),
             client_rate: self.client_rate,
@@ -133,5 +159,34 @@ impl Cli {
                 None => None,
             },
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clap::{CommandFactory, FromArgMatches};
+
+    #[test]
+    fn wrapper_fallback_config_has_independent_auth_and_limits() {
+        let matches = Cli::command()
+            .mut_arg("wrapper_fallback_auth", |arg| arg.env(None::<&str>))
+            .try_get_matches_from(["fantastic", "--wrapper-url", "http://127.0.0.1:12340/",
+                "--wrapper-auth", "private-token", "--wrapper-fallback-url", " https://public.test/base/ "])
+            .unwrap();
+        let mut cli = Cli::from_arg_matches(&matches).unwrap();
+        let config = cli.config().unwrap();
+        assert_eq!(config.wrapper_url, "http://127.0.0.1:12340");
+        assert_eq!(config.wrapper_auth.as_deref(), Some("Bearer private-token"));
+        let fallback = config.wrapper_fallback.unwrap();
+        assert_eq!(fallback.url, "https://public.test/base");
+        assert!(fallback.auth.is_none());
+        assert_eq!((fallback.rate, fallback.concurrency), (1, 1));
+        cli.wrapper_fallback_auth = Some("public-token".into());
+        assert_eq!(cli.config().unwrap().wrapper_fallback.unwrap().auth.as_deref(), Some("Bearer public-token"));
+        cli.wrapper_fallback_auth = Some("bad\nheader".into());
+        assert!(cli.config().is_err());
+        cli.wrapper_fallback_url = Some(" ".into());
+        assert!(cli.config().unwrap().wrapper_fallback.is_none());
     }
 }

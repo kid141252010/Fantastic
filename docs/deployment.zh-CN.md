@@ -4,6 +4,30 @@
 
 [快速开始](../README.zh-CN.md#快速开始)中的二进制功能最完整：转发 wrapper-lite 时可以限速限并发（见[命令行参数](reference.zh-CN.md#命令行参数)），通过普通的 `http://<局域网 IP>` 也能使用。下面的方式不需要二进制。
 
+## 优先自部署、公益服兜底
+
+把自部署 wrapper-lite 填在 `FANTASTIC_WRAPPER_URL`（二进制也可用 `--wrapper-url`），公益服填在 `FANTASTIC_WRAPPER_FALLBACK_URL`。两个服务分别设置鉴权，兜底不会继承优先服务的 token：
+
+```sh
+export FANTASTIC_WRAPPER_URL='http://127.0.0.1:12340'
+export FANTASTIC_WRAPPER_AUTH='自部署服务的 token'
+export FANTASTIC_WRAPPER_FALLBACK_URL='https://public-wrapper.example'
+export FANTASTIC_WRAPPER_FALLBACK_AUTH='公益服的 token'
+./fantastic
+```
+
+无鉴权的服务可以省略对应的 `AUTH`。地址不内置任何公益服，未配置兜底地址时只使用优先服务。二进制的优先地址默认仍为 `http://127.0.0.1:12340`；Serverless 需同时配置优先地址。
+
+每次请求先用优先服务；连接失败、超时、HTTP 错误、无法解析的 JSON 或非零业务错误码时，用兜底服务重试一次。没有歌词（HTTP 404 / `code: 404`）属于正常结果，不触发兜底。后续请求仍从优先服务开始，优先服务超时后才会尝试兜底。两边都失败时返回兜底的错误。浏览器「本地」模式不经过此服务端兜底。
+
+二进制对两个服务分别限速、限并发：优先服务沿用 `--wrapper-rate` / `--wrapper-concurrency`（默认均为 24）；兜底用 `--wrapper-fallback-rate` / `--wrapper-fallback-concurrency`（默认均为 1，可按公益服额度调整，0 表示不限）。例如：
+
+```sh
+./fantastic --wrapper-url http://127.0.0.1:12340 \
+  --wrapper-fallback-url https://public-wrapper.example \
+  --wrapper-fallback-rate 1 --wrapper-fallback-concurrency 1
+```
+
 ## Serverless 部署（Vercel / Cloudflare）
 
 不想运行二进制的话，可以把同一套页面部署到 serverless 平台：静态资源由平台托管，后端只剩一个函数（amp-api 目录代理、MV master 获取与电台接口）。两个平台任选其一：
@@ -26,6 +50,8 @@
 |---|---|
 | `FANTASTIC_WRAPPER_URL` | wrapper-lite 地址。设置后页面默认使用「服务端」模式，与二进制相同；可带用户信息（`https://<token>@host`） |
 | `FANTASTIC_WRAPPER_AUTH` | 可选，wrapper-lite 请求的 `Authorization`，规则与 `--wrapper-auth` 相同 |
+| `FANTASTIC_WRAPPER_FALLBACK_URL` | 可选，优先服务失败时重试的公益服 / 备用 wrapper-lite 地址 |
+| `FANTASTIC_WRAPPER_FALLBACK_AUTH` | 可选，仅用于兜底 wrapper 的 `Authorization`；不继承优先服务的鉴权 |
 | `FANTASTIC_WRAPPER_HINT` | 可选，显示在本地 wrapper-lite 设置上方的提示，同 `--wrapper-hint` |
 
 > [!WARNING]

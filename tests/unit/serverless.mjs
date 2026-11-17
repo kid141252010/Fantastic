@@ -358,6 +358,75 @@ test('with FANTASTIC_WRAPPER_URL the wrapper-lite endpoints are relayed', async 
   assert.equal((await get('/mv/webplayback/7', env)).status, 502);
 });
 
+test('wrapper fallback retries failures, isolates credentials and preserves request details', async () => {
+  const env = {
+    FANTASTIC_WRAPPER_URL: 'https://primary.test/base', FANTASTIC_WRAPPER_AUTH: 'private-token',
+    FANTASTIC_WRAPPER_FALLBACK_URL: 'https://backup.test/backup/',
+  };
+  assert.deepEqual(wrapperConfig(env), {
+    base: 'https://primary.test/base', auth: 'Bearer private-token',
+    fallback: { base: 'https://backup.test/backup', auth: '' },
+  });
+  assert.equal(wrapperConfig({ FANTASTIC_WRAPPER_FALLBACK_URL: 'https://backup.test' }), null);
+  let failure = null;
+  let backupFailure = false;
+  const calls = stub((url, init) => {
+    if (url.startsWith('https://primary.test/base/')) {
+      assert.equal(init.headers.authorization, 'Bearer private-token');
+      if (failure === 'network') throw new Error('connection refused');
+      if (failure === 'timeout') throw new DOMException('timed out', 'TimeoutError');
+      if (failure === 'http') return reply('gateway down', { status: 502 });
+      if (failure === 'rate') return reply({ code: 1, msg: 'rate limited' }, { status: 429 });
+      if (failure === 'code') return reply({ code: -1, msg: 'upstream failed' });
+      if (failure === 'json') return reply('<html>error</html>');
+      if (failure === 'noLyrics') return reply({ code: 404, msg: 'no lyrics' });
+      if (failure === 'notFound') return reply('no lyrics', { status: 404 });
+      return reply({ code: 0, data: { regions: ['cn'] } });
+    }
+    if (url.startsWith('https://backup.test/backup/')) {
+      if (backupFailure) return reply({ code: -1, msg: 'backup failed' }, { status: 503 });
+      return reply({ code: 0, data: { regions: ['us'], license: 'AAAA', ctx: 'test' } });
+    }
+  });
+  assert.deepEqual((await (await get('/status', env)).json()).regions, ['cn']);
+  assert.equal(calls.length, 1, 'healthy primary never contacts fallback');
+  for (failure of ['network', 'timeout', 'http', 'rate', 'code', 'json']) {
+    assert.deepEqual((await (await get('/status', env)).json()).regions, ['us'], failure);
+    assert.equal(calls.at(-1).url, 'https://backup.test/backup/status');
+    assert.equal(calls.at(-1).headers.authorization, undefined);
+  }
+  failure = 'http';
+  const uri = 'skd://itunes.apple.com/P000000001/s1/e1';
+  const authEnv = { ...env, FANTASTIC_WRAPPER_FALLBACK_AUTH: 'public-token' };
+  assert.equal((await get(`/key?adamId=2&uri=${encodeURIComponent(uri)}`, authEnv)).status, 200);
+  assert.equal(calls.at(-1).headers.authorization, 'Bearer public-token');
+  const keyUrl = new URL(calls.at(-1).url);
+  assert.equal(keyUrl.pathname, '/backup/key');
+  assert.equal(keyUrl.searchParams.get('uri'), uri);
+  const body = { adamId: '7', challenge: 'AAAA', uri: 'data:;base64,AA==' };
+  assert.equal((await handle(new Request('https://site.test/mv/license', { method: 'POST', body: JSON.stringify(body) }), authEnv)).status, 200);
+  assert.equal(calls.at(-1).url, 'https://backup.test/backup/license');
+  assert.equal(calls.at(-1).method, 'POST');
+  assert.equal(calls.at(-1).headers['content-type'], 'application/json');
+  assert.deepEqual(JSON.parse(calls.at(-1).body), body);
+  for (failure of ['noLyrics', 'notFound']) {
+    const before = calls.length;
+    assert.equal((await get('/lyrics/1', env)).status, 404);
+    assert.equal(calls.length, before + 1, 'missing lyrics do not trigger fallback');
+  }
+  failure = null;
+  const before = calls.length;
+  assert.deepEqual((await (await get('/status', env)).json()).regions, ['cn']);
+  assert.equal(calls.length, before + 1, 'later requests still start with the primary');
+  failure = 'http';
+  backupFailure = true;
+  const failed = await get('/mv/webplayback/7', env);
+  assert.equal(failed.status, 503);
+  assert.equal((await failed.json()).msg, 'backup failed');
+  const host = await (await get('/assets/host.js', authEnv)).text();
+  assert(!host.includes('private-token') && !host.includes('public-token'), 'server credentials never reach the page');
+});
+
 test('Cloudflare entry: caches amp responses, serves the app shell for page paths, 404s the rest', async () => {
   const token = jwt({ iss: 'AMPWebPlay', n: 4 });
   const calls = stub(apple({ token, body: { data: ['x'] } }));

@@ -106,6 +106,7 @@ fantastic --listen 0.0.0.0:8888 \
 
 - 不想运行二进制：可一键部署到 [Vercel / Cloudflare](docs/deployment.zh-CN.md#serverless-部署vercel--cloudflare)（不含 QQ 音源）。
 - 没有服务端 wrapper-lite：页面可切换为[本地 wrapper-lite](docs/deployment.zh-CN.md#使用本地-wrapper-lite)，由浏览器直接请求。
+- 支持[优先自部署、公益服兜底](docs/deployment.zh-CN.md#优先自部署公益服兜底)：两者分别配置地址和鉴权，优先服务失败时自动重试备用服务。
 - QQ 音源的代理、请求路径与歌词格式见 [QQ 音源规格](docs/qq-source-validation.md)与 [QQ 音质规格](docs/qq-quality-validation.md)。
 
 ## 文档

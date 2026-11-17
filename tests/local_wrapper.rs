@@ -22,6 +22,9 @@ async fn serve(app: Router) -> String {
 }
 
 fn config(wrapper_url: String, relay: bool) -> Config {
+    let fallback = fantastic::state::WrapperFallbackConfig {
+        url: wrapper_url.clone(), auth: Some("Bearer fallback-secret".into()), rate: 1, concurrency: 1,
+    };
     Config {
         wrapper_url,
         amll_api: "https://api.amll.dev".into(),
@@ -31,6 +34,7 @@ fn config(wrapper_url: String, relay: bool) -> Config {
         wrapper_rate: 5,
         wrapper_concurrency: 3,
         wrapper_auth: Some("Bearer operator-secret".into()),
+        wrapper_fallback: Some(fallback),
         wrapper_relay: relay,
         wrapper_hint: Some("Get a token at https://token.test".into()),
         client_rate: 0,
@@ -69,6 +73,7 @@ async fn local_wrapper_only_never_relays() {
         })
     );
     assert!(!text.contains("operator-secret"), "--wrapper-auth is never sent to pages");
+    assert!(!text.contains("fallback-secret"), "fallback auth is never sent to pages");
 
     for path in ["/status", "/key?adamId=1&uri=skd://x", "/lyrics/1", "/parse/song/1", "/parse/mv/1", "/mv/webplayback/1"] {
         let response = client.get(format!("{base}{path}")).send().await.unwrap();

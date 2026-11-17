@@ -2,6 +2,14 @@ use std::sync::Arc;
 use std::time::Duration;
 
 #[derive(Clone)]
+pub struct WrapperFallbackConfig {
+    pub url: String,
+    pub auth: Option<String>,
+    pub rate: u32,
+    pub concurrency: usize,
+}
+
+#[derive(Clone)]
 pub struct Config {
     pub wrapper_url: String,
     pub amll_api: String,
@@ -16,6 +24,8 @@ pub struct Config {
     pub wrapper_concurrency: usize,
     /// wrapper-lite 请求的 `Authorization` 头（已规范化），None 表示不发送
     pub wrapper_auth: Option<String>,
+    /// 优先 wrapper 失败时使用的独立端点；不配置则不兜底
+    pub wrapper_fallback: Option<WrapperFallbackConfig>,
     /// 服务端是否转发 wrapper-lite；否则页面只用浏览器直连（本地模式），
     /// `wrapper_url` / `wrapper_rate` / `wrapper_concurrency` 作为页面的默认值
     pub wrapper_relay: bool,
@@ -57,6 +67,7 @@ impl AppState {
             wrapper_rate: 24,
             wrapper_concurrency: 24,
             wrapper_auth: None,
+            wrapper_fallback: None,
             wrapper_relay: true,
             wrapper_hint: None,
             client_rate: 0,

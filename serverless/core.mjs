@@ -443,7 +443,15 @@ function normalizeAuthorization(raw) {
 
 /** 环境变量里的 wrapper-lite：没有设置地址时为 null。地址中的用户信息改为 Basic 认证（fetch 不接受带用户信息的地址） */
 export function wrapperConfig(env) {
-  const raw = String(env?.FANTASTIC_WRAPPER_URL ?? '').trim().replace(/\/+$/, '');
+  const primary = wrapperEndpoint(env?.FANTASTIC_WRAPPER_URL, env?.FANTASTIC_WRAPPER_AUTH);
+  if (!primary) return null;
+  const fallback = wrapperEndpoint(env?.FANTASTIC_WRAPPER_FALLBACK_URL, env?.FANTASTIC_WRAPPER_FALLBACK_AUTH);
+  if (fallback) primary.fallback = fallback;
+  return primary;
+}
+
+function wrapperEndpoint(rawUrl, auth) {
+  const raw = String(rawUrl ?? '').trim().replace(/\/+$/, '');
   if (!raw) return null;
   let base = raw;
   let basic = '';
@@ -458,17 +466,31 @@ export function wrapperConfig(env) {
     }
   } catch {}
   // 单独设置的 Authorization 优先于地址中的用户信息
-  return { base, auth: normalizeAuthorization(env.FANTASTIC_WRAPPER_AUTH) || basic };
+  return { base, auth: normalizeAuthorization(auth) || basic };
 }
 
 const query = (params) => new URLSearchParams(params).toString();
 
 async function wrapperSend(wrapper, path, { method = 'GET', body, timeout = WRAPPER_TIMEOUT } = {}) {
-  const headers = {};
-  if (wrapper.auth) headers.authorization = wrapper.auth;
-  if (body !== undefined) headers['content-type'] = 'application/json';
-  const res = await fetch(wrapper.base + path, { method, headers, body, signal: AbortSignal.timeout(timeout) });
-  return { status: res.status, ok: res.ok, text: await res.text() };
+  const send = async (endpoint) => {
+    const headers = {};
+    if (endpoint.auth) headers.authorization = endpoint.auth;
+    if (body !== undefined) headers['content-type'] = 'application/json';
+    const res = await fetch(endpoint.base + path, { method, headers, body, signal: AbortSignal.timeout(timeout) });
+    return { status: res.status, ok: res.ok, text: await res.text() };
+  };
+  let reply;
+  try {
+    reply = await send(wrapper);
+  } catch (error) {
+    if (!wrapper.fallback) throw error;
+    return send(wrapper.fallback);
+  }
+  const code = parse(reply.text)?.code;
+  // 没有歌词是正常结果，不额外消耗公益服额度
+  const noLyrics = path.split('?')[0] === '/lyrics' && (reply.status === 404 || (reply.ok && code === 404));
+  if (wrapper.fallback && !noLyrics && (!reply.ok || code !== 0)) return send(wrapper.fallback);
+  return reply;
 }
 
 function parse(text) {

@@ -8,7 +8,11 @@
 |---|---|---|
 | `-l, --listen <ADDR>` | `0.0.0.0:8888` | 监听地址 |
 | `-p, --port <PORT>` | 可选 | 设置时覆盖 `--listen` 中的端口 |
-| `-w, --wrapper-url <URL>` | `http://127.0.0.1:12340` | wrapper-lite 密钥服务地址 |
+| `-w, --wrapper-url <URL>` | `http://127.0.0.1:12340` | 优先 wrapper-lite 地址；也可用 `FANTASTIC_WRAPPER_URL` |
+| `--wrapper-fallback-url <URL>` | 未设置 | 兜底 wrapper 地址；也可用 `FANTASTIC_WRAPPER_FALLBACK_URL`，未设置则关闭兜底 |
+| `--wrapper-fallback-auth <VALUE>` | 不发送 | 兜底的独立鉴权，规则同 `--wrapper-auth`；也可用 `FANTASTIC_WRAPPER_FALLBACK_AUTH` |
+| `--wrapper-fallback-rate <N>` | `1` | 每秒发往兜底 wrapper 的请求上限；0 不限 |
+| `--wrapper-fallback-concurrency <N>` | `1` | 兜底 wrapper 的同时请求上限；0 不限 |
 | `--qq-api <URL>` | 未设置 | 只在服务端使用的 QQ API 地址；也可用 `FANTASTIC_QQ_API` |
 | `--qq-proxy <URL>` | 未设置 | 只在服务端使用的 QQ API、AMLL、封面和媒体代理；也可用 `FANTASTIC_QQ_PROXY` |
 | `--wrapper-rate <N>` | `24` | 每秒发往 wrapper-lite 的最大请求数（任意 1 秒内，超出的请求按顺序排队）。0 不限 |

@@ -60,6 +60,7 @@ fn config(api: String, amll: String) -> Config {
         wrapper_rate: 0,
         wrapper_concurrency: 0,
         wrapper_auth: None,
+        wrapper_fallback: None,
         wrapper_relay: true,
         wrapper_hint: None,
         client_rate: 0,
