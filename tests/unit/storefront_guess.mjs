@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { chooseStorefront, guessStorefront, regionlessResource } from '../../web/amp.mjs';
+import { storefrontCandidates, guessStorefront, regionlessResource } from '../../web/amp.mjs';
 import { parseAppleLink } from '../../web/views/links.mjs';
 
 test('pasted regionless Apple links preserve the missing region and query for guessing', () => {
@@ -18,11 +18,10 @@ test('pasted regionless Apple links preserve the missing region and query for gu
   assert.equal(parseAppleLink('https://example.com/album/123'), null);
 });
 
-test('storefront choice prefers valid online regions then candidate order', () => {
-  assert.equal(chooseStorefront(['jp', 'cn', 'us'], ['JP', 'US']), 'us');
-  assert.equal(chooseStorefront(['jp', 'cn'], ['US']), 'cn');
-  assert.equal(chooseStorefront(['tw']), 'tw');
-  assert.equal(chooseStorefront([]), null);
+test('storefront candidates normalize wrapper regions in order and fall back without valid codes', () => {
+  assert.deepEqual(storefrontCandidates(['CA', 'jp', 'ca', '', 'USA', '12']), ['ca', 'jp']);
+  assert.deepEqual(storefrontCandidates(['invalid']), ['cn', 'us', 'kr', 'jp', 'tw']);
+  assert.deepEqual(storefrontCandidates([]), ['cn', 'us', 'kr', 'jp', 'tw']);
 });
 
 test('regionless resources support merged slashes and optional slugs', () => {
@@ -41,8 +40,12 @@ test('catalog probes all candidates and tolerates catalog and wrapper errors', a
     return { data: path.includes('/jp/') || path.includes('/us/') ? [{ id: '123' }] : [] };
   };
   const resource = { type: 'songs', id: '123' };
-  assert.equal(await guessStorefront(resource, { catalog, status: async () => ({ regions: ['JP'] }) }), 'jp');
-  assert.equal(calls.length, 5);
+  assert.equal(await guessStorefront(resource, { catalog, status: async () => ({ regions: ['JP', 'US', 'jp'] }) }), 'jp');
+  assert.deepEqual(calls, ['/v1/catalog/jp/songs/123', '/v1/catalog/us/songs/123']);
+  calls.length = 0;
+  assert.equal(await guessStorefront(resource, { catalog, status: async () => ({ regions: ['CA'] }) }), null);
+  assert.deepEqual(calls, ['/v1/catalog/ca/songs/123']);
   assert.equal(await guessStorefront(resource, { catalog, status: async () => { throw new Error('offline'); } }), 'us');
+  assert.equal(await guessStorefront(resource, { catalog, status: async () => ({ regions: [] }) }), 'us');
   assert.equal(await guessStorefront(resource, { catalog: async () => ({ data: [] }), status: async () => ({ regions: [] }) }), null);
 });

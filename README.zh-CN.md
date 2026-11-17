@@ -21,7 +21,7 @@ Fantastic 是一个用 Rust 编写的音乐网页播放器，把 **Apple Music**
 
 在线体验：<https://music.1412.tech>
 
-QQ 页面地址使用本站前缀加官网链接，例如 `/https://y.qq.com/n/ryqq/songDetail/0039MnYb0qxYhV`。不含地区的 Apple Music 链接会自动从 CN、US、KR、JP、TW 中选择存在该资源的曲库，优先选择 wrapper-lite 在线地区。
+QQ 页面地址使用本站前缀加官网链接，例如 `/https://y.qq.com/n/ryqq/songDetail/0039MnYb0qxYhV`。不含地区的 Apple Music 链接会按 wrapper-lite 报告的地区顺序探测曲库，仅在状态不可用或没有有效地区时回退到 CN、US、KR、JP、TW。
 
 ## 亮点
 

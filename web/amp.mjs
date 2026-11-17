@@ -3,10 +3,9 @@ import { ampFetch } from './amp-fetch.mjs';
 
 export const STOREFRONTS = ['cn', 'us', 'kr', 'jp', 'tw'];
 
-export function chooseStorefront(valid, regions = []) {
-  const online = regions.map((cc) => String(cc).toLowerCase());
-  return STOREFRONTS.find((cc) => valid.includes(cc) && online.includes(cc))
-    || STOREFRONTS.find((cc) => valid.includes(cc)) || null;
+export function storefrontCandidates(regions = []) {
+  const codes = [...new Set(regions.map((cc) => String(cc).toLowerCase()).filter((cc) => /^[a-z]{2}$/.test(cc)))];
+  return codes.length ? codes : STOREFRONTS;
 }
 
 export function regionlessResource(path) {
@@ -18,16 +17,14 @@ export function regionlessResource(path) {
 }
 
 export async function guessStorefront(resource, { catalog = amp, status = () => window.AmWrapper.status() } = {}) {
-  const [valid, regions] = await Promise.all([
-    Promise.all(STOREFRONTS.map(async (cc) => {
+  const regions = await Promise.resolve().then(status).then((data) => data.regions || []).catch(() => []);
+  const valid = await Promise.all(storefrontCandidates(regions).map(async (cc) => {
       try {
         const data = await catalog(`/v1/catalog/${cc}/${resource.type}/${resource.id}`);
         return data.data?.some((item) => item.id === resource.id) ? cc : null;
       } catch { return null; }
-    })),
-    Promise.resolve().then(status).then((data) => data.regions || []).catch(() => []),
-  ]);
-  return chooseStorefront(valid, regions);
+    }));
+  return valid.find(Boolean) || null;
 }
 
 /**
