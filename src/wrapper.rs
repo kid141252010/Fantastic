@@ -610,6 +610,18 @@ mod tests {
         let wrapper = Wrapper::new(&config);
         assert_eq!(read(wrapper.send(wrapper.get("/status")).await.unwrap()), "fallback");
         assert_eq!(calls.lock().unwrap().last().unwrap().2[AUTHORIZATION], "Bearer public-token");
+
+        let fallback = config.wrapper_fallback.as_mut().unwrap();
+        fallback.url = fallback.url.replacen("http://", "http://user:p%40ss@", 1);
+        fallback.auth = None;
+        let wrapper = Wrapper::new(&config);
+        assert_eq!(read(wrapper.send(wrapper.get("/status")).await.unwrap()), "fallback");
+        assert_eq!(calls.lock().unwrap().last().unwrap().2[AUTHORIZATION], "Basic dXNlcjpwQHNz");
+
+        // 两边均连接失败时结束请求，不会来回重试
+        config.wrapper_fallback.as_mut().unwrap().url = config.wrapper_url.clone();
+        let wrapper = Wrapper::new(&config);
+        assert!(wrapper.send(wrapper.get("/status")).await.is_err());
     }
 
     #[tokio::test]

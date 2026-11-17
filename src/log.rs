@@ -298,7 +298,8 @@ pub fn print_banner(listen: SocketAddr, config: &Config) {
         };
         lines.push(format!("                limit {limits} · auth {auth}"));
         if let Some(fallback) = &config.wrapper_fallback {
-            lines.push(format!("  fallback      {}", fallback.url));
+            let address = reqwest::Url::parse(&fallback.url).map(|url| url.origin().ascii_serialization()).unwrap_or_else(|_| "invalid URL".into());
+            lines.push(format!("  fallback      {address}"));
             let limits = format!("{}, {}", limit(fallback.rate as usize, "req/s"), limit(fallback.concurrency, "concurrent"));
             let auth = if fallback.auth.is_some() { "configured" } else { "none" };
             lines.push(format!("                limit {limits} · auth {auth}"));
