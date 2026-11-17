@@ -62,6 +62,7 @@ async function checkNav(page, width) {
           const url = new URL(route.request().url());
           // 歌曲信息经 /amp 代理取自 amp-api 的 songs 资源；地区语言信息取不到时页面退回默认写法
           if (/^\/amp\/v1\/catalog\/[a-z]{2}\/songs\//.test(url.pathname)) {
+            if (url.pathname.endsWith('/123456780') && !url.pathname.includes('/jp/')) return route.fulfill({ json: { data: [] } });
             return route.fulfill({ json: { data: [{ id: url.pathname.split('/').pop(), type: 'songs', attributes: { name: 'A song with a beautifully long title / 一首很长很长的歌曲名称', artistName: 'Artist', albumName: 'The listening room', durationInMillis: 213000 }, relationships: { artists: { data: [{ id: '42', type: 'artists', attributes: { name: 'Artist', url: 'https://music.apple.com/us/artist/artist/42' } }] } } }] } });
           }
           if (url.pathname.startsWith('/amp/')) return route.fulfill({ status: 404, json: { errors: [] } });
@@ -84,6 +85,19 @@ async function checkNav(page, width) {
         if (width === 1440 && lang === 'zh-Hans') await page.screenshot({ path: 'target/ui-home.png', fullPage: true });
         await page.locator('#form button').click();
         assert.equal(await page.locator('#input').getAttribute('aria-invalid'), 'true');
+        if (width === 1440 && lang === 'en') {
+          for (const path of ['album/1561058084', 'station/ra.123', 'song/_/123456780']) {
+            await page.locator('#input').fill('https://music.apple.com/' + path + '?i=456');
+            assert(await page.locator('#detect').isVisible(), path);
+            assert.equal(await page.locator('#detect').textContent(), { album: 'Album', station: 'Station', song: 'Song' }[path.split('/')[0]]);
+          }
+          await page.locator('#form button').click();
+          await page.waitForURL('**/https://music.apple.com/jp/song/_/123456780?i=456');
+          await page.locator('#title').filter({ hasText: 'beautifully long title' }).waitFor();
+          assert.match(await page.locator('#title').textContent(), /beautifully long title/);
+          await page.screenshot({ path: 'target/ui-regionless-paste.png', fullPage: true });
+          await page.goto('http://am.test/');
+        }
         // 首页只识别 Apple Music 链接，其余输入按关键词搜索
         await page.locator('#input').fill('https://music.apple.com/us/song/_/123456789');
         await page.locator('#form button').click();

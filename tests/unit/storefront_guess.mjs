@@ -1,6 +1,22 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { chooseStorefront, guessStorefront, regionlessResource } from '../../web/amp.mjs';
+import { parseAppleLink } from '../../web/views/links.mjs';
+
+test('pasted regionless Apple links preserve the missing region and query for guessing', () => {
+  for (const path of [
+    'song/name/123', 'album/1561058084', 'album/name/123', 'playlist/pl.abc',
+    'playlist/name/pl.abc', 'artist/123', 'artist/name/123', 'music-video/name/123',
+    'post/123', 'post/name/123', 'station/ra.123', 'station/name/ra.123',
+  ]) {
+    const url = `https://music.apple.com/${path}/?i=456#track`;
+    assert.equal(parseAppleLink(url), url);
+  }
+  assert.equal(parseAppleLink('https://music.apple.com/us/song/name/123'), 'https://music.apple.com/us/song/name/123');
+  assert.equal(parseAppleLink(''), null);
+  assert.equal(parseAppleLink('https://music.apple.com/album/not-an-id'), null);
+  assert.equal(parseAppleLink('https://example.com/album/123'), null);
+});
 
 test('storefront choice prefers valid online regions then candidate order', () => {
   assert.equal(chooseStorefront(['jp', 'cn', 'us'], ['JP', 'US']), 'us');
