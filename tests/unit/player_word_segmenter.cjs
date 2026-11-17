@@ -235,3 +235,16 @@ test('vendored AMLL balances the reported song at phone-like widths', async () =
     }
   }
 });
+
+test('reduplicated Han characters stay one word for line breaking', async () => {
+  const { createWordSegmenter } = await api;
+  const segmenter = createWordSegmenter(await dictionary, native, await jieba);
+  assert.equal(words(segmenter.segment('流进诗里的嘈嘈水声')), '流|进|诗|里|的|嘈嘈|水声');
+  for (const text of ['流进诗里的嘈嘈水声', '溪水潺潺', '绿油油的', '高高兴兴', '天天想你']) {
+    const items = [...segmenter.segment(text)];
+    assert.equal(items.map(item => item.segment).join(''), text);
+    for (const item of items) assert.equal(text.slice(item.index, item.index + item.segment.length), item.segment);
+    assert.ok(!words(items).match(/(\p{Script=Han})\|\1/u), `${text} => ${words(items)}`);
+  }
+  assert.equal(words(createWordSegmenter(new Map()).segment('龘龘靐')), '龘龘|靐');
+});

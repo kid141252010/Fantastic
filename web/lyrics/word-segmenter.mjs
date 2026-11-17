@@ -88,6 +88,22 @@ function* leanBack(text, segments) {
   if (previous) yield previous;
 }
 
+// Neither dictionary lists most reduplicated forms (嘈嘈, 潺潺, 高高兴兴), so no
+// boundary is offered between two identical Han characters.
+function* joinReduplicated(segments) {
+  let previous;
+  for (const item of segments) {
+    const last = [...(previous?.segment ?? '')].pop() ?? '';
+    if (previous && HAN.test(last) && item.segment.startsWith(last)) {
+      previous = { ...previous, segment: previous.segment + item.segment, isWordLike: true };
+    } else {
+      if (previous) yield previous;
+      previous = { ...item };
+    }
+  }
+  if (previous) yield previous;
+}
+
 export async function parseDictionary(text) {
   const dictionary = new Map();
   const lines = text.split('\n');
@@ -182,8 +198,8 @@ export function createWordSegmenter(dictionary, native = null, jieba = null) {
   return {
     *segment(text) {
       const segments = segmentRuns(text);
-      if (jieba && HAN.test(text) && !KANA_OR_HANGUL.test(text)) yield* leanBack(text, recutSingletons(segments, jieba));
-      else yield* segments;
+      if (jieba && HAN.test(text) && !KANA_OR_HANGUL.test(text)) yield* joinReduplicated(leanBack(text, recutSingletons(segments, jieba)));
+      else yield* joinReduplicated(segments);
     },
   };
 }
