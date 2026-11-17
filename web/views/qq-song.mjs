@@ -28,7 +28,7 @@ export function mount({ root, url, signal, player, navigate, onLangChange, toast
   const { t } = window.AmI18n;
   const { formatTime } = window.AmHook;
   const $ = (id) => root.querySelector(`#${id}`);
-  const mid = url.pathname.match(/^\/qq-song\/([0-9A-Za-z]{1,32})\/?$/)?.[1];
+  const mid = url.pathname.match(/^\/https:\/{1,2}y\.qq\.com\/n\/ryqq\/songDetail\/([0-9A-Za-z]{1,32})\/?$/)?.[1];
   let track = null;
   let rows = [];
   let qualityState = 'loading';

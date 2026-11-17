@@ -127,7 +127,7 @@ impl Entry {
 
 static PAGE_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(concat!(
-        r"^/https:/{1,2}music\.apple\.com/([a-z]{2})/(",
+        r"^/https:/{1,2}music\.apple\.com/(?:([a-z]{2})/)?(",
         page_kinds!(),
         r")/(?:[^/?#]+/)?([^/?#]+?)/?$"
     ))
@@ -177,13 +177,16 @@ fn describe(path: &str, query: &str) -> Entry {
         }
         return Entry::new("page", detail);
     }
+    if crate::links::is_qq_link(path.trim_start_matches('/')) {
+        return Entry::new("page", path.trim_start_matches('/'));
+    }
     if let Some(caps) = PAGE_RE.captures(path) {
         let kind = match &caps[2] {
             "music-video" => "MV",
             other => other,
         };
         // 单页应用：只有整页加载（打开、刷新）时请求页面，站内跳转不再请求
-        return Entry::new("page", format!("{kind} {} {}", caps[1].to_uppercase(), &caps[3]));
+        return Entry::new("page", format!("{kind} {} {}", caps.get(1).map_or("AUTO".to_string(), |cc| cc.as_str().to_uppercase()), &caps[3]));
     }
     match path {
         "/" => return Entry::new("page", "home"),

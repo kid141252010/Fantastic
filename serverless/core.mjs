@@ -43,7 +43,7 @@ const SITE_PAGE_RE = new RegExp(
     + `|^https:/{1,2}music\\.apple\\.com/[a-z]{2}/(?:new(?:/top-charts(?:/(?:${CHART_KINDS}))?)?|radio)/?$`,
 );
 const LOCAL_PAGE_RE = new RegExp(
-  `^(?:settings|radio|qq-song/[0-9A-Za-z]{1,32}|qq-artist/[0-9A-Za-z]{1,32}|qq-album/[0-9A-Za-z]{1,32}|qq-playlist/[0-9A-Za-z]{1,32}|qq-mv/[0-9A-Za-z]{1,32}|new(?:/top-charts(?:/(?:${CHART_KINDS}))?)?`
+  `^(?:settings|radio|new(?:/top-charts(?:/(?:${CHART_KINDS}))?)?`
     + '|library(?:/(?:recently-added|albums|songs|music-videos|all-playlists|favorite-songs|artists(?:/[^/]+)?'
     + '|playlist/p\\.[0-9A-Za-z_-]+|playlist-folder/f\\.[0-9A-Za-z_-]+))?)/?$',
 );
@@ -70,7 +70,9 @@ export function withSecurityHeaders(response) {
 
 export function isPagePath(pathname) {
   const path = pathname.replace(/^\//, '');
-  return path === '' || LOCAL_PAGE_RE.test(path) || SITE_PAGE_RE.test(path);
+  return /^https:\/{1,2}y\.qq\.com\/n\/ryqq\/(?:songDetail|albumDetail|singer|playlist|mv\/v)\/[0-9A-Za-z]{1,32}\/?$/.test(path)
+    || SITE_PAGE_RE.test(path.replace(/^(https:\/{1,2}music\.apple\.com\/)(?=song\/|album\/|artist\/|playlist\/|music-video\/|post\/|station\/)/, '$1us/'))
+    || path === '' || LOCAL_PAGE_RE.test(path) || SITE_PAGE_RE.test(path);
 }
 
 /* ---------- 响应 ---------- */

@@ -42,8 +42,8 @@ test('QQ DTO maps names, timing, badges and direct QQ artwork', () => {
   assert.equal(track.duration, 269000);
   assert.deepEqual(track.qq, { mid: dto.id, albumMid: dto.albumMid, vip: true, ttml: true, mv: '' });
   assert.deepEqual(track.artwork, { url: qq.artworkUrl(dto.cover) });
-  assert.equal(track.href, `/qq-song/${dto.id}`);
-  assert.equal(track.albumHref, `/qq-album/${dto.albumMid}`);
+  assert.equal(track.href, `/https://y.qq.com/n/ryqq/songDetail/${dto.id}`);
+  assert.equal(track.albumHref, `/https://y.qq.com/n/ryqq/albumDetail/${dto.albumMid}`);
   assert.equal(JSON.stringify(track).includes('example.invalid'), false);
   assert.equal(JSON.stringify(track).includes('file_url'), false);
   const entry = qq.entryOf(track);
@@ -58,8 +58,8 @@ test('QQ DTO maps names, timing, badges and direct QQ artwork', () => {
 
 test('QQ DTO turns valid artist and album mids into local links', () => {
   const track = qq.toTrack({ ...dto, artists: [{ name: '周杰伦', mid: '0025NhlN2yWrP4' }] });
-  assert.deepEqual(track.artists, [{ name: '周杰伦', href: '/qq-artist/0025NhlN2yWrP4' }]);
-  assert.equal(track.albumHref, `/qq-album/${dto.albumMid}`);
+  assert.deepEqual(track.artists, [{ name: '周杰伦', href: '/https://y.qq.com/n/ryqq/singer/0025NhlN2yWrP4' }]);
+  assert.equal(track.albumHref, `/https://y.qq.com/n/ryqq/albumDetail/${dto.albumMid}`);
 });
 
 test('QQ optional fields default safely; invalid IDs cannot form adapter paths', () => {
@@ -913,9 +913,9 @@ test('QQ songs enter the library with source-aware keys, survive export and play
   assert.equal(item.key, `qq:song:${dto.id}`);
   assert.equal(item.source, 'qq');
   assert.equal(item.vip, true);
-  assert.equal(item.href, `/qq-song/${dto.id}`);
-  assert.equal(item.albumHref, `/qq-album/${dto.albumMid}`);
-  assert.deepEqual(item.artists, [{ name: '周杰伦', href: '/qq-artist/0025NhlN2yWrP4' }]);
+  assert.equal(item.href, `/https://y.qq.com/n/ryqq/songDetail/${dto.id}`);
+  assert.equal(item.albumHref, `/https://y.qq.com/n/ryqq/albumDetail/${dto.albumMid}`);
+  assert.deepEqual(item.artists, [{ name: '周杰伦', href: '/https://y.qq.com/n/ryqq/singer/0025NhlN2yWrP4' }]);
   assert.equal(item.artwork, 'https://y.qq.com/music/photo_new/T002R500x500M000003DFRzD192KKD_5.jpg');
   const entry = library.entryOf(item);
   const direct = qq.entryOf(track);
@@ -931,11 +931,39 @@ test('QQ songs enter the library with source-aware keys, survive export and play
   assert.ok(!library.inLibrary('song', dto.id, 'qq'));
 });
 
+test('legacy QQ library imports retain canonical links in items, playlists and queue entries', async () => {
+  const legacy = { source: 'qq', kind: 'song', id: 'legacy123', name: 'Legacy QQ',
+    href: '/qq-song/legacy123', albumHref: '/qq-album/album123/',
+    artists: [{ name: 'Artist', href: '/qq-artist/artist123' },
+      { name: 'Playlist', href: '/qq-playlist/123' }, { name: 'MV', href: '/qq-mv/video123' },
+      { name: 'Unsafe', href: '/qq-artist/../bad' }, { name: 'Empty', href: '' }] };
+  const parsed = library.parseImport(JSON.stringify({ format: library.FORMAT, version: 1,
+    items: [legacy], playlists: [{ id: 'p.legacy123', name: 'Legacy playlist', tracks: [legacy] }] }));
+  assert.equal(parsed.dropped, 0);
+  await library.importData(parsed);
+  const item = library.libraryItem('song', legacy.id, 'qq');
+  assert.equal(item.href, '/https://y.qq.com/n/ryqq/songDetail/legacy123');
+  assert.equal(item.albumHref, '/https://y.qq.com/n/ryqq/albumDetail/album123');
+  assert.deepEqual(item.artists.map((artist) => artist.href), [
+    '/https://y.qq.com/n/ryqq/singer/artist123', '/https://y.qq.com/n/ryqq/playlist/123',
+    '/https://y.qq.com/n/ryqq/mv/v/video123', '', '',
+  ]);
+  const queue = library.entryOf(item);
+  assert.equal(queue.href, item.href);
+  assert.equal(queue.albumHref, item.albumHref);
+  assert.deepEqual(queue.artists, item.artists);
+  const exported = library.exportData();
+  assert.equal(exported.playlists.find((list) => list.id === 'p.legacy123').tracks[0].href, item.href);
+  const reimported = library.parseImport(JSON.stringify(exported));
+  assert.equal(reimported.items.find((entry) => entry.id === legacy.id).href, item.href);
+  assert.equal(library.removeFromLibrary('song', legacy.id, 'qq'), 1);
+});
+
 test('QQ page paths map to y.qq.com and reject other paths', () => {
-  assert.equal(qq.webUrl('/qq-song/0039MnYb0qxYhV'), 'https://y.qq.com/n/ryqq/songDetail/0039MnYb0qxYhV');
-  assert.equal(qq.webUrl('/qq-mv/w0026q7f01a'), 'https://y.qq.com/n/ryqq/mv/v/w0026q7f01a');
-  assert.equal(qq.webUrl('/qq-playlist/7039749142'), 'https://y.qq.com/n/ryqq/playlist/7039749142');
-  assert.equal(qq.webUrl('/qq-song/../x'), '');
+  assert.equal(qq.webUrl('/https://y.qq.com/n/ryqq/songDetail/0039MnYb0qxYhV'), 'https://y.qq.com/n/ryqq/songDetail/0039MnYb0qxYhV');
+  assert.equal(qq.webUrl('/https://y.qq.com/n/ryqq/mv/v/w0026q7f01a'), 'https://y.qq.com/n/ryqq/mv/v/w0026q7f01a');
+  assert.equal(qq.webUrl('/https://y.qq.com/n/ryqq/playlist/7039749142'), 'https://y.qq.com/n/ryqq/playlist/7039749142');
+  assert.equal(qq.webUrl('/https://y.qq.com/n/ryqq/songDetail/../x'), '');
   assert.equal(qq.webUrl('/https://music.apple.com/us/song/_/1'), '');
 });
 

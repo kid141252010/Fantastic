@@ -59,7 +59,7 @@ function checkSong(target, toast) {
 /** 详情页头部「更多」菜单（createActions 的 headerMenu）的条目顺序，组间加分隔线；各页面只列出自己有的条目 */
 const HEADER_MENU = [
   ['download', 'favorite', 'library', 'addToPlaylist', 'about', 'edit', 'moveToFolder', 'duplicate', 'saveAsPlaylist', 'export'],
-  ['copySite', 'copyApple'],
+  ['copySite', 'copyApple', 'openQQ'],
 ];
 
 /** 「更多」菜单里的下载（downloads.mjs，使用设置中心的下载设置）：歌曲、MV、专辑与 Apple Music 歌单；不能下载时为 null */
@@ -543,7 +543,7 @@ export function createActions({ signal, player, navigate, toast }) {
 
   /** QQ 专辑 / 歌单的全部歌曲（歌单只取第一页） */
   async function qqCollectionEntries(target) {
-    const id = (target.href || '').match(/^\/qq-(?:album|playlist)\/([0-9A-Za-z]{1,32})/)?.[1];
+    const id = (target.href || '').match(/^\/https:\/{1,2}y\.qq\.com\/n\/ryqq\/(?:albumDetail|playlist)\/([0-9A-Za-z]{1,32})/)?.[1];
     if (!id) return [];
     const songs = target.kind === 'album'
       ? ((await qq.album(id)).songs || []).map(qq.toTrack)
@@ -656,6 +656,7 @@ export function createActions({ signal, player, navigate, toast }) {
       const site = location.origin + href;
       return {
         copySite: { icon: ICON.link, label: t('action.copySite'), title: site, onSelect: () => copy(site) },
+        openQQ: { icon: ICON.link, label: t('qq.openWeb'), onSelect: () => window.open(web, '_blank', 'noopener') },
         copyApple: { icon: ICON.link, label: t('qq.copyLink'), title: web, onSelect: () => copy(web) },
       };
     }

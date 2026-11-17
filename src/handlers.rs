@@ -25,7 +25,11 @@ pub async fn app_handler(headers: HeaderMap) -> Response<Body> {
 /// 歌曲 / MV / post / 专辑 / 歌单 / 艺人 / 电台页、编辑页、广播、资料库页与设置中心都返回单页应用，其他一律 404
 pub async fn fallback_handler(uri: Uri, headers: HeaderMap) -> Response<Body> {
     let path = uri.path().strip_prefix('/').unwrap_or(uri.path());
-    if parse_song_link(path).is_ok()
+    let normalized = path.replacen("https:/music.apple.com/", "https://music.apple.com/", 1);
+    let path = normalized.as_str();
+    if crate::links::is_regionless_link(path)
+        || crate::links::is_qq_link(path)
+        || parse_song_link(path).is_ok()
         || parse_mv_link(path).is_ok()
         || parse_post_link(path).is_ok()
         || parse_album_link(path).is_ok()
@@ -37,11 +41,6 @@ pub async fn fallback_handler(uri: Uri, headers: HeaderMap) -> Response<Body> {
         || is_library_path(path)
         || is_radio_path(path)
         || is_settings_path(path)
-        || path.strip_prefix("qq-song/").is_some_and(|mid| crate::qq::valid_mid(mid.trim_end_matches('/')) && !mid.contains("//"))
-        || path.strip_prefix("qq-artist/").is_some_and(|mid| crate::qq::valid_mid(mid.trim_end_matches('/')) && !mid.contains("//"))
-        || path.strip_prefix("qq-album/").is_some_and(|mid| crate::qq::valid_mid(mid.trim_end_matches('/')) && !mid.contains("//"))
-        || path.strip_prefix("qq-playlist/").is_some_and(|id| crate::qq::valid_mid(id.trim_end_matches('/')) && !id.contains("//"))
-        || path.strip_prefix("qq-mv/").is_some_and(|vid| crate::qq::valid_mid(vid.trim_end_matches('/')) && !vid.contains("//"))
     {
         return app_handler(headers).await;
     }
@@ -436,13 +435,13 @@ mod tests {
     #[tokio::test]
     async fn not_found_is_not_cached() {
         // 旧版本的内容哈希地址与其他未知路径：404 不能被浏览器或 CDN 缓存
-        for path in ["/assets/h/app.0000000000000000.mjs", "/assets/h/x.0000000000000000.js", "/nope", "/qq-song/../bad", "/qq-song/123//"] {
+        for path in ["/assets/h/app.0000000000000000.mjs", "/assets/h/x.0000000000000000.js", "/nope", "/qq-song/123", "/qq-album/123", "/qq-artist/123", "/qq-playlist/123", "/qq-mv/123", "/https://y.qq.com/n/ryqq/songDetail/../bad", "/https://y.qq.com/n/ryqq/songDetail/123//"] {
             let response = fallback_handler(path.parse().unwrap(), HeaderMap::new()).await;
             assert_eq!(response.status(), StatusCode::NOT_FOUND, "{path}");
             assert_eq!(response.headers()[axum::http::header::CACHE_CONTROL], "no-store", "{path}");
         }
         // 页面地址仍返回外壳
-        for path in ["/library/songs", "/radio", "/https://music.apple.com/us/station/apple-music-1/ra.978194965", "/qq-song/0039MnYb0qxYhV", "/qq-song/123/", "/qq-artist/0025NhlN2yWrP4", "/qq-album/000MkMni19ClKG", "/qq-playlist/7039749142", "/qq-mv/w0026q7f01a"] {
+        for path in ["/https://music.apple.com/song/name/123?i=456", "/https:/music.apple.com/album/123", "/https:/y.qq.com/n/ryqq/songDetail/123/?x=1", "/library/songs", "/radio", "/https://music.apple.com/us/station/apple-music-1/ra.978194965", "/https://y.qq.com/n/ryqq/songDetail/0039MnYb0qxYhV", "/https://y.qq.com/n/ryqq/songDetail/123/", "/https://y.qq.com/n/ryqq/singer/0025NhlN2yWrP4", "/https://y.qq.com/n/ryqq/albumDetail/000MkMni19ClKG", "/https://y.qq.com/n/ryqq/playlist/7039749142", "/https://y.qq.com/n/ryqq/mv/v/w0026q7f01a"] {
             let page = fallback_handler(path.parse().unwrap(), HeaderMap::new()).await;
             assert_eq!(page.status(), StatusCode::OK, "{path}");
         }

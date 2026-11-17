@@ -23,6 +23,16 @@ macro_rules! page_kinds {
 }
 pub(crate) use {chart_kinds, new_section, page_kinds};
 
+pub fn is_regionless_link(path: &str) -> bool {
+    static RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^https:/{1,2}music\.apple\.com/(?:(?:song|music-video)/[^/?#]+/[0-9]+|(?:album|artist|post)/(?:[^/?#]+/)?[0-9]+|playlist/(?:[^/?#]+/)?pl\.[0-9A-Za-z_-]+|station/(?:[^/?#]+/)?ra\.[0-9A-Za-z._-]+)/?$").unwrap());
+    RE.is_match(path)
+}
+
+pub fn is_qq_link(path: &str) -> bool {
+    static RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^https:/{1,2}y\.qq\.com/n/ryqq/(?:songDetail|albumDetail|singer|playlist|mv/v)/([^/?#]+)/?$").unwrap());
+    RE.captures(path).is_some_and(|caps| crate::qq::valid_mid(&caps[1]))
+}
+
 static SONG_LINK_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^https://music\.apple\.com/[a-z]{2}/song/[^/?#]+/([0-9]+)(?:[/?#]|$)").unwrap());
 static MV_LINK_RE: LazyLock<Regex> =
@@ -140,6 +150,22 @@ pub fn is_settings_path(path: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn prefixed_pages() {
+        for path in ["https://music.apple.com/song/name/123", "https:/music.apple.com/album/123", "https://music.apple.com/playlist/pl.abc", "https://music.apple.com/station/ra.123"] {
+            assert!(is_regionless_link(path));
+        }
+        for path in ["https://music.apple.com/song/name/abc", "https://music.apple.com/us/song/name/123", "https://evil.test/album/123"] {
+            assert!(!is_regionless_link(path));
+        }
+        for kind in ["songDetail", "albumDetail", "singer", "playlist", "mv/v"] {
+            assert!(is_qq_link(&format!("https:/y.qq.com/n/ryqq/{kind}/123/")));
+        }
+        for path in ["qq-song/123", "https://y.qq.com/n/ryqq/songDetail/", "https://y.qq.com/n/ryqq/songDetail/a-b", "https://y.qq.com/n/ryqq/songDetail/123//"] {
+            assert!(!is_qq_link(path));
+        }
+    }
 
     #[test]
     fn test_parse_song_link() {

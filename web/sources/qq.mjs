@@ -137,7 +137,7 @@ export function qualityId(value = 'HQ') {
   return value;
 }
 const qualityQuery = (quality) => quality === undefined ? '' : `?quality=${qualityId(quality)}`;
-export const songPath = (id) => `/qq-song/${mid(id)}`;
+export const songPath = (id) => `/https://y.qq.com/n/ryqq/songDetail/${mid(id)}`;
 export const playUrl = (id, quality) => `/qq/song/${mid(id)}/play${qualityQuery(quality)}`;
 export const downloadUrl = (id, quality) => `/qq/song/${mid(id)}/download${qualityQuery(quality)}`;
 const RAW_LYRIC_KINDS = ['qrc', 'qrctrans', 'qrcroma'];
@@ -145,16 +145,15 @@ export function rawLyricsUrl(id, kind) {
   if (!RAW_LYRIC_KINDS.includes(kind)) throw new Error('Invalid QQ raw lyric kind');
   return `/qq/song/${mid(id)}/lyrics/raw?kind=${kind}`;
 }
-export const albumPath = (id) => `/qq-album/${mid(id)}`;
-export const artistPath = (id) => `/qq-artist/${mid(id)}`;
-export const playlistPath = (id) => `/qq-playlist/${mid(id)}`;
-export const mvPath = (id) => `/qq-mv/${mid(id)}`;
+export const albumPath = (id) => `/https://y.qq.com/n/ryqq/albumDetail/${mid(id)}`;
+export const artistPath = (id) => `/https://y.qq.com/n/ryqq/singer/${mid(id)}`;
+export const playlistPath = (id) => `/https://y.qq.com/n/ryqq/playlist/${mid(id)}`;
+export const mvPath = (id) => `/https://y.qq.com/n/ryqq/mv/v/${mid(id)}`;
 export const mvPlayUrl = (id) => `/qq/mv/${mid(id)}/play`;
-const WEB_PATHS = { song: 'songDetail', album: 'albumDetail', artist: 'singer', playlist: 'playlist', mv: 'mv/v' };
 /** 本站 QQ 页面路径 → y.qq.com 上的对应页面；不是 QQ 页面时为空 */
 export function webUrl(path) {
-  const m = String(path || '').match(/^\/qq-(song|album|artist|playlist|mv)\/([0-9A-Za-z]{1,32})\/?$/);
-  return m ? `https://y.qq.com/n/ryqq/${WEB_PATHS[m[1]]}/${m[2]}` : '';
+  const m = String(path || '').match(/^\/https:\/{1,2}y\.qq\.com\/n\/ryqq\/(?:songDetail|albumDetail|singer|playlist|mv\/v)\/[0-9A-Za-z]{1,32}\/?(?:\?[^#]*)?$/);
+  return m ? String(path).slice(1).replace(/^https:\/(?!\/)/, 'https://') : '';
 }
 export const coverUrl = (albumMid) => albumMid === '' ? '' : `/qq/cover/${mid(albumMid)}`;
 /** photo_new only serves discrete sizes. Resolve before Apple-sized consumers see it. */
@@ -183,14 +182,14 @@ export function toTrack(dto) {
     const name = typeof artist === 'string' ? artist : artist?.name;
     if (typeof name !== 'string') return null;
     const artistMid = typeof artist === 'object' && artist
-      ? artist.mid || String(artist.href || '').match(/^\/qq-artist\/([0-9A-Za-z]{1,32})\/?$/)?.[1] || '' : '';
-    return { name, href: MID.test(String(artistMid || '')) ? `/qq-artist/${artistMid}` : '' };
+      ? artist.mid || String(artist.href || '').match(/^\/https:\/{1,2}y\.qq\.com\/n\/ryqq\/singer\/([0-9A-Za-z]{1,32})\/?$/)?.[1] || '' : '';
+    return { name, href: MID.test(String(artistMid || '')) ? `/https://y.qq.com/n/ryqq/singer/${artistMid}` : '' };
   }).filter(Boolean);
   const album = String(dto.album || '');
   return withIdentity({
     source: 'qq', kind: 'song', id, name: String(dto.name || ''), title: String(dto.name || ''),
     artists, artist: artists.map((a) => a.name).join(' / '), album,
-    albumId: albumMid, albumHref: albumMid && album ? `/qq-album/${albumMid}` : '', href: songPath(id), country: '',
+    albumId: albumMid, albumHref: albumMid && album ? `/https://y.qq.com/n/ryqq/albumDetail/${albumMid}` : '', href: songPath(id), country: '',
     duration: Number.isFinite(dto.durationMs) ? Math.max(0, dto.durationMs) : 0,
     artwork: { url: albumMid ? artworkUrl(dto.cover, albumMid) : '' }, explicit: false,
     qq: { mid: id, albumMid, vip: dto.vip === true, ttml: dto.ttml === true, mv: MID.test(dto.mv || '') ? dto.mv : '' },

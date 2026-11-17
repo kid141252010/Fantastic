@@ -13,6 +13,7 @@ import { openMenu, createActions, nowPlayingTarget, songTarget } from '/assets/v
 import { mountDownloadCenter } from '/assets/download/center.mjs';
 import { installArtworkMenu } from '/assets/views/artwork-menu.mjs';
 import { prefs, playbackFor, onNetworkChange } from '/assets/prefs.mjs';
+import { regionlessResource, guessStorefront } from '/assets/amp.mjs';
 
 const { AmPlayer, useJocSettings, usePlaybackSettings } = window.AmHook;
 const { AmI18n, AmWrapper } = window;
@@ -77,11 +78,13 @@ const LIBRARY_PLAYLIST_PATH = /^\/library\/(?:playlist\/p\.[0-9A-Za-z_-]+|favori
 function route(url) {
   if (url.origin !== location.origin) return null;
   if (url.pathname === '/') return 'home';
-  if (/^\/qq-song\/[0-9A-Za-z]{1,32}\/?$/.test(url.pathname)) return 'qq-song';
-  if (/^\/qq-artist\/[0-9A-Za-z]{1,32}\/?$/.test(url.pathname)) return 'qq-artist';
-  if (/^\/qq-album\/[0-9A-Za-z]{1,32}\/?$/.test(url.pathname)) return 'qq-album';
-  if (/^\/qq-playlist\/[0-9A-Za-z]{1,32}\/?$/.test(url.pathname)) return 'qq-playlist';
-  if (/^\/qq-mv\/[0-9A-Za-z]{1,32}\/?$/.test(url.pathname)) return 'qq-mv';
+  const resource = regionlessResource(url.pathname);
+  if (resource) return ({ songs: 'song', albums: 'album', playlists: 'playlist', artists: 'artist', 'music-videos': 'mv', 'uploaded-videos': 'post', stations: 'station' })[resource.type];
+  if (/^\/https:\/{1,2}y\.qq\.com\/n\/ryqq\/songDetail\/[0-9A-Za-z]{1,32}\/?$/.test(url.pathname)) return 'qq-song';
+  if (/^\/https:\/{1,2}y\.qq\.com\/n\/ryqq\/singer\/[0-9A-Za-z]{1,32}\/?$/.test(url.pathname)) return 'qq-artist';
+  if (/^\/https:\/{1,2}y\.qq\.com\/n\/ryqq\/albumDetail\/[0-9A-Za-z]{1,32}\/?$/.test(url.pathname)) return 'qq-album';
+  if (/^\/https:\/{1,2}y\.qq\.com\/n\/ryqq\/playlist\/[0-9A-Za-z]{1,32}\/?$/.test(url.pathname)) return 'qq-playlist';
+  if (/^\/https:\/{1,2}y\.qq\.com\/n\/ryqq\/mv\/v\/[0-9A-Za-z]{1,32}\/?$/.test(url.pathname)) return 'qq-mv';
   // 「新发现」（跟随主地区）
   if (url.pathname === '/new') return 'new';
   // 广播（跟随主地区，与 src/links.rs 的 is_radio_path 相同）
@@ -601,8 +604,16 @@ function unmount() {
  *   loadStatus()：重新检查 wrapper-lite 状态，返回 { ok, regions }。
  */
 async function render(url, { scroll = 0, initial = false } = {}) {
-  const name = route(url);
   const seq = ++renderSeq;
+  const resource = regionlessResource(url.pathname);
+  if (resource) {
+    const cc = await guessStorefront(resource);
+    if (seq !== renderSeq) return;
+    url = new URL(url);
+    url.pathname = url.pathname.replace(/^(\/https:\/{1,2}music\.apple\.com\/)/, `$1${cc || 'cn'}/`);
+    if (cc) history.replaceState(history.state, '', url.pathname + url.search + url.hash);
+  }
+  const name = route(url);
   if (!name) return;
   let view, html;
   try {

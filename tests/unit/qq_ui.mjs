@@ -42,7 +42,7 @@ function detailPage(t, { qualities = defaultQualities, failQualities = false, na
     json: async () => path.endsWith('/qualities') ? { qualities }
       : path.endsWith('/lyrics') ? { candidates: [], rawQrc: true, rawTrans: true, rawRoma: true }
         : { id: 'test', name: 'Test', albumMid: '003DFRzD192KKD', cover } });
-  mount({ root, url: new URL('https://am.test/qq-song/test'), signal: controller.signal,
+  mount({ root, url: new URL('https://am.test/https://y.qq.com/n/ryqq/songDetail/test'), signal: controller.signal,
     player, onLangChange: (fn) => { rerender = fn; }, toast() {} });
   return { root, played, queued, rerender: () => rerender(),
     setPlaying: (item) => { player.current = item; paused = false; onPlayerChange(); } };

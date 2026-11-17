@@ -52,12 +52,18 @@ const PLAYLIST_ID = /^p\.[0-9A-Za-z_-]{1,64}$/;
 const FOLDER_ID = /^f\.[0-9A-Za-z_-]{1,64}$/;
 const CATALOG_PLAYLIST_ID = /^pl\.[0-9A-Za-z_-]{1,64}$/;
 const NUMERIC_ID = /^[0-9]{1,20}$/;
-// QQ 音乐歌曲（source 为 qq）：id 为歌曲 mid，albumId 为专辑 mid，链接为本站的 /qq-song|qq-album|qq-artist 页面
+// QQ 音乐歌曲（source 为 qq）：id 为歌曲 mid，albumId 为专辑 mid，链接为本站前缀加 QQ 音乐官网地址
 const QQ_ID = /^[0-9A-Za-z]{1,32}$/;
-const QQ_PATH = /^\/qq-(?:song|album|artist|playlist|mv)\/[0-9A-Za-z]{1,32}$/;
+const QQ_PATH = /^\/https:\/{1,2}y\.qq\.com\/n\/ryqq\/(?:songDetail|albumDetail|singer|playlist|mv\/v)\/[0-9A-Za-z]{1,32}$/;
+
+function canonicalQQHref(value) {
+  const match = value.match(/^\/qq-(song|album|artist|playlist|mv)\/([0-9A-Za-z]{1,32})\/?$/);
+  const paths = { song: 'songDetail', album: 'albumDetail', artist: 'singer', playlist: 'playlist', mv: 'mv/v' };
+  return match ? `/https://y.qq.com/n/ryqq/${paths[match[1]]}/${match[2]}` : value;
+}
 
 const str = (value, max = 300) => (typeof value === 'string' ? value.trim().slice(0, max) : '');
-const href = (value) => { const s = str(value, 600); return SITE_PATH.test(s) || QQ_PATH.test(s) ? s : ''; };
+const href = (value) => { const s = canonicalQQHref(str(value, 600)); return SITE_PATH.test(s) || QQ_PATH.test(s) ? s : ''; };
 const art = (value) => { const s = str(value, 600); return ART.test(s) ? s : ''; };
 const color = (value) => (typeof value === 'string' && COLOR.test(value) ? value.toLowerCase() : '');
 const country = (value) => (typeof value === 'string' && /^[a-z]{2}$/i.test(value) ? value.toLowerCase() : 'us');
@@ -206,8 +212,15 @@ async function loadAll() {
   items.clear();
   lists.clear();
   dirs.clear();
-  for (const item of storedItems) items.set(item.key, { favorite: 0, ...item });
-  for (const list of storedLists) lists.set(list.id, { folderId: '', favorite: 0, ...list });
+  const now = Date.now();
+  for (const raw of storedItems) {
+    const item = cleanItem(raw, now);
+    if (item) items.set(item.key, item);
+  }
+  for (const raw of storedLists) {
+    const list = cleanPlaylist(raw, now);
+    if (list) lists.set(list.id, list);
+  }
   for (const dir of storedDirs) dirs.set(dir.id, dir);
 }
 

@@ -13,7 +13,7 @@ export function mount({ root, url, signal, player, navigate, onLangChange, toast
   const { t } = window.AmI18n;
   const { AmI18n } = window;
   const $ = (id) => root.querySelector(`#${id}`);
-  const singerMid = url.pathname.match(/^\/qq-artist\/([0-9A-Za-z]{1,32})\/?$/)?.[1];
+  const singerMid = url.pathname.match(/^\/https:\/{1,2}y\.qq\.com\/n\/ryqq\/singer\/([0-9A-Za-z]{1,32})\/?$/)?.[1];
   const actions = createActions({ signal, player, navigate, toast });
   let artist = null;
   let songs = [];
@@ -123,7 +123,7 @@ export function mount({ root, url, signal, player, navigate, onLangChange, toast
     const albumParts = [];
     if (albumName) {
       albumParts.push(albumMid
-        ? el('a', { href: `/qq-album/${albumMid}`, textContent: albumName })
+        ? el('a', { href: `/https://y.qq.com/n/ryqq/albumDetail/${albumMid}`, textContent: albumName })
         : albumName);
     }
     if (albumYear) albumParts.push(albumName ? ` · ${albumYear}` : albumYear);
@@ -134,7 +134,7 @@ export function mount({ root, url, signal, player, navigate, onLangChange, toast
       el('div', { className: 'track-artist' }, ...albumParts));
     const target = {
       kind: 'song', href: track.href, name: track.name, country: '', track,
-      albumHref: albumMid ? `/qq-album/${albumMid}` : track.albumHref, onPlay: () => playSong(index),
+      albumHref: albumMid ? `/https://y.qq.com/n/ryqq/albumDetail/${albumMid}` : track.albumHref, onPlay: () => playSong(index),
     };
     const more = actions.moreButton(target);
     const row = el('div', { className: 'track ts-item qq-artist-track' }, cover, main, more);
@@ -201,7 +201,7 @@ export function mount({ root, url, signal, player, navigate, onLangChange, toast
 
   const albumCard = (album) => {
     const cover = artUrl(album.cover, 360);
-    return el('a', { className: 'shelf-item', href: `/qq-album/${album.mid}` },
+    return el('a', { className: 'shelf-item', href: `/https://y.qq.com/n/ryqq/albumDetail/${album.mid}` },
       el('span', { className: 'shelf-art' }, cover
         ? el('img', { src: cover, alt: '', loading: 'lazy', decoding: 'async' })
         : el('span', { className: 'ph' })),

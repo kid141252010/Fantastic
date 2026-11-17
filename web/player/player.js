@@ -518,7 +518,7 @@
         }
       }
       return { ...entry, ...qq.variantItem(entry.track, qq.qualityVariant(quality, row)), source: 'qq', key: trackKey(entry),
-        href: `/qq-song/${entry.track}`, title: entry.name };
+        href: `/https://y.qq.com/n/ryqq/songDetail/${entry.track}`, title: entry.name };
     }
     const { variants } = await global.AmWrapper.songMaster(entry.track);
     const best = pickPlayable(variants);
@@ -3306,7 +3306,7 @@
           li.title = t('qq.openSong');
           const link = doc.createElement('a');
           link.className = 'queue-name';
-          link.href = `/qq-song/${entry.track}`;
+          link.href = `/https://y.qq.com/n/ryqq/songDetail/${entry.track}`;
           name.replaceWith(link);
           const play = doc.createElement('button');
           play.type = 'button';

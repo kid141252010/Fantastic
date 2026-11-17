@@ -1,4 +1,4 @@
-// QQ MV 页（/qq-mv/{vid}），由 app.mjs 挂载：<video> 直接播放 /qq/mv/{vid}/play 重定向到的 QQ CDN MP4
+// QQ MV 页（/https://y.qq.com/n/ryqq/mv/v/{vid}），由 app.mjs 挂载：<video> 直接播放 /qq/mv/{vid}/play 重定向到的 QQ CDN MP4
 import * as qq from '../sources/qq.mjs';
 import { artUrl } from '../library.mjs';
 import { createActions } from './actions.mjs';
@@ -9,7 +9,7 @@ export const styles = ['/assets/views/qq-mv.css'];
 export function mount({ root, url, signal, player, navigate, onLangChange, toast }) {
   const { t } = window.AmI18n;
   const $ = (id) => root.querySelector(`#${id}`);
-  const vid = url.pathname.match(/^\/qq-mv\/([0-9A-Za-z]{1,32})\/?$/)?.[1];
+  const vid = url.pathname.match(/^\/https:\/{1,2}y\.qq\.com\/n\/ryqq\/mv\/v\/([0-9A-Za-z]{1,32})\/?$/)?.[1];
   const actions = createActions({ signal, player, navigate, toast });
   let mv = null;
   let error = '';
