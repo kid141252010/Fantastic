@@ -1403,12 +1403,12 @@ export function mountLyrics({ root, toggle, bar, player, getMeta, t, notify, onL
       const options = lyricsOptions?.() || {};
       const script = options.script || undefined;
       const uiLang = globalThis.AmI18n?.lang || '';
-      // 繁體界面先要 zh-Hant-TW，歌词里没有任何翻译时再要 zh-Hans-CN
+      // 繁體界面先要 zh-Hant-TW，没有歌词或歌词里没有任何翻译时再要 zh-Hans-CN
       const fetchText = (language) => globalThis.AmWrapper.lyrics(id, language, undefined, script);
       let text;
       if (!options.language && uiLang === 'zh-Hant') {
         text = await fetchText('zh-Hant-TW');
-        if (text != null && !/<translation\b/.test(text)) text = undefined;
+        if (!/<translation\b/.test(text ?? '')) text = undefined;
       }
       if (text === undefined) {
         const language = options.language || (uiLang.startsWith('zh') ? 'zh-Hans-CN' : '')
