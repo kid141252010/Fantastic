@@ -2,7 +2,7 @@
  * 在线播放的全屏播放界面：用 AMLL（Apple Music-like Lyrics，见 vendor/amll）显示歌词，接到 AmPlayer 上。
  *
  *   歌词     AmWrapper.lyrics()：wrapper-lite /lyrics 的 TTML 原文（经服务端 GET /lyrics/<adamId>?language=<曲库语言>，或浏览器直连本地 wrapper-lite），
- *            language 取设置里的歌词语言，没填时中文界面（简繁都）取 zh-Hans-CN（wrapper-lite 不受地区语言列表限制；繁中标签实测拿不到翻译），否则取歌曲所在地区的曲库语言
+ *            language 取设置里的歌词语言，没填时简体界面取 zh-Hans-CN，繁體界面先取 zh-Hant-TW、歌词里没有翻译时再取 zh-Hans-CN（wrapper-lite 不受地区语言列表限制），否则取歌曲所在地区的曲库语言
  *            （AmI18n.catalogLang：选定的语言，否则为地区默认语言），取不到时不传；首次打开歌词界面时才请求并缓存；没有歌词时隐藏按钮。
  *            歌词来源选 AMLL 歌词库时先由浏览器直接请求 AMLL TTML DB（https://amll.dev/reference/http-api/overview，允许跨域）的
  *            GET /v1/lyrics/get?appleMusicId=<adamId>，未收录或请求失败时仍用上面的 Apple Music 歌词。
@@ -1401,9 +1401,20 @@ export function mountLyrics({ root, toggle, bar, player, getMeta, t, notify, onL
     }
     const apple = await remember('apple', async () => {
       const options = lyricsOptions?.() || {};
-      const language = options.language || (globalThis.AmI18n?.lang?.startsWith('zh') ? 'zh-Hans-CN' : '')
-        || await (async () => globalThis.AmI18n?.catalogLang(getMeta()?.country || country))().catch(() => undefined);
-      const text = await globalThis.AmWrapper.lyrics(id, language, undefined, options.script || undefined);
+      const script = options.script || undefined;
+      const uiLang = globalThis.AmI18n?.lang || '';
+      // 繁體界面先要 zh-Hant-TW，歌词里没有任何翻译时再要 zh-Hans-CN
+      const fetchText = (language) => globalThis.AmWrapper.lyrics(id, language, undefined, script);
+      let text;
+      if (!options.language && uiLang === 'zh-Hant') {
+        text = await fetchText('zh-Hant-TW');
+        if (text != null && !/<translation\b/.test(text)) text = undefined;
+      }
+      if (text === undefined) {
+        const language = options.language || (uiLang.startsWith('zh') ? 'zh-Hans-CN' : '')
+          || await (async () => globalThis.AmI18n?.catalogLang(getMeta()?.country || country))().catch(() => undefined);
+        text = await fetchText(language);
+      }
       return text == null ? null : { text, source: 'apple' };
     });
     return { ...parse(apple), amllStatus: status };
