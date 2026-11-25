@@ -15,6 +15,7 @@
 | `--wrapper-fallback-concurrency <N>` | `1` | Max concurrent requests to the fallback wrapper; 0 = unlimited |
 | `--qq-api <URL>` | unset | Server-only QQ API base URL; also `FANTASTIC_QQ_API` |
 | `--qq-proxy <URL>` | unset | Server-only HTTP/SOCKS proxy for QQ API, AMLL, covers and media; also `FANTASTIC_QQ_PROXY` |
+| `--qq-cdn <HOST>` | `dl.stream.qqmusic.qq.com` | QQ audio CDN host used in playback/download redirects. The upstream host (`isure.*`) only serves mainland China, so the default swaps in `dl.*` with the same path and query. Empty or `off` keeps the upstream host; also `FANTASTIC_QQ_CDN` |
 | `--wrapper-rate <N>` | `24` | Max requests per second to wrapper-lite (any 1-second window; extra requests wait in order). 0 = unlimited |
 | `--wrapper-concurrency <N>` | `24` | Max concurrent requests to wrapper-lite. 0 = unlimited. Lower it (e.g. `8`) if wrapper-lite runs in QEMU and requests time out under load |
 | `--wrapper-auth <VALUE>` | not sent | `Authorization` header for wrapper-lite requests. A bare token is sent as `Bearer <token>`; a value with a scheme (`Bearer …`, `Basic …`) is sent as is. Also read from `FANTASTIC_WRAPPER_AUTH` (keeps it out of the process list). These three apply to server relaying only; a page switched to a local wrapper-lite sets its own |

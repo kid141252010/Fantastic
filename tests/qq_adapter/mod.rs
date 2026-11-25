@@ -10,9 +10,27 @@ fn cli(args: &[&str]) -> crate::cli::Cli {
     let matches = crate::cli::Cli::command()
         .mut_arg("qq_api", |arg| arg.env(None::<&str>))
         .mut_arg("qq_proxy", |arg| arg.env(None::<&str>))
+        .mut_arg("qq_cdn", |arg| arg.env(None::<&str>))
         .try_get_matches_from(args)
         .unwrap();
     crate::cli::Cli::from_arg_matches(&matches).unwrap()
+}
+
+#[test]
+fn qq_cdn_flag_defaults_to_the_reachable_host_and_can_be_turned_off() {
+    // 与 --qq-api / --qq-proxy 共用 clap 的 env 绑定（FANTASTIC_QQ_CDN），这里只覆盖命令行边界
+    for (args, expected) in [
+        (vec!["fantastic"], Some(QQ_CDN_DEFAULT)),
+        (vec!["fantastic", "--qq-cdn", "off"], None),
+        (vec!["fantastic", "--qq-cdn", " "], None),
+        (
+            vec!["fantastic", "--qq-cdn", "DL.Stream.QQMusic.QQ.COM"],
+            Some("dl.stream.qqmusic.qq.com"),
+        ),
+    ] {
+        let config = self::cli(&args).config().unwrap();
+        assert_eq!(config.qq_cdn.as_deref(), expected, "{args:?}");
+    }
 }
 
 #[test]
@@ -106,6 +124,7 @@ fn invalid_proxy_fails_at_startup_without_upstream_urls() {
             "https://example.invalid/private-api",
             "https://example.invalid/private-amll",
             Some(proxy),
+            None,
         )
         .err()
         .expect("invalid proxy must fail before making any request");
@@ -135,6 +154,7 @@ fn qq() -> Qq {
     Qq::new(
         "https://example.invalid/api/web",
         "https://example.invalid/amll",
+        None,
         None,
     )
     .unwrap()
@@ -409,7 +429,7 @@ async fn ttml_fetch_preserves_upstream_documents_and_rejects_unsafe_documents() 
     let Some((base, task)) = serve_local(upstream).await else {
         return;
     };
-    let qq = Qq::new(&base, &base, None).unwrap();
+    let qq = Qq::new(&base, &base, None, None).unwrap();
 
     let amll = fetch_amll_lyrics(&qq, "raw").await;
     assert!(matches!(amll.state, LyricsSourceState::Success));
@@ -1676,6 +1696,98 @@ fn probe_sizes_cross_check_file_fields_before_describing_the_format() {
     let source = audio(Quality::Sq, None, "flac");
     assert!(!QualityRow::from_audio(Quality::Sq, &file, Some(&source)).available);
     assert!(!QualityRow::from_audio(Quality::Sq, &file, None).available);
+}
+
+#[tokio::test]
+async fn play_and_download_redirect_to_the_configured_cdn_host() {
+    let upstream = Router::new().fallback(any(|request: Request<Body>| async move {
+        if request.uri().path() != "/extra/music/url" {
+            return StatusCode::NOT_FOUND.into_response();
+        }
+        Json(json!([{"track_info": {
+            "file_url": "https://isure.stream.qqmusic.qq.com/F000002V6pGU3cA4PT.flac?guid=g&vkey=v&uin=1",
+            "file_size": 37141499
+        }}]))
+        .into_response()
+    }));
+    let Some((base, task)) = serve_local(upstream).await else { return; };
+    for (cdn, host) in [
+        (Some(QQ_CDN_DEFAULT), "dl.stream.qqmusic.qq.com"),
+        // 关闭改写时保留上游给的域名（只对大陆放行的部署可原样使用）
+        (None, "isure.stream.qqmusic.qq.com"),
+    ] {
+        let mut config = AppState::new("http://127.0.0.1:1".into()).config;
+        config.qq_api = Some(base.clone());
+        config.qq_cdn = cdn.map(str::to_owned);
+        let state = Arc::new(AppState::with_config(config));
+        for action in ["play", "download"] {
+            let path = format!("/qq/song/abc/{action}?quality=SQ");
+            let response = get(state.clone(), &path).await;
+            assert_eq!(response.status(), StatusCode::FOUND, "{cdn:?} {action}");
+            assert_eq!(
+                response.headers()[header::LOCATION].to_str().unwrap(),
+                format!("https://{host}/F000002V6pGU3cA4PT.flac?guid=g&vkey=v&uin=1"),
+                "{cdn:?} {action}"
+            );
+        }
+    }
+    task.abort();
+}
+
+#[test]
+fn audio_urls_move_to_the_configured_cdn_host() {
+    // 真实返回的各种容器：MP3 / M4A / FLAC / DTS 的 M4A，查询（guid/vkey/uin）必须原样保留
+    for (raw, path) in [
+        (
+            "https://isure.stream.qqmusic.qq.com/M800002V6pGU3cA4PT.mp3?guid=g&vkey=v&uin=1",
+            "/M800002V6pGU3cA4PT.mp3",
+        ),
+        (
+            "https://isure.stream.qqmusic.qq.com/C600002V6pGU3cA4PT.m4a?guid=g&vkey=v&uin=1",
+            "/C600002V6pGU3cA4PT.m4a",
+        ),
+        (
+            "https://isure.stream.qqmusic.qq.com/F000002V6pGU3cA4PT.flac?guid=g&vkey=v&uin=1",
+            "/F000002V6pGU3cA4PT.flac",
+        ),
+        (
+            "https://isure.stream.qqmusic.qq.com/DT03000NxILQ1okZgF.mp4?guid=g&vkey=v&uin=1",
+            "/DT03000NxILQ1okZgF.mp4",
+        ),
+    ] {
+        let moved = rewrite_cdn_host(reqwest::Url::parse(raw).unwrap(), QQ_CDN_DEFAULT);
+        assert_eq!(moved.host_str(), Some("dl.stream.qqmusic.qq.com"), "{raw}");
+        assert_eq!(moved.path(), path, "{raw}");
+        assert_eq!(moved.query(), Some("guid=g&vkey=v&uin=1"), "{raw}");
+    }
+    // 其它 stream 子域（例如 ws.*）同样换掉
+    let ws = reqwest::Url::parse("https://ws.stream.qqmusic.qq.com/a.flac?vkey=v").unwrap();
+    assert_eq!(
+        rewrite_cdn_host(ws, QQ_CDN_DEFAULT).host_str(),
+        Some("dl.stream.qqmusic.qq.com")
+    );
+    // 已经是目标域名时保持原样
+    let moved = rewrite_cdn_host(
+        reqwest::Url::parse("https://dl.stream.qqmusic.qq.com/a.flac?vkey=v").unwrap(),
+        QQ_CDN_DEFAULT,
+    );
+    assert_eq!(moved.host_str(), Some("dl.stream.qqmusic.qq.com"));
+    // 封面（gtimg.cn）与 MV（music.tc.qq.com）不在 stream 后缀下，不受影响
+    for raw in [
+        "https://y.gtimg.cn/music/photo_new/T002R500x500M000004I5FbN3ZWrVT.jpg",
+        "https://mv6.music.tc.qq.com/5319.mp4?vkey=v",
+    ] {
+        let url = reqwest::Url::parse(raw).unwrap();
+        assert_eq!(rewrite_cdn_host(url.clone(), QQ_CDN_DEFAULT), url, "{raw}");
+    }
+    // from_response 只做白名单校验，不改写：改写由 Qq 按配置应用
+    let source = Audio::from_response(&json!([{"track_info":{
+        "file_url":"https://isure.stream.qqmusic.qq.com/a.flac?vkey=v","file_size":37141499
+    }}]))
+    .ok()
+    .unwrap();
+    assert_eq!(source.url.host_str(), Some("isure.stream.qqmusic.qq.com"));
+    assert_eq!(source.size_bytes, Some(37141499));
 }
 
 #[test]

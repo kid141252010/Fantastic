@@ -539,6 +539,7 @@ mod tests {
             wrapper_url: url,
             amll_api: "https://api.amll.dev".into(),
         qq_api: None,
+        qq_cdn: None,
             amp_keepalive: Duration::ZERO,
             amp_cache_mb: 0,
             wrapper_rate: rate,

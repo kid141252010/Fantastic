@@ -15,6 +15,7 @@
 | `--wrapper-fallback-concurrency <N>` | `1` | 兜底 wrapper 的同时请求上限；0 不限 |
 | `--qq-api <URL>` | 未设置 | 只在服务端使用的 QQ API 地址；也可用 `FANTASTIC_QQ_API` |
 | `--qq-proxy <URL>` | 未设置 | 只在服务端使用的 QQ API、AMLL、封面和媒体代理；也可用 `FANTASTIC_QQ_PROXY` |
+| `--qq-cdn <HOST>` | `dl.stream.qqmusic.qq.com` | 播放 / 下载 302 使用的 QQ 音频 CDN 域名。上游给的 `isure.*` 只对中国大陆放行，默认换成 `dl.*`（path 与 query 不变）。留空或 `off` 保留上游域名；也可用 `FANTASTIC_QQ_CDN` |
 | `--wrapper-rate <N>` | `24` | 每秒发往 wrapper-lite 的最大请求数（任意 1 秒内，超出的请求按顺序排队）。0 不限 |
 | `--wrapper-concurrency <N>` | `24` | 同时进行的 wrapper-lite 请求上限。0 不限。wrapper-lite 运行在 QEMU 中、负载高时请求超时的话可调低（如 `8`） |
 | `--wrapper-auth <VALUE>` | 不发送 | wrapper-lite 请求的 `Authorization` 头。只填 token 时自动加 `Bearer ` 前缀；已带认证方案（`Bearer …`、`Basic …`）则原样发送。也可用环境变量 `FANTASTIC_WRAPPER_AUTH` 设置（不会出现在进程列表中）。以上三项只作用于服务端转发；页面切换为本地 wrapper-lite 时在页面中另行设置 |

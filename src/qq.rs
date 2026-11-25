@@ -112,6 +112,23 @@ fn cdn_url_upgrade(raw: &str) -> Option<reqwest::Url> {
     cdn_url(url.as_str())
 }
 
+/// 音频直链的域名有地域策略：`isure.stream.qqmusic.qq.com` 只对中国大陆出口放行，
+/// 非大陆出口一律 403（空 body，`x-cache-lookup: Return Directly`），而同一个 vkey 在
+/// `dl.stream.qqmusic.qq.com` 上照常 200/206 且开放跨域，所以默认把音频网址换到后者。
+/// 部署方可以用 `--qq-cdn` / `FANTASTIC_QQ_CDN` 指定目标域名，留空或 `off` 保留上游域名。
+const QQ_STREAM_SUFFIX: &str = ".stream.qqmusic.qq.com";
+pub const QQ_CDN_DEFAULT: &str = "dl.stream.qqmusic.qq.com";
+
+/// 把 QQ 音频直链换上 `target` 域名，路径与查询（guid/vkey/uin）保持不变；只有
+/// `*.stream.qqmusic.qq.com` 会动，封面（`gtimg.cn`）与 MV（`music.tc.qq.com`）原样返回。
+fn rewrite_cdn_host(mut url: reqwest::Url, target: &str) -> reqwest::Url {
+    let host = url.host_str().unwrap_or_default().to_ascii_lowercase();
+    if host != target && host.ends_with(QQ_STREAM_SUFFIX) && url.set_host(Some(target)).is_ok() {
+        return url;
+    }
+    url
+}
+
 fn artwork_template(raw: Option<&Value>, mid: &str) -> String {
     let direct = raw
         .and_then(Value::as_str)
@@ -205,6 +222,8 @@ impl<T: Clone> Cache<T> {
 pub struct Qq {
     base: String,
     amll: String,
+    /// 音频直链的 CDN 域名；None 表示保留上游给的域名
+    cdn: Option<String>,
     api: reqwest::Client,
     cover: reqwest::Client,
     permits: tokio::sync::Semaphore,
@@ -221,7 +240,12 @@ pub struct Qq {
     lyrics_revalidating: Mutex<HashSet<String>>,
 }
 impl Qq {
-    pub fn new(base: &str, amll: &str, proxy: Option<&str>) -> Result<Self, String> {
+    pub fn new(
+        base: &str,
+        amll: &str,
+        proxy: Option<&str>,
+        cdn: Option<&str>,
+    ) -> Result<Self, String> {
         let proxy = outbound_proxy(proxy)?;
         let mut api = reqwest::Client::builder()
             .http1_only()
@@ -242,6 +266,7 @@ impl Qq {
         Ok(Self {
             base: base.trim_end_matches('/').into(),
             amll: amll.trim_end_matches('/').into(),
+            cdn: cdn.map(|host| host.trim().to_ascii_lowercase()),
             api: api
                 .build()
                 .map_err(|e| format!("QQ API client: {}", e.without_url()))?,
@@ -481,9 +506,16 @@ impl Qq {
         let data = self
             .request("/extra/music/url", &url_params(mid, quality))
             .await?;
-        let audio = Audio::from_response(&data)?;
+        let audio = self.prefer_cdn_audio(Audio::from_response(&data)?);
         self.audio.put(key, audio.clone());
         Ok(audio)
+    }
+    /// 把上游直链换到配置的 CDN 域名
+    fn prefer_cdn_audio(&self, mut audio: Audio) -> Audio {
+        if let Some(target) = self.cdn.as_deref() {
+            audio.url = rewrite_cdn_host(audio.url, target);
+        }
+        audio
     }
     async fn probe_audio_url(&self, mid: &str, quality: Quality) -> ApiResult<Audio> {
         let key = quality.cache_key(mid);
@@ -511,7 +543,9 @@ impl Qq {
             .await
             .map_err(RequestError::api)?;
         let audio = match Audio::from_response(&data) {
-            Ok(audio) if audio.size_bytes.is_some_and(|size| size > 0) => audio,
+            Ok(audio) if audio.size_bytes.is_some_and(|size| size > 0) => {
+                self.prefer_cdn_audio(audio)
+            }
             Ok(_) | Err(_) => {
                 // A successful upstream response with no usable URL/size is a
                 // deterministic absence of this tier. Transient request and
@@ -968,10 +1002,7 @@ impl Audio {
     fn from_response(data: &Value) -> ApiResult<Self> {
         let track = data.pointer("/0/track_info").ok_or_else(unavailable)?;
         Ok(Self {
-            url: track["file_url"]
-                .as_str()
-                .and_then(cdn_url)
-                .ok_or_else(unavailable)?,
+            url: track["file_url"].as_str().and_then(cdn_url).ok_or_else(unavailable)?,
             size_bytes: byte_size(&track["file_size"]),
             // Only allowlisted codec metadata enters DTOs; never pass upstream text through.
             codec_hint: ["codec", "codecs", "audio_codec"]

@@ -76,6 +76,15 @@ pub struct Cli {
     #[arg(long, env = "FANTASTIC_QQ_PROXY", hide_env_values = true)]
     pub qq_proxy: Option<String>,
 
+    /// Server-only QQ audio CDN host for playback/download redirects; empty or "off"
+    /// keeps the upstream host (isure.* only serves mainland China)
+    #[arg(
+        long,
+        env = "FANTASTIC_QQ_CDN",
+        default_value = crate::qq::QQ_CDN_DEFAULT
+    )]
+    pub qq_cdn: String,
+
     /// Server-only NCM cookie string or bare MUSIC_U value; empty uses anonymous access
     #[arg(long, env = "FANTASTIC_NCM_COOKIE", hide_env_values = true)]
     pub ncm_cookie: Option<String>,
@@ -148,6 +157,10 @@ impl Cli {
             wrapper_url: self.wrapper_url.trim_end_matches('/').to_string(),
             amll_api: self.amll_api.trim_end_matches('/').to_string(),
             qq_api: self.qq_api.as_deref().map(str::trim).filter(|s| !s.is_empty()).map(|s| s.trim_end_matches('/').to_owned()),
+            qq_cdn: {
+                let host = self.qq_cdn.trim().to_ascii_lowercase();
+                (!host.is_empty() && host != "off").then_some(host)
+            },
             amp_keepalive: Duration::from_secs(self.amp_keepalive),
             amp_cache_mb: self.amp_cache_mb,
             wrapper_rate: self.wrapper_rate,

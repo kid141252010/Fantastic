@@ -55,6 +55,7 @@ fn config(api: String, amll: String) -> Config {
         wrapper_url: "http://127.0.0.1:1".into(),
         amll_api: amll,
         qq_api: Some(api),
+        qq_cdn: None,
         amp_keepalive: Duration::ZERO,
         amp_cache_mb: 0,
         wrapper_rate: 0,

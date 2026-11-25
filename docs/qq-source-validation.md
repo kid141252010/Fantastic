@@ -14,7 +14,7 @@ QQ 是可选服务端音源。设置 `--qq-api` / `FANTASTIC_QQ_API` 后启用�
 | GET | `/qq/suggest?q=` | 输入联想：歌曲、艺人、专辑 |
 | GET | `/qq/song/:mid` | 白名单歌曲 DTO（含 `mv`），附 `meta`：发行时间、流派、语种、唱片公司、简介、碟号与曲序 |
 | GET | `/qq/song/:mid/play?quality=` | 校验档位后返回 302；浏览器直连 QQ CDN |
-| GET | `/qq/song/:mid/download?quality=` | 服务端流式转发，限制 CDN 主机和响应头 |
+| GET | `/qq/song/:mid/download?quality=` | 与播放相同：302 到白名单 CDN（`Location` 按 `--qq-cdn` 换主机），由浏览器直连取流 |
 | GET | `/qq/song/:mid/qualities[?basic=1]` | 读取 info 尺寸；完整模式才探测未映射档位 |
 | GET | `/qq/song/:mid/lyrics` | AMLL → TTML → QRC → LRC 候选 |
 | GET | `/qq/song/:mid/lyrics/raw?kind=qrc\|qrctrans\|qrcroma` | 返回同一缓存中的原始 QRC 字段 |
@@ -28,6 +28,8 @@ QQ 是可选服务端音源。设置 `--qq-api` / `FANTASTIC_QQ_API` 后启用�
 QQ 搜索、音质查询和下载没有客户端限流；JOC 的 DAEAC3 播放仍使用同一个 `/download` 路径。
 
 ## 播放与安全边界
+
+音频直链的域名有地域策略：上游给的 `isure.stream.qqmusic.qq.com` 只对中国大陆出口放行，非大陆出口一律 403（空 body），而同一个 vkey 在 `dl.stream.qqmusic.qq.com` 上正常可用。因此 `/play` 与 `/download` 的 302 默认把 `*.stream.qqmusic.qq.com` 换成 `dl.stream.qqmusic.qq.com`：path 与 query 中的 `guid` / `vkey` / `uin` 保持不变，封面（`gtimg.cn`）与 MV（`music.tc.qq.com`）主机不受影响。`--qq-cdn` / `FANTASTIC_QQ_CDN` 可指定目标域名，留空或 `off` 保留上游域名。
 
 未知档位在请求上游前即被拒绝。播放响应只含 302 和白名单 CDN `Location`，媒体字节由浏览器直接获取；服务端 QQ 代理只影响服务端请求。下载客户端最多跟随 5 次重定向，且每一跳必须是 HTTPS、无端口/凭据、主机为 `*.qq.com`、`qq.com` 或 `*.gtimg.cn`。歌曲 mid、专辑 mid、封面 URL、音频 URL、歌词字段均经过白名单或清洗；DTO 不携带上游私有字段。
 
