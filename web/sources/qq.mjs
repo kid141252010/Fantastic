@@ -154,8 +154,12 @@ export const mvPath = (id) => `/https://y.qq.com/n/ryqq/mv/v/${mid(id)}`;
 export const mvPlayUrl = (id) => `/qq/mv/${mid(id)}/play`;
 /** 本站 QQ 页面路径 → y.qq.com 上的对应页面；不是 QQ 页面时为空 */
 export function webUrl(path) {
-  const m = String(path || '').match(/^\/https:\/{1,2}y\.qq\.com\/n\/ryqq\/(?:songDetail|albumDetail|singer|playlist|mv\/v)\/[0-9A-Za-z]{1,32}\/?(?:\?[^#]*)?$/);
+  const m = String(path || '').match(/^\/https:\/{1,2}y\.qq\.com\/n\/ryqq(?:_v2)?\/(?:songDetail|albumDetail|singer|playlist|mv\/v)\/[0-9A-Za-z]{1,32}\/?(?:\?[^#]*)?$/);
   return m ? String(path).slice(1).replace(/^https:\/(?!\/)/, 'https://') : '';
+}
+/** Parse an official QQ page link pasted into the search box. */
+export function parseWebLink(raw) {
+  return webUrl('/' + String(raw || '').trim()) || null;
 }
 export const coverUrl = (albumMid) => albumMid === '' ? '' : `/qq/cover/${mid(albumMid)}`;
 /** photo_new only serves discrete sizes. Resolve before Apple-sized consumers see it. */
@@ -184,7 +188,7 @@ export function toTrack(dto) {
     const name = typeof artist === 'string' ? artist : artist?.name;
     if (typeof name !== 'string') return null;
     const artistMid = typeof artist === 'object' && artist
-      ? artist.mid || String(artist.href || '').match(/^\/https:\/{1,2}y\.qq\.com\/n\/ryqq\/singer\/([0-9A-Za-z]{1,32})\/?$/)?.[1] || '' : '';
+      ? artist.mid || String(artist.href || '').match(/^\/https:\/{1,2}y\.qq\.com\/n\/ryqq(?:_v2)?\/singer\/([0-9A-Za-z]{1,32})\/?$/)?.[1] || '' : '';
     return { name, href: MID.test(String(artistMid || '')) ? `/https://y.qq.com/n/ryqq/singer/${artistMid}` : '' };
   }).filter(Boolean);
   const album = String(dto.album || '');

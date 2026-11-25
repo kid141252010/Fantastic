@@ -13,7 +13,7 @@ export function mount({ root, url, signal, player, navigate, onLangChange, toast
   const { t } = window.AmI18n;
   const { AmI18n } = window;
   const $ = (id) => root.querySelector(`#${id}`);
-  const singerMid = url.pathname.match(/^\/https:\/{1,2}y\.qq\.com\/n\/ryqq\/singer\/([0-9A-Za-z]{1,32})\/?$/)?.[1];
+  const singerMid = url.pathname.match(/^\/https:\/{1,2}y\.qq\.com\/n\/ryqq(?:_v2)?\/singer\/([0-9A-Za-z]{1,32})\/?$/)?.[1];
   const actions = createActions({ signal, player, navigate, toast });
   let artist = null;
   let songs = [];

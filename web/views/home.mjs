@@ -78,7 +78,7 @@ export function mount({ root, signal, player, navigate, onLangChange, toast, loa
   });
 
   const isUrlLike = (value) => /^https?:\/\//i.test(value);
-  const parseDirectLink = (value) => source === 'apple' ? parseAppleLink(value) : source === 'ncm' ? ncm.parseWebLink(value) : null;
+  const parseDirectLink = (value) => source === 'apple' ? parseAppleLink(value) : source === 'ncm' ? ncm.parseWebLink(value) : qq.parseWebLink(value);
 
   /* ---------- 输入框：链接直接打开，其余按关键词搜索 ---------- */
   $('form').addEventListener('submit', (event) => {
@@ -110,7 +110,8 @@ export function mount({ root, signal, player, navigate, onLangChange, toast, loa
     if (!link) return;
     const apple = link.match(/^https:\/\/music\.apple\.com\/(?:([a-z]{2})\/)?(song|music-video|post|album|playlist|artist|station|room|multi-room|grouping|curator|new\/top-charts|new)\b/);
     const ncm = link.match(/^https:\/\/music\.163\.com\/(song|album|artist|playlist)\b/);
-    const kind = apple?.[2] || ncm?.[1];
+    const qq = link.match(/^https:\/\/y\.qq\.com\/n\/ryqq(?:_v2)?\/(songDetail|albumDetail|singer|playlist|mv\/v)\//);
+    const kind = apple?.[2] || ncm?.[1] || ({ songDetail: 'song', albumDetail: 'album', singer: 'artist', playlist: 'playlist', 'mv/v': 'music-video' })[qq?.[1]];
     detectEl.textContent = t(DETECT_LABELS[kind]);
   }
 
@@ -139,7 +140,7 @@ export function mount({ root, signal, player, navigate, onLangChange, toast, loa
     clearTimeout(suggestTimer);
     if (suggestController) suggestController.abort();
     const term = input.value.trim();
-    if (!term || ((source === 'apple' || source === 'ncm') && (parseDirectLink(term) || isUrlLike(term)))) { closeSuggest(); return; }
+    if (!term || parseDirectLink(term) || ((source === 'apple' || source === 'ncm') && isUrlLike(term))) { closeSuggest(); return; }
     suggestTimer = setTimeout(() => (source !== 'apple' ? loadQQSuggest(term) : loadSuggest(term)), 180);
   }
 

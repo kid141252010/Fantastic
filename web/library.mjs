@@ -56,7 +56,7 @@ const CATALOG_PLAYLIST_ID = /^pl\.[0-9A-Za-z_-]{1,64}$/;
 const NUMERIC_ID = /^[0-9]{1,20}$/;
 // QQ 音乐歌曲（source 为 qq）：id 为歌曲 mid，albumId 为专辑 mid，链接为本站前缀加 QQ 音乐官网地址
 const QQ_ID = /^[0-9A-Za-z]{1,32}$/;
-const QQ_PATH = /^\/https:\/{1,2}y\.qq\.com\/n\/ryqq\/(?:songDetail|albumDetail|singer|playlist|mv\/v)\/[0-9A-Za-z]{1,32}$/;
+const QQ_PATH = /^\/https:\/{1,2}y\.qq\.com\/n\/ryqq(?:_v2)?\/(?:songDetail|albumDetail|singer|playlist|mv\/v)\/[0-9A-Za-z]{1,32}$/;
 
 const NCM_KINDS = ['song', 'album', 'artist', 'playlist'];
 const ncmPath = (value) => {

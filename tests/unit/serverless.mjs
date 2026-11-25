@@ -109,6 +109,33 @@ test('path checks match src/amp.rs, src/state.rs and src/links.rs', () => {
     'https://play.itunes.apple.com/WebObjects/MZPlay.woa/wa/other']) assert(!validLicenseUrl(bad), bad);
 });
 
+test('QQ page checks and Vercel rewrites support both official versions for all five types', () => {
+  const config = JSON.parse(fs.readFileSync(path.join(root, 'vercel.json'), 'utf8'));
+  const pageRewrites = config.rewrites.filter(({ destination }) => destination === '/index.html')
+    .map(({ source }) => new RegExp(`^${source}$`));
+  for (const version of ['ryqq', 'ryqq_v2']) {
+    for (const kind of ['songDetail', 'albumDetail', 'singer', 'playlist', 'mv/v']) {
+      for (const scheme of ['https://', 'https:/']) {
+        for (const suffix of ['', '/']) {
+          const page = `/${scheme}y.qq.com/n/${version}/${kind}/003XqDlj393kQi${suffix}`;
+          assert(isPagePath(page), page);
+          assert(isPagePath(page, '?foo=bar'), page);
+          assert(isPagePath(`${page}?foo=bar`), page);
+          assert(pageRewrites.some((rewrite) => rewrite.test(page)), page);
+        }
+      }
+      assert(isPagePath(`/https://y.qq.com/n/${version}/${kind}/${'A'.repeat(32)}`));
+      for (const id of ['', 'a-b', 'a_b', '中', 'a'.repeat(33), '../bad', '123//', '123/play', '%31']) {
+        const page = `/https://y.qq.com/n/${version}/${kind}/${id}`;
+        assert(!isPagePath(page), page);
+      }
+    }
+  }
+  const wrongVersion = '/https://y.qq.com/n/ryqq_v3/songDetail/123';
+  assert(!isPagePath(wrongVersion));
+  assert(!pageRewrites.some((rewrite) => rewrite.test(wrongVersion)));
+});
+
 test('station endpoints relay the media-user-token without caching', async () => {
   const token = jwt({ exp: Math.floor(Date.now() / 1000) + 86400 });
   const base = apple({ token });

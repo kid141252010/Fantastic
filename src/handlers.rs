@@ -424,6 +424,26 @@ mod tests {
     use super::*;
 
     #[tokio::test]
+    async fn qq_official_page_versions_serve_shell() {
+        for version in ["ryqq", "ryqq_v2"] {
+            for kind in ["songDetail", "albumDetail", "singer", "playlist", "mv/v"] {
+                for scheme in ["https://", "https:/"] {
+                    for suffix in ["", "/?x=1"] {
+                        let path = format!("/{scheme}y.qq.com/n/{version}/{kind}/003XqDlj393kQi{suffix}");
+                        let page = fallback_handler(path.parse().unwrap(), HeaderMap::new()).await;
+                        assert_eq!(page.status(), StatusCode::OK, "{path}");
+                    }
+                }
+                for id in ["", "a-b", &"a".repeat(33), "123//", "123/play"] {
+                    let path = format!("/https://y.qq.com/n/{version}/{kind}/{id}");
+                    let page = fallback_handler(path.parse().unwrap(), HeaderMap::new()).await;
+                    assert_eq!(page.status(), StatusCode::NOT_FOUND, "{path}");
+                }
+            }
+        }
+    }
+
+    #[tokio::test]
     async fn not_found_is_not_cached() {
         // 旧版本的内容哈希地址与其他未知路径：404 不能被浏览器或 CDN 缓存
         for path in ["/assets/h/app.0000000000000000.mjs", "/assets/h/x.0000000000000000.js", "/nope", "/qq-song/123", "/qq-album/123", "/qq-artist/123", "/qq-playlist/123", "/qq-mv/123", "/https://y.qq.com/n/ryqq/songDetail/../bad", "/https://y.qq.com/n/ryqq/songDetail/123//", "/https://music.163.com/song?id=0", "/https://music.163.com/song?foo=1&id=123"] {

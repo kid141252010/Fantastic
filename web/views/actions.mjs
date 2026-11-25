@@ -573,7 +573,7 @@ export function createActions({ signal, player, navigate, toast }) {
 
   /** QQ 专辑 / 歌单的全部歌曲（歌单只取第一页） */
   async function qqCollectionEntries(target) {
-    const id = (target.href || '').match(/^\/https:\/{1,2}y\.qq\.com\/n\/ryqq\/(?:albumDetail|playlist)\/([0-9A-Za-z]{1,32})/)?.[1];
+    const id = (target.href || '').match(/^\/https:\/{1,2}y\.qq\.com\/n\/ryqq(?:_v2)?\/(?:albumDetail|playlist)\/([0-9A-Za-z]{1,32})/)?.[1];
     if (!id) return [];
     const songs = target.kind === 'album'
       ? ((await qq.album(id)).songs || []).map(qq.toTrack)

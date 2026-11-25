@@ -93,11 +93,11 @@ export function route(url) {
   if (ncmPage && validNcmPageId(ncmPage[2]) && window.FANTASTIC_HOST?.ncmEnabled === true) return `ncm-${ncmPage[1]}`;
   const ncmOfficial = url.pathname.match(/^\/https:\/{1,2}music\.163\.com\/(song|album|artist|playlist)\/?$/);
   if (ncmOfficial && validNcmPageId(url.searchParams.get('id')) && window.FANTASTIC_HOST?.ncmEnabled === true) return `ncm-${ncmOfficial[1]}`;
-  if (/^\/https:\/{1,2}y\.qq\.com\/n\/ryqq\/songDetail\/[0-9A-Za-z]{1,32}\/?$/.test(url.pathname)) return 'qq-song';
-  if (/^\/https:\/{1,2}y\.qq\.com\/n\/ryqq\/singer\/[0-9A-Za-z]{1,32}\/?$/.test(url.pathname)) return 'qq-artist';
-  if (/^\/https:\/{1,2}y\.qq\.com\/n\/ryqq\/albumDetail\/[0-9A-Za-z]{1,32}\/?$/.test(url.pathname)) return 'qq-album';
-  if (/^\/https:\/{1,2}y\.qq\.com\/n\/ryqq\/playlist\/[0-9A-Za-z]{1,32}\/?$/.test(url.pathname)) return 'qq-playlist';
-  if (/^\/https:\/{1,2}y\.qq\.com\/n\/ryqq\/mv\/v\/[0-9A-Za-z]{1,32}\/?$/.test(url.pathname)) return 'qq-mv';
+  if (/^\/https:\/{1,2}y\.qq\.com\/n\/ryqq(?:_v2)?\/songDetail\/[0-9A-Za-z]{1,32}\/?$/.test(url.pathname)) return 'qq-song';
+  if (/^\/https:\/{1,2}y\.qq\.com\/n\/ryqq(?:_v2)?\/singer\/[0-9A-Za-z]{1,32}\/?$/.test(url.pathname)) return 'qq-artist';
+  if (/^\/https:\/{1,2}y\.qq\.com\/n\/ryqq(?:_v2)?\/albumDetail\/[0-9A-Za-z]{1,32}\/?$/.test(url.pathname)) return 'qq-album';
+  if (/^\/https:\/{1,2}y\.qq\.com\/n\/ryqq(?:_v2)?\/playlist\/[0-9A-Za-z]{1,32}\/?$/.test(url.pathname)) return 'qq-playlist';
+  if (/^\/https:\/{1,2}y\.qq\.com\/n\/ryqq(?:_v2)?\/mv\/v\/[0-9A-Za-z]{1,32}\/?$/.test(url.pathname)) return 'qq-mv';
   // 「新发现」（跟随主地区）
   if (url.pathname === '/new') return 'new';
   // 广播（跟随主地区，与 src/links.rs 的 is_radio_path 相同）

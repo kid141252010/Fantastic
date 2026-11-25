@@ -967,6 +967,65 @@ test('QQ page paths map to y.qq.com and reject other paths', () => {
   assert.equal(qq.webUrl('/https://music.apple.com/us/song/_/1'), '');
 });
 
+test('QQ official page variants parse pasted links while generated paths stay canonical', () => {
+  const pages = [
+    ['songDetail', '0039MnYb0qxYhV', qq.songPath], ['albumDetail', '003XqDlj393kQi', qq.albumPath],
+    ['singer', '0025NhlN2yWrP4', qq.artistPath], ['playlist', '7039749142', qq.playlistPath],
+    ['mv/v', 'w0026q7f01a', qq.mvPath],
+  ];
+  for (const [kind, id, generate] of pages) {
+    assert.equal(generate(id), `/https://y.qq.com/n/ryqq/${kind}/${id}`);
+    for (const version of ['ryqq', 'ryqq_v2']) {
+      for (const scheme of ['https://', 'https:/']) {
+        for (const suffix of ['', '/', '?foo=bar', '/?foo=bar']) {
+          const raw = `${scheme}y.qq.com/n/${version}/${kind}/${id}${suffix}`;
+          const expected = raw.replace(/^https:\/(?!\/)/, 'https://');
+          assert.equal(qq.webUrl('/' + raw), expected, raw);
+          assert.equal(qq.parseWebLink(`  ${raw}\n`), expected, raw);
+        }
+      }
+      assert.ok(qq.parseWebLink(`https://y.qq.com/n/${version}/${kind}/${'A'.repeat(32)}`));
+      for (const id of ['', 'a-b', 'a_b', '中', 'a'.repeat(33), '../bad', '123//', '123/play', '%31']) {
+        const raw = `https://y.qq.com/n/${version}/${kind}/${id}`;
+        assert.equal(qq.webUrl('/' + raw), '', raw);
+        assert.equal(qq.parseWebLink(raw), null, raw);
+      }
+    }
+  }
+  for (const raw of ['', 'http://y.qq.com/n/ryqq_v2/songDetail/123', 'https://y.qq.com.evil.test/n/ryqq_v2/songDetail/123',
+    'https://evil.test/n/ryqq_v2/songDetail/123', 'https://y.qq.com/n/ryqq_v3/songDetail/123',
+    'https://y.qq.com/n/ryqq_v2/songDetail/123#x', 'https://y.qq.com/n/ryqq_v2/other/123']) {
+    assert.equal(qq.parseWebLink(raw), null, raw);
+  }
+});
+
+test('QQ artist href fallback accepts both versions and generates the old canonical path', () => {
+  for (const version of ['ryqq', 'ryqq_v2']) {
+    const track = qq.toTrack({ ...dto, artists: [{ name: 'Artist', href: `/https:/y.qq.com/n/${version}/singer/0025NhlN2yWrP4/` }] });
+    assert.deepEqual(track.artists, [{ name: 'Artist', href: '/https://y.qq.com/n/ryqq/singer/0025NhlN2yWrP4' }]);
+    for (const id of ['a-b', 'a'.repeat(33)]) {
+      assert.equal(qq.toTrack({ ...dto, artists: [{ name: 'Artist', href: `/https://y.qq.com/n/${version}/singer/${id}` }] }).artists[0].href, '');
+    }
+  }
+});
+
+test('QQ library imports retain all five official page types for both versions', () => {
+  for (const version of ['ryqq', 'ryqq_v2']) {
+    const paths = ['songDetail', 'albumDetail', 'singer', 'playlist', 'mv/v'].map((kind) => `/https://y.qq.com/n/${version}/${kind}/123`);
+    const snapshot = { source: 'qq', kind: 'song', id: '123', name: 'QQ', href: paths[0], albumHref: paths[1],
+      artists: paths.map((href, index) => ({ name: String(index), href })) };
+    const parsed = library.parseImport(JSON.stringify({ format: library.FORMAT, version: 1,
+      items: [snapshot], playlists: [{ id: 'p.qqversions', name: 'QQ', tracks: [snapshot] }] }));
+    assert.equal(parsed.dropped, 0);
+    for (const item of [parsed.items[0], parsed.playlists[0].tracks[0]]) {
+      assert.equal(item.href, paths[0]);
+      assert.equal(item.albumHref, paths[1]);
+      assert.deepEqual(item.artists.map((artist) => artist.href), paths);
+      assert.equal(library.entryOf(item).href, paths[0]);
+    }
+  }
+});
+
 test('QQ typed search keeps tracks for songs and sized artwork for other types', async () => {
   const seen = [];
   globalThis.fetch = async (path) => {

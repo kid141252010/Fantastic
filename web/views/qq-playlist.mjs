@@ -12,7 +12,7 @@ export const styles = ['/assets/views/qq-album.css'];
 export function mount({ root, url, signal, player, navigate, onLangChange, toast }) {
   const { t } = window.AmI18n;
   const $ = (id) => root.querySelector(`#${id}`);
-  const id = url.pathname.match(/^\/https:\/{1,2}y\.qq\.com\/n\/ryqq\/playlist\/([0-9A-Za-z]{1,32})\/?$/)?.[1];
+  const id = url.pathname.match(/^\/https:\/{1,2}y\.qq\.com\/n\/ryqq(?:_v2)?\/playlist\/([0-9A-Za-z]{1,32})\/?$/)?.[1];
   const actions = createActions({ signal, player, navigate, toast });
   const header = createDetailHeader({ $, signal, artUrl, rerender: renderHeader });
   let info = null;

@@ -39,7 +39,7 @@ pub fn is_ncm_link(path: &str) -> bool {
 }
 
 pub fn is_qq_link(path: &str) -> bool {
-    static RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^https:/{1,2}y\.qq\.com/n/ryqq/(?:songDetail|albumDetail|singer|playlist|mv/v)/([^/?#]+)/?$").unwrap());
+    static RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^https:/{1,2}y\.qq\.com/n/ryqq(?:_v2)?/(?:songDetail|albumDetail|singer|playlist|mv/v)/([^/?#]+)/?$").unwrap());
     RE.captures(path).is_some_and(|caps| crate::qq::valid_mid(&caps[1]))
 }
 
@@ -191,6 +191,26 @@ mod tests {
         ] {
             assert!(!is_ncm_link(path));
         }
+    }
+
+    #[test]
+    fn qq_official_page_versions() {
+        for version in ["ryqq", "ryqq_v2"] {
+            for kind in ["songDetail", "albumDetail", "singer", "playlist", "mv/v"] {
+                for scheme in ["https://", "https:/"] {
+                    for suffix in ["", "/"] {
+                        let path = format!("{scheme}y.qq.com/n/{version}/{kind}/003XqDlj393kQi{suffix}");
+                        assert!(is_qq_link(&path), "{path}");
+                    }
+                }
+                assert!(is_qq_link(&format!("https://y.qq.com/n/{version}/{kind}/{}", "A".repeat(32))));
+                for id in ["", "a-b", "a_b", "中", &"a".repeat(33), "../bad", "123//", "123/play", "%31"] {
+                    let path = format!("https://y.qq.com/n/{version}/{kind}/{id}");
+                    assert!(!is_qq_link(&path), "{path}");
+                }
+            }
+        }
+        assert!(!is_qq_link("https://y.qq.com/n/ryqq_v3/songDetail/123"));
     }
 
     #[test]
