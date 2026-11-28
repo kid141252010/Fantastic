@@ -76,12 +76,12 @@ pub struct Cli {
     #[arg(long, env = "FANTASTIC_QQ_PROXY", hide_env_values = true)]
     pub qq_proxy: Option<String>,
 
-    /// Server-only QQ audio CDN host for playback/download redirects; empty or "off"
-    /// keeps the upstream host (isure.* only serves mainland China)
+    /// 服务端 QQ 播放 / 下载的音频 CDN 策略：auto 按 CF-IPCountry 分配，
+    /// 空值或 "off" 保留上游域名，其他值固定为目标域名
     #[arg(
         long,
         env = "FANTASTIC_QQ_CDN",
-        default_value = crate::qq::QQ_CDN_DEFAULT
+        default_value = "auto"
     )]
     pub qq_cdn: String,
 
@@ -157,10 +157,7 @@ impl Cli {
             wrapper_url: self.wrapper_url.trim_end_matches('/').to_string(),
             amll_api: self.amll_api.trim_end_matches('/').to_string(),
             qq_api: self.qq_api.as_deref().map(str::trim).filter(|s| !s.is_empty()).map(|s| s.trim_end_matches('/').to_owned()),
-            qq_cdn: {
-                let host = self.qq_cdn.trim().to_ascii_lowercase();
-                (!host.is_empty() && host != "off").then_some(host)
-            },
+            qq_cdn: crate::qq::CdnMode::from_cli(&self.qq_cdn),
             amp_keepalive: Duration::from_secs(self.amp_keepalive),
             amp_cache_mb: self.amp_cache_mb,
             wrapper_rate: self.wrapper_rate,

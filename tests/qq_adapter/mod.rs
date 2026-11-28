@@ -17,20 +17,45 @@ fn cli(args: &[&str]) -> crate::cli::Cli {
 }
 
 #[test]
-fn qq_cdn_flag_defaults_to_the_reachable_host_and_can_be_turned_off() {
+fn qq_cdn_flag_parses_auto_off_and_fixed_modes() {
     // 与 --qq-api / --qq-proxy 共用 clap 的 env 绑定（FANTASTIC_QQ_CDN），这里只覆盖命令行边界
     for (args, expected) in [
-        (vec!["fantastic"], Some(QQ_CDN_DEFAULT)),
-        (vec!["fantastic", "--qq-cdn", "off"], None),
-        (vec!["fantastic", "--qq-cdn", " "], None),
+        (vec!["fantastic"], CdnMode::Auto),
+        (vec!["fantastic", "--qq-cdn", "auto"], CdnMode::Auto),
+        (vec!["fantastic", "--qq-cdn", " AUTO "], CdnMode::Auto),
+        (vec!["fantastic", "--qq-cdn", "off"], CdnMode::Off),
+        (vec!["fantastic", "--qq-cdn", " OFF "], CdnMode::Off),
+        (vec!["fantastic", "--qq-cdn", ""], CdnMode::Off),
+        (vec!["fantastic", "--qq-cdn", "  "], CdnMode::Off),
         (
             vec!["fantastic", "--qq-cdn", "DL.Stream.QQMusic.QQ.COM"],
-            Some("dl.stream.qqmusic.qq.com"),
+            CdnMode::Fixed("dl.stream.qqmusic.qq.com".into()),
+        ),
+        (
+            vec!["fantastic", "--qq-cdn", " Example.COM "],
+            CdnMode::Fixed("example.com".into()),
         ),
     ] {
         let config = self::cli(&args).config().unwrap();
-        assert_eq!(config.qq_cdn.as_deref(), expected, "{args:?}");
+        assert_eq!(config.qq_cdn, expected, "{args:?}");
     }
+}
+
+#[test]
+fn cdn_target_uses_country_only_in_auto_mode() {
+    for (country, expected) in [
+        (Some("CN"), None),
+        (Some(" us "), Some(QQ_CDN_DEFAULT)),
+        (None, Some(QQ_CDN_DEFAULT)),
+        (Some("??"), Some(QQ_CDN_DEFAULT)),
+    ] {
+        assert_eq!(cdn_target(&CdnMode::Auto, country), expected, "{country:?}");
+    }
+    assert_eq!(cdn_target(&CdnMode::Off, Some("CN")), None);
+    assert_eq!(
+        cdn_target(&CdnMode::Fixed("fixed.example".into()), Some("CN")),
+        Some("fixed.example")
+    );
 }
 
 #[test]
@@ -124,7 +149,7 @@ fn invalid_proxy_fails_at_startup_without_upstream_urls() {
             "https://example.invalid/private-api",
             "https://example.invalid/private-amll",
             Some(proxy),
-            None,
+            CdnMode::Off,
         )
         .err()
         .expect("invalid proxy must fail before making any request");
@@ -155,7 +180,7 @@ fn qq() -> Qq {
         "https://example.invalid/api/web",
         "https://example.invalid/amll",
         None,
-        None,
+        CdnMode::Off,
     )
     .unwrap()
 }
@@ -429,7 +454,7 @@ async fn ttml_fetch_preserves_upstream_documents_and_rejects_unsafe_documents() 
     let Some((base, task)) = serve_local(upstream).await else {
         return;
     };
-    let qq = Qq::new(&base, &base, None, None).unwrap();
+    let qq = Qq::new(&base, &base, None, CdnMode::Off).unwrap();
 
     let amll = fetch_amll_lyrics(&qq, "raw").await;
     assert!(matches!(amll.state, LyricsSourceState::Success));
@@ -1174,6 +1199,16 @@ async fn get(state: Arc<AppState>, uri: &str) -> Response {
         .await
         .unwrap()
 }
+async fn get_with_country(state: Arc<AppState>, uri: &str, country: Option<&str>) -> Response {
+    let mut request = Request::builder().uri(uri);
+    if let Some(country) = country {
+        request = request.header("cf-ipcountry", country);
+    }
+    crate::router(state)
+        .oneshot(request.body(Body::empty()).unwrap())
+        .await
+        .unwrap()
+}
 
 async fn json_body(response: Response) -> Value {
     serde_json::from_slice(&to_bytes(response.into_body(), 100_000).await.unwrap()).unwrap()
@@ -1699,27 +1734,24 @@ fn probe_sizes_cross_check_file_fields_before_describing_the_format() {
 }
 
 #[tokio::test]
-async fn play_and_download_redirect_to_the_configured_cdn_host() {
-    let upstream = Router::new().fallback(any(|request: Request<Body>| async move {
-        if request.uri().path() != "/extra/music/url" {
-            return StatusCode::NOT_FOUND.into_response();
-        }
-        Json(json!([{"track_info": {
-            "file_url": "https://isure.stream.qqmusic.qq.com/F000002V6pGU3cA4PT.flac?guid=g&vkey=v&uin=1",
-            "file_size": 37141499
-        }}]))
-        .into_response()
-    }));
-    let Some((base, task)) = serve_local(upstream).await else { return; };
+async fn play_and_download_redirect_to_the_fixed_or_upstream_host() {
     for (cdn, host) in [
-        (Some(QQ_CDN_DEFAULT), "dl.stream.qqmusic.qq.com"),
+        (CdnMode::Fixed("fixed.qq-cdn.test".into()), "fixed.qq-cdn.test"),
         // 关闭改写时保留上游给的域名（只对大陆放行的部署可原样使用）
-        (None, "isure.stream.qqmusic.qq.com"),
+        (CdnMode::Off, "isure.stream.qqmusic.qq.com"),
     ] {
         let mut config = AppState::new("http://127.0.0.1:1".into()).config;
-        config.qq_api = Some(base.clone());
-        config.qq_cdn = cdn.map(str::to_owned);
+        config.qq_api = Some("https://example.invalid/api/web".into());
+        config.qq_cdn = cdn.clone();
         let state = Arc::new(AppState::with_config(config));
+        state.qq.as_ref().unwrap().audio.put(
+            Quality::Sq.cache_key("abc"),
+            Audio {
+                url: reqwest::Url::parse("https://isure.stream.qqmusic.qq.com/F000002V6pGU3cA4PT.flac?guid=g&vkey=v&uin=1").unwrap(),
+                size_bytes: Some(37141499),
+                codec_hint: None,
+            },
+        );
         for action in ["play", "download"] {
             let path = format!("/qq/song/abc/{action}?quality=SQ");
             let response = get(state.clone(), &path).await;
@@ -1731,7 +1763,43 @@ async fn play_and_download_redirect_to_the_configured_cdn_host() {
             );
         }
     }
-    task.abort();
+}
+
+#[tokio::test]
+async fn play_and_download_choose_auto_cdn_per_request_country() {
+    let state = state(true);
+    let qq = state.qq.as_ref().unwrap();
+    let mid = "region";
+    let source = reqwest::Url::parse(
+        "https://isure.stream.qqmusic.qq.com/F000002V6pGU3cA4PT.flac?guid=g&vkey=v&uin=1",
+    )
+    .unwrap();
+    qq.audio.put(
+        Quality::Sq.cache_key(mid),
+        Audio {
+            url: source,
+            size_bytes: Some(37141499),
+            codec_hint: None,
+        },
+    );
+
+    for action in ["play", "download"] {
+        for (country, expected_host) in [
+            (Some(" cN "), "isure.stream.qqmusic.qq.com"),
+            (Some("US"), QQ_CDN_DEFAULT),
+            (None, QQ_CDN_DEFAULT),
+            (Some("??"), QQ_CDN_DEFAULT),
+        ] {
+            let path = format!("/qq/song/{mid}/{action}?quality=SQ");
+            let response = get_with_country(state.clone(), &path, country).await;
+            assert_eq!(response.status(), StatusCode::FOUND, "{action} {country:?}");
+            assert_eq!(
+                response.headers()[header::LOCATION].to_str().unwrap(),
+                format!("https://{expected_host}/F000002V6pGU3cA4PT.flac?guid=g&vkey=v&uin=1"),
+                "{action} {country:?}"
+            );
+        }
+    }
 }
 
 #[test]
@@ -1780,7 +1848,7 @@ fn audio_urls_move_to_the_configured_cdn_host() {
         let url = reqwest::Url::parse(raw).unwrap();
         assert_eq!(rewrite_cdn_host(url.clone(), QQ_CDN_DEFAULT), url, "{raw}");
     }
-    // from_response 只做白名单校验，不改写：改写由 Qq 按配置应用
+    // from_response 只做白名单校验，不改写：最终主机只在播放 / 下载 302 时选择
     let source = Audio::from_response(&json!([{"track_info":{
         "file_url":"https://isure.stream.qqmusic.qq.com/a.flac?vkey=v","file_size":37141499
     }}]))
@@ -1869,7 +1937,10 @@ async fn quality_parameters_are_validated_before_upstream_requests() {
 
 #[tokio::test]
 async fn playback_defaults_to_hq_and_caches_are_isolated_by_quality() {
-    let state = state(true);
+    let mut config = AppState::new("http://127.0.0.1:1".into()).config;
+    config.qq_api = Some("https://example.invalid/api/web".into());
+    config.qq_cdn = CdnMode::Off;
+    let state = Arc::new(AppState::with_config(config));
     let qq = state.qq.as_ref().unwrap();
     for quality in QUALITY_LIST {
         qq.audio
