@@ -756,9 +756,8 @@ impl Quality {
             Self::Dtsx => Codec::Dtsx,
             // WET (001ATFiY3pb3y6) stsd verification, 2026-10-31:
             // DA/DA448/DA1500 = ac-4/dac4; DAEAC3 = ec-3/dec3.
-            // QQ's fixed Dolby pipelines determine the codec by tier.
-            // AC-4 is reported as a native MIME candidate; only DAEAC3 uses
-            // the E-AC-3 JOC path in the frontend.
+            // QQ's fixed Dolby pipelines determine the codec by tier;
+            // AC-4 / A-JOC and E-AC-3 JOC both use the WASM JOC pipeline in the frontend.
             Self::Da | Self::Da448 | Self::Da1500 => Codec::Ac4,
             Self::Daeac3 => Codec::Ec3,
             Self::Ra360 => Codec::Unknown,
@@ -775,16 +774,10 @@ impl Quality {
         }
     }
     fn playback_class(self) -> &'static str {
-        // AC-4 is selected by browser capability probing. Keep that runtime
-        // decision out of this static contract while retaining its codec/MIME.
-        if matches!(self, Self::Da | Self::Da448 | Self::Da1500) {
-            "ac-4-probe"
-        } else {
-            match self.playback(self.default_codec()) {
-                Playback::Native => "native",
-                Playback::Joc => "joc",
-                Playback::Download => "download",
-            }
+        match self.playback(self.default_codec()) {
+            Playback::Native => "native",
+            Playback::Joc => "joc",
+            Playback::Download => "download",
         }
     }
     fn format(self) -> &'static str {
@@ -926,10 +919,10 @@ impl Codec {
     }
     fn playback(self) -> Playback {
         match self {
-            Self::Mp3 | Self::Aac | Self::Flac | Self::Ogg | Self::Opus | Self::Wav | Self::Ac4 => {
+            Self::Mp3 | Self::Aac | Self::Flac | Self::Ogg | Self::Opus | Self::Wav => {
                 Playback::Native
             }
-            Self::Ec3 => Playback::Joc,
+            Self::Ec3 | Self::Ac4 => Playback::Joc,
             _ => Playback::Download,
         }
     }

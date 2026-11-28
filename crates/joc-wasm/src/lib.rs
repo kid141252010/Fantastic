@@ -8,6 +8,10 @@
 use std::alloc::{alloc, dealloc, Layout};
 use std::cell::RefCell;
 
+use ac4_core::stream::{
+    frame_samples as ac4_calc_frame_samples, Ac4Mode, Ac4Stream, Ac4StreamConfig, Ac4StreamInfo,
+    BinauralProfile as Ac4BinauralProfile,
+};
 use joc_core::sofa_binaural::head_rotation;
 use joc_core::stream::{BinauralProfile, Mode, Stream, StreamConfig, StreamInfo};
 
@@ -347,6 +351,283 @@ pub unsafe extern "C" fn joc_status(stream: *mut Stream, out: *mut JocStatus) ->
         return report("null status");
     };
     let mut status = status_of(stream.info());
+    status.buffered_frames = stream.buffered_frames() as u32;
+    status.tail_capacity = stream.tail_capacity();
+    *out = status;
+    0
+}
+
+// ---------------- AC-4 / A-JOC 浏览器 C ABI ----------------
+
+fn ac4_status_of(info: Ac4StreamInfo) -> JocStatus {
+    JocStatus {
+        frames_in: info.frames_in,
+        frames_out: info.frames_out,
+        samples_in: info.samples_in,
+        samples_out: info.samples_out,
+        output_channels: info.output_channels,
+        missing_joc_frames: 0,
+        objects_clamped_frames: 0,
+        chanmap_pair_mismatch_frames: 0,
+        bed_mask_mismatch_frames: 0,
+        oamd_payloads: info.oamd_payloads as u32,
+        peak: info.peak,
+        over_unity: info.over_unity,
+        non_finite: info.non_finite,
+        ended: u32::from(info.ended),
+        buffered_frames: 0,
+        tail_capacity: 0,
+    }
+}
+
+/// 打开 AC-4 / A-JOC 流解码与立体声渲染器。
+/// `mode`：0 = Speaker 2.0，1 = 双耳（`hrtf` 为 `.jochrtf` 字节数组）；`profile`：0 近场，1 中场，2 远场。
+///
+/// # Safety
+/// `hrtf` 必须指向 `hrtf_len` 个可读字节，或为空指针。
+#[no_mangle]
+pub unsafe extern "C" fn ac4_open(
+    mode: u32,
+    gain_db: f64,
+    profile: u32,
+    tail_seconds: f64,
+    hrtf: *const u8,
+    hrtf_len: usize,
+) -> *mut Ac4Stream {
+    let hrtf = if hrtf.is_null() || hrtf_len == 0 {
+        None
+    } else {
+        Some(std::slice::from_raw_parts(hrtf, hrtf_len).to_vec())
+    };
+    let binaural_profile = match profile {
+        0 => Ac4BinauralProfile::Near,
+        2 => Ac4BinauralProfile::Far,
+        _ => Ac4BinauralProfile::Mid,
+    };
+    let config = Ac4StreamConfig {
+        mode: if mode == 1 { Ac4Mode::Binaural } else { Ac4Mode::Speaker20 },
+        gain_db,
+        tail_seconds,
+        binaural_profile,
+        hrtf,
+    };
+    match Ac4Stream::new(config) {
+        Ok(stream) => Box::into_raw(Box::new(stream)),
+        Err(error) => {
+            set_error(error.to_string());
+            std::ptr::null_mut()
+        }
+    }
+}
+
+/// 销毁并释放 `ac4_open` 返回的流实例。
+///
+/// # Safety
+/// `stream` 必须来自 `ac4_open`。
+#[no_mangle]
+pub unsafe extern "C" fn ac4_close(stream: *mut Ac4Stream) {
+    if !stream.is_null() {
+        drop(Box::from_raw(stream));
+    }
+}
+
+/// 重置 AC-4 解码器与渲染器状态（Seek 时调用，等待下一个 I 帧重建状态）。
+///
+/// # Safety
+/// `stream` 必须来自 `ac4_open`。
+#[no_mangle]
+pub unsafe extern "C" fn ac4_reset(stream: *mut Ac4Stream) -> i32 {
+    match stream.as_mut() {
+        Some(stream) => {
+            stream.reset();
+            0
+        }
+        None => report("null stream"),
+    }
+}
+
+/// 送入一个 AC-4 帧（原始 TOC 载荷或带 `0xAC40`/`0xAC41` 同步头帧）。
+///
+/// # Safety
+/// `stream` 必须来自 `ac4_open`；`data` 必须指向 `len` 个可读字节。
+#[no_mangle]
+pub unsafe extern "C" fn ac4_push_frame(
+    stream: *mut Ac4Stream,
+    data: *const u8,
+    len: usize,
+) -> i32 {
+    let Some(stream) = stream.as_mut() else {
+        return report("null stream");
+    };
+    if data.is_null() || len == 0 {
+        return report("empty frame");
+    }
+    let bytes = std::slice::from_raw_parts(data, len);
+    match stream.push_frame(bytes) {
+        Ok(()) => 0,
+        Err(error) => report(error),
+    }
+}
+
+/// 查询单个 AC-4 帧在输出采样率（48 kHz）下的样本数。
+///
+/// # Safety
+/// `data` 必须指向 `len` 个可读字节。
+#[no_mangle]
+pub unsafe extern "C" fn ac4_frame_samples(data: *const u8, len: usize) -> i32 {
+    if data.is_null() || len == 0 {
+        return report("empty frame");
+    }
+    let bytes = std::slice::from_raw_parts(data, len);
+    match ac4_calc_frame_samples(bytes) {
+        Ok(samples) => samples as i32,
+        Err(error) => report(error),
+    }
+}
+
+/// 从 AC-4 流中取出最多 `max_frames` 帧交错立体声 Float32 样本到 `out`，返回实际写出的帧数。
+///
+/// # Safety
+/// `stream` 必须来自 `ac4_open`；`out` 至少可容纳 `max_frames * 2` 个 `f32`。
+#[no_mangle]
+pub unsafe extern "C" fn ac4_pull(
+    stream: *mut Ac4Stream,
+    out: *mut f32,
+    max_frames: usize,
+) -> i32 {
+    let Some(stream) = stream.as_mut() else {
+        return report("null stream");
+    };
+    if out.is_null() && max_frames > 0 {
+        return report("null output buffer");
+    }
+    let buffer = if max_frames == 0 {
+        &mut []
+    } else {
+        std::slice::from_raw_parts_mut(out, max_frames * 2)
+    };
+    match stream.pull(buffer, max_frames) {
+        Ok(count) => count as i32,
+        Err(error) => report(error),
+    }
+}
+
+/// 更新 AC-4 输出增益（dB）。
+///
+/// # Safety
+/// `stream` 必须来自 `ac4_open`。
+#[no_mangle]
+pub unsafe extern "C" fn ac4_set_gain(stream: *mut Ac4Stream, gain_db: f64) -> i32 {
+    match stream.as_mut() {
+        Some(stream) => {
+            stream.set_gain_db(gain_db);
+            0
+        }
+        None => report("null stream"),
+    }
+}
+
+/// 设置双耳渲染交互控制参数（与 `joc_set_controls` 接口一致）；Speaker 2.0 模式下忽略。
+///
+/// # Safety
+/// `stream` 必须来自 `ac4_open`；`gains` 指向 16 个 `f32`，或为空指针。
+#[no_mangle]
+pub unsafe extern "C" fn ac4_set_controls(
+    stream: *mut Ac4Stream,
+    yaw: f64,
+    pitch: f64,
+    roll: f64,
+    x: f64,
+    y: f64,
+    z: f64,
+    focus: f64,
+    height: f64,
+    gains: *const f32,
+) -> i32 {
+    let Some(stream) = stream.as_mut() else {
+        return report("null stream");
+    };
+    let Some(mut controls) = stream.controls() else {
+        return 0;
+    };
+    let finite = |value: f64| if value.is_finite() { value } else { 0.0 };
+    controls.head = head_rotation(finite(yaw), finite(pitch), finite(roll));
+    controls.walk = [finite(x), finite(y), finite(z)];
+    controls.focus = focus;
+    controls.height = height;
+    if !gains.is_null() {
+        for (slot, value) in controls.gains.iter_mut().zip(std::slice::from_raw_parts(gains, 16)) {
+            *slot = f64::from(*value);
+        }
+    }
+    stream.set_controls(&controls);
+    0
+}
+
+/// 获取自上次调用以来的对象场景快照（布局与 `SCENE_FLOATS` 相同）；Speaker 2.0 或非 A-JOC 返回 0。
+///
+/// # Safety
+/// `stream` 必须来自 `ac4_open`；`out` 至少可容纳 `SCENE_FLOATS` 个 `f32`。
+#[no_mangle]
+pub unsafe extern "C" fn ac4_scene(stream: *mut Ac4Stream, out: *mut f32) -> i32 {
+    let Some(stream) = stream.as_mut() else {
+        return report("null stream");
+    };
+    let (Some(scene), Some(controls)) = (stream.take_scene(), stream.controls()) else {
+        return 0;
+    };
+    let out = std::slice::from_raw_parts_mut(out, SCENE_FLOATS);
+    for (index, position) in scene.positions.iter().enumerate() {
+        for axis in 0..3 {
+            out[index * 3 + axis] = position[axis] as f32;
+        }
+    }
+    for (index, level) in scene.levels.iter().enumerate() {
+        out[45 + index] = *level as f32;
+    }
+    for axis in 0..3 {
+        out[61 + axis] = controls.walk[axis] as f32;
+    }
+    1
+}
+
+/// 返回 AC-4 输出缓冲中当前待读取的立体声帧数。
+///
+/// # Safety
+/// `stream` 必须来自 `ac4_open`。
+#[no_mangle]
+pub unsafe extern "C" fn ac4_buffered(stream: *mut Ac4Stream) -> i32 {
+    stream.as_ref().map_or(0, |stream| stream.buffered_frames() as i32)
+}
+
+/// 刷新 AC-4 渲染器尾部残留样本与房间混响尾音（输入结束时调用）。
+///
+/// # Safety
+/// `stream` 必须来自 `ac4_open`。
+#[no_mangle]
+pub unsafe extern "C" fn ac4_flush(stream: *mut Ac4Stream) -> i32 {
+    match stream.as_mut() {
+        Some(stream) => match stream.flush() {
+            Ok(()) => 0,
+            Err(error) => report(error),
+        },
+        None => report("null stream"),
+    }
+}
+
+/// 读取 AC-4 流的当前运行状态到 `JocStatus`。
+///
+/// # Safety
+/// `stream` 必须来自 `ac4_open`；`out` 必须指向可写的 `JocStatus`。
+#[no_mangle]
+pub unsafe extern "C" fn ac4_status(stream: *mut Ac4Stream, out: *mut JocStatus) -> i32 {
+    let Some(stream) = stream.as_ref() else {
+        return report("null stream");
+    };
+    let Some(out) = out.as_mut() else {
+        return report("null status");
+    };
+    let mut status = ac4_status_of(stream.info());
     status.buffered_frames = stream.buffered_frames() as u32;
     status.tail_capacity = stream.tail_capacity();
     *out = status;

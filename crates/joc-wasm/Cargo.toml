@@ -11,3 +11,4 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 joc-core = { path = "../joc-core" }
+ac4-core = { path = "../ac4-core" }

@@ -24,10 +24,10 @@ const FALLBACK_CAPABILITIES = [
   ['RA360', 'unknown', 'application/octet-stream', 'download', 'size_360ra'],
   ['DTS', 'dts', 'audio/vnd.dts', 'download', 'size_dts'],
   ['DTSX', 'dtsx', 'audio/vnd.dts.hd; codecs="dtsx"', 'download', null],
-  ['DA', 'ac-4', 'audio/mp4; codecs="ac-4"', 'ac-4-probe', 'size_dolby'],
+  ['DA', 'ac-4', 'audio/mp4; codecs="ac-4"', 'joc', 'size_dolby'],
   ['DAEAC3', 'ec-3', 'audio/mp4; codecs="ec-3"', 'joc', null],
-  ['DA448', 'ac-4', 'audio/mp4; codecs="ac-4"', 'ac-4-probe', null],
-  ['DA1500', 'ac-4', 'audio/mp4; codecs="ac-4"', 'ac-4-probe', null],
+  ['DA448', 'ac-4', 'audio/mp4; codecs="ac-4"', 'joc', null],
+  ['DA1500', 'ac-4', 'audio/mp4; codecs="ac-4"', 'joc', null],
 ].map(([quality, defaultCodec, contentType, playbackClass, sizeField]) =>
   ({ quality, defaultCodec, contentType, playbackClass, sizeField }));
 export const QUALITY_IDS = FALLBACK_CAPABILITIES.map(({ quality }) => quality);
@@ -120,18 +120,17 @@ export function clearMimeSupportCache() { mimeSupport.clear(); }
 
 /** WET stsd: DA/DA448/DA1500 = ac-4/dac4; DAEAC3 = ec-3/dec3 (2026-10-31).
  * QQ's fixed Dolby pipelines determine those codecs, including for saved queues.
- * EC-3 remains on the JOC pipeline; baseline codecs are native, while
- * AC-4 (support varies with browser licensing) is probed at runtime. */
-export function playbackInfo(quality = 'HQ', row = {}, environment = globalThis) {
+ * Both EC-3 and AC-4 / A-JOC use the WASM JOC pipeline (with native passthrough
+ * when supported by the browser). */
+export function playbackInfo(quality = 'HQ', row = {}, _environment = globalThis) {
   qualityId(quality);
   const capability = capabilityTable.get(quality) || FALLBACK_BY_QUALITY.get(quality);
   const dolby = ['DA', 'DA448', 'DA1500', 'DAEAC3'].includes(quality);
   const codec = !dolby && typeof row.codec === 'string' ? row.codec : capability.defaultCodec;
   const contentType = !dolby && typeof row.contentType === 'string' ? row.contentType : capability.contentType;
-  const playback = codec === 'ec-3' ? 'joc'
-    : codec === 'ac-4' ? (supportsMime(contentType, environment) ? 'native' : 'download')
-      : capability.playbackClass === 'download' ? 'download'
-        : capability.playbackClass === 'joc' ? 'joc' : capability.playbackClass === 'native' ? 'native' : 'download';
+  const playback = codec === 'ec-3' || codec === 'ac-4' ? 'joc'
+    : capability.playbackClass === 'download' ? 'download'
+      : capability.playbackClass === 'joc' ? 'joc' : capability.playbackClass === 'native' ? 'native' : 'download';
   return { playback, codec, codecs: codec, contentType };
 }
 export function qualityId(value = 'HQ') {

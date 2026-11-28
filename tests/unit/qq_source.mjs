@@ -801,12 +801,12 @@ test('switching source invalidates a pending Apple resolution before it can repl
 });
 
 
-test('known MIME codecs use runtime capability detection; only DAEAC3 among Dolby tiers selects JOC', () => {
+test('known MIME codecs use runtime capability detection; Dolby tiers select JOC', () => {
   for (const quality of ['AAC48', 'WEB', 'AAC192', 'OGG96', 'OGG192', 'QAI', 'Q360V1', 'Q360V2']) {
     assert.equal(qq.playbackInfo(quality).playback, 'native', quality);
   }
   for (const [quality, playback, codec] of [
-    ['DA', 'native', 'ac-4'], ['DA448', 'native', 'ac-4'], ['DA1500', 'native', 'ac-4'], ['DAEAC3', 'joc', 'ec-3'],
+    ['DA', 'joc', 'ac-4'], ['DA448', 'joc', 'ac-4'], ['DA1500', 'joc', 'ac-4'], ['DAEAC3', 'joc', 'ec-3'],
   ]) {
     for (const row of [{}, { playback: 'joc', codec: 'ec-3' }, { playback: 'native', codec: 'flac' }, { codec: 'ac-4' }]) {
       const info = qq.playbackInfo(quality, row);
@@ -818,18 +818,18 @@ test('known MIME codecs use runtime capability detection; only DAEAC3 among Dolb
   for (const quality of ['NAC', 'DTS', 'DTSX', 'RA360']) {
     assert.equal(qq.playbackInfo(quality, { codec: 'flac' }).playback, 'download', quality);
   }
-  assert.equal(qq.playbackInfo('Q360V1', { codec: 'ac-4' }).playback, 'native');
+  assert.equal(qq.playbackInfo('Q360V1', { codec: 'ac-4' }).playback, 'joc');
   assert.equal(qq.playbackInfo('QAI', { codec: 'ec-3' }).playback, 'joc');
 });
 
-test('AC-4 playbackInfo follows injected browser capability, never JOC, and is download-only without a browser', () => {
+test('AC-4 playbackInfo selects JOC regardless of injected browser capability', () => {
   const env = (supported) => ({ window: {}, MediaSource: { isTypeSupported: () => supported },
     document: { createElement: () => ({ canPlayType: () => '' }) } });
   for (const quality of ['DA', 'DA448', 'DA1500']) {
     assert.equal(qq.playbackInfo(quality, {}, env(true)).contentType, 'audio/mp4; codecs="ac-4"');
-    assert.equal(qq.playbackInfo(quality, {}, env(true)).playback, 'native');
-    assert.equal(qq.playbackInfo(quality, {}, env(false)).playback, 'download');
-    assert.equal(qq.playbackInfo(quality, {}, {}).playback, 'download');
+    assert.equal(qq.playbackInfo(quality, {}, env(true)).playback, 'joc');
+    assert.equal(qq.playbackInfo(quality, {}, env(false)).playback, 'joc');
+    assert.equal(qq.playbackInfo(quality, {}, {}).playback, 'joc');
   }
 });
 
@@ -839,7 +839,7 @@ test('shared QQ MIME detection prefers ManagedMediaSource with the same player p
   const environment = { window: {}, ManagedMediaSource: { isTypeSupported: () => { managedCalls++; return true; } },
     MediaSource: { isTypeSupported: () => false }, document: { createElement: () => ({ canPlayType: () => '' }) } };
   try {
-    assert.equal(qq.playbackInfo('DA', {}, environment).playback, 'native');
+    assert.equal(qq.supportsMime('audio/mp4; codecs="ac-4"', environment), true);
     assert.equal(managedCalls, 1);
     globalThis.ManagedMediaSource = environment.ManagedMediaSource;
     globalThis.MediaSource = environment.MediaSource;
@@ -859,7 +859,7 @@ test('QQ rows keep downloads when codecs or browser capabilities prevent playbac
   const rows = qq.qualityRows(data, dto.id, (info) => detectQqModes(info, { canPlayType: (mime) => mime.startsWith('audio/mp4') ? 'maybe' : '' }));
   for (const row of rows.filter((row) => row.available)) {
     assert.ok(row.downloadUrl);
-    assert.equal(row.playable, ['AAC48', 'DA', 'DA448', 'DA1500'].includes(row.quality), row.quality);
+    assert.equal(row.playable, row.quality === 'AAC48', row.quality);
     assert.equal(Object.hasOwn(row, 'playUrl'), row.playable);
   }
 });
@@ -879,14 +879,17 @@ test('QQ JOC mode planning follows the JOC setting, then native passthrough, the
       globalThis.MediaSource = { isTypeSupported: () => supported };
       for (const mode of ['binaural', 'speaker', 'off']) {
         useJocSettings({ get: () => ({ mode }) });
-        assert.deepEqual(detectQqModes(qq.playbackInfo('DAEAC3')), expected[mode], `${supported ? 'native' : 'PCM'} ${mode}`);
+        for (const quality of ['DAEAC3', 'DA', 'DA448', 'DA1500']) {
+          assert.deepEqual(detectQqModes(qq.playbackInfo(quality)), expected[mode], `${quality} ${supported ? 'native' : 'PCM'} ${mode}`);
+        }
       }
     }
-    for (const quality of ['DA', 'DA448', 'DA1500']) assert.deepEqual(detectQqModes(qq.playbackInfo(quality)), ['native']);
     globalThis.MediaSource = { isTypeSupported: () => true };
     globalThis.Worker = undefined;
     useJocSettings({ get: () => ({ mode: 'speaker' }) });
-    assert.deepEqual(detectQqModes(qq.playbackInfo('DAEAC3')), ['native']);
+    for (const quality of ['DAEAC3', 'DA', 'DA448', 'DA1500']) {
+      assert.deepEqual(detectQqModes(qq.playbackInfo(quality)), ['native']);
+    }
   } finally { Object.assign(globalThis, saved); useJocSettings(null); }
 });
 

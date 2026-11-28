@@ -21,24 +21,47 @@ const words = (...values) => { const out = new Uint8Array(values.length * 4); co
 const box = (name, ...parts) => concat(words(8 + parts.reduce((n, part) => n + part.length, 0)), Uint8Array.from(name, (c) => c.charCodeAt(0)), ...parts);
 const packets = [];
 for (let at = 0; at < fixture.length;) { const size = ((((fixture[at + 2] & 7) << 8) | fixture[at + 3]) + 1) * 2; packets.push(fixture.subarray(at, at + size)); at += size; }
-function mp4({ fragmented = false, codec = 'ec-3', badOffset = false } = {}) {
+function ac4FrameBytes(fsIndex = 1, frIndex = 13, payloadLen = 8, { crc = false, extended = false } = {}) {
+  const payload = new Uint8Array(Math.max(3, payloadLen));
+  payload[1] = 0x10 | ((fsIndex & 1) << 2) | ((frIndex >> 2) & 3);
+  payload[2] = (frIndex & 3) << 6;
+  const head = extended ? 7 : 4;
+  const out = new Uint8Array(head + payload.length + (crc ? 2 : 0));
+  out[0] = 0xac;
+  out[1] = crc ? 0x41 : 0x40;
+  if (extended) {
+    out[2] = 0xff;
+    out[3] = 0xff;
+    out[4] = (payload.length >> 16) & 0xff;
+    out[5] = (payload.length >> 8) & 0xff;
+    out[6] = payload.length & 0xff;
+  } else {
+    out[2] = (payload.length >> 8) & 0xff;
+    out[3] = payload.length & 0xff;
+  }
+  out.set(payload, head);
+  return { payload, syncframe: out };
+}
+function mp4({ fragmented = false, codec = 'ec-3', badOffset = false, sampleList = packets, sampleDuration = 1536 } = {}) {
   const stsd = box('stsd', words(0, 1), box(codec, new Uint8Array(28)));
   const track = (tables) => box('trak', box('tkhd', words(0, 0, 0, 1)), box('mdia', box('mdhd', words(0, 0, 0, 48000)), box('minf', box('stbl', stsd, ...tables))));
+  const payload = concat(...sampleList);
   if (fragmented) {
-    const moov = box('moov', track([]), box('mvex', box('trex', words(0, 1, 1, 1536, 0, 0))));
-    const moof = (offset) => box('moof', box('traf', box('tfhd', words(0x020000, 1)), box('trun', words(0x201, packets.length, offset, ...packets.map((packet) => packet.length)))));
-    return concat(moov, moof(moof(0).length + 8), box('mdat', fixture));
+    const moov = box('moov', track([]), box('mvex', box('trex', words(0, 1, 1, sampleDuration, 0, 0))));
+    const moof = (offset) => box('moof', box('traf', box('tfhd', words(0x020000, 1)), box('trun', words(0x201, sampleList.length, offset, ...sampleList.map((packet) => packet.length)))));
+    return concat(moov, moof(moof(0).length + 8), box('mdat', payload));
   }
   const moov = (offset) => box('moov', track([
-    box('stts', words(0, 1, packets.length, 1536)), box('stsc', words(0, 1, 1, packets.length, 1)),
-    box('stsz', words(0, 0, packets.length, ...packets.map((packet) => packet.length))), box('stco', words(0, 1, offset)),
+    box('stts', words(0, 1, sampleList.length, sampleDuration)), box('stsc', words(0, 1, 1, sampleList.length, 1)),
+    box('stsz', words(0, 0, sampleList.length, ...sampleList.map((packet) => packet.length))), box('stco', words(0, 1, offset)),
   ]));
-  return concat(moov(badOffset ? 1 : moov(0).length + 8), box('mdat', fixture));
+  return concat(moov(badOffset ? 1 : moov(0).length + 8), box('mdat', payload));
 }
 
 test('raw E-AC-3, standard MP4 and fragmented MP4 reach the actual Worker packet reader unchanged', async () => {
   for (const bytes of [fixture, mp4(), mp4({ fragmented: true })]) {
     const track = qqJocTrack(bytes);
+    assert.equal(track.codec, 'ec-3');
     assert.ok(Math.abs(track.duration - packets.length * 1536 / 48000) < 1e-10);
     const fragment = new Uint8Array(await track.load(track.segments[0]));
     const decoded = samplesFromFragment(fragment);
@@ -51,27 +74,64 @@ test('raw E-AC-3, standard MP4 and fragmented MP4 reach the actual Worker packet
   }
 });
 
-test('JOC parser rejects AC-4, invalid sample ranges, truncated frames and unsupported sample rates', () => {
-  assert.throws(() => qqJocTrack(mp4({ codec: 'ac-4' })), /no unencrypted ec-3/);
+test('raw AC-4 syncframes and AC-4 MP4 containers parse with codec=ac-4 and reach the Worker unchanged', async () => {
+  const f1 = ac4FrameBytes(1, 13, 12, { crc: false });
+  const f2 = ac4FrameBytes(1, 13, 16, { crc: true });
+  const f3 = ac4FrameBytes(1, 3, 20, { crc: false, extended: true });
+  const rawAc4 = concat(f1.syncframe, f2.syncframe, f3.syncframe);
+  const rawTrack = qqJocTrack(rawAc4);
+  assert.equal(rawTrack.codec, 'ac-4');
+  const expectedRawDuration = (2 * 2048 / 48000) + (1001 / 30000);
+  assert.ok(Math.abs(rawTrack.duration - expectedRawDuration) < 1e-10);
+  const rawDecoded = samplesFromFragment(new Uint8Array(await rawTrack.load(rawTrack.segments[0])));
+  assert.equal(rawDecoded.length, 3);
+  [f1.syncframe, f2.syncframe, f3.syncframe].forEach((expected, i) => assert.deepEqual(rawDecoded[i], expected));
+
+  const ac4Samples = [f1.payload, f2.payload];
+  for (const fragmented of [false, true]) {
+    const track = qqJocTrack(mp4({ fragmented, codec: 'ac-4', sampleList: ac4Samples, sampleDuration: 2048 }));
+    assert.equal(track.codec, 'ac-4');
+    assert.ok(Math.abs(track.duration - (2 * 2048 / 48000)) < 1e-10);
+    const decoded = samplesFromFragment(new Uint8Array(await track.load(track.segments[0])));
+    assert.equal(decoded.length, ac4Samples.length);
+    ac4Samples.forEach((expected, i) => assert.deepEqual(decoded[i], expected));
+  }
+});
+
+test('JOC parser rejects non-JOC codecs, invalid sample ranges, truncated frames and unsupported E-AC-3 sample rates', () => {
+  assert.throws(() => qqJocTrack(mp4({ codec: 'mp4a' })), /no unencrypted ec-3 or ac-4/);
   assert.throws(() => qqJocTrack(mp4({ badOffset: true })), /sample range/);
   assert.throws(() => qqJocTrack(fixture.subarray(0, fixture.length - 1)), /truncated/);
+  const rawAc4 = ac4FrameBytes(1, 13, 12).syncframe;
+  assert.throws(() => qqJocTrack(rawAc4.subarray(0, rawAc4.length - 1)), /truncated AC-4/);
   const wrongRate = fixture.slice(); wrongRate[4] |= 0x40;
   assert.throws(() => qqJocTrack(wrongRate), /48 kHz/);
   assert.throws(() => qqJocTrack(new Uint8Array([0, 0, 0, 1])), /truncated/);
 });
 
-test('QQ opener accepts the DAEAC3 download route, forwards cancellation and rejects external URLs before fetching', async () => {
+test('QQ opener accepts Dolby JOC download routes, forwards cancellation and rejects external URLs before fetching', async () => {
   const original = globalThis.fetch;
   const controller = new AbortController();
   const calls = [];
-  globalThis.fetch = async (url, options) => { calls.push({ url, options }); return { ok: true, arrayBuffer: async () => mp4().buffer }; };
+  globalThis.fetch = async (url, options) => {
+    calls.push({ url, options });
+    const ac4 = url.includes('DAEAC3') ? false : true;
+    const data = ac4
+      ? mp4({ codec: 'ac-4', sampleList: [ac4FrameBytes(1, 13, 10).payload], sampleDuration: 2048 })
+      : mp4();
+    return { ok: true, arrayBuffer: async () => data.buffer };
+  };
   try {
-    const url = '/qq/song/WET/download?quality=DAEAC3';
-    assert.ok((await openQqJocTrack(url, controller.signal)).duration > 0);
-    assert.equal(calls.at(-1).url, url);
-    assert.equal(calls.at(-1).options.signal, controller.signal);
-    assert.equal(calls.at(-1).options.credentials, 'same-origin');
-    assert.equal(calls.at(-1).options.redirect, 'error');
+    for (const [quality, expectedCodec] of [['DAEAC3', 'ec-3'], ['DA', 'ac-4'], ['DA448', 'ac-4'], ['DA1500', 'ac-4']]) {
+      const url = `/qq/song/WET/download?quality=${quality}`;
+      const track = await openQqJocTrack(url, controller.signal);
+      assert.ok(track.duration > 0);
+      assert.equal(track.codec, expectedCodec);
+      assert.equal(calls.at(-1).url, url);
+      assert.equal(calls.at(-1).options.signal, controller.signal);
+      assert.equal(calls.at(-1).options.credentials, 'same-origin');
+      assert.equal(calls.at(-1).options.redirect, undefined);
+    }
     const count = calls.length;
     for (const url of ['https://qq.com/file.mp4', '//qq.com/file.mp4', '/qq/song/WET/play?quality=DA', '/qq/song/WET/download?quality=HQ', '/qq/song/WET/download?quality=da', '/qq/song/WET/download?quality=DA&url=https://qq.com']) {
       await assert.rejects(openQqJocTrack(url), /local QQ download/);
@@ -81,6 +141,32 @@ test('QQ opener accepts the DAEAC3 download route, forwards cancellation and rej
     await assert.rejects(openQqJocTrack('/qq/song/WET/download?quality=DAEAC3', controller.signal), { name: 'AbortError' });
     assert.equal(calls.length, count);
   } finally { globalThis.fetch = original; }
+});
+
+test('QQ opener reads redirected CDN audio responses for E-AC-3 and AC-4', async () => {
+  const ac4Samples = [ac4FrameBytes(1, 13, 10).payload];
+  for (const [quality, codec, samples] of [['DAEAC3', 'ec-3', packets], ['DA', 'ac-4', ac4Samples], ['DA448', 'ac-4', ac4Samples], ['DA1500', 'ac-4', ac4Samples]]) {
+    const data = mp4({ codec, sampleList: samples, sampleDuration: codec === 'ec-3' ? 1536 : 2048 });
+    const progress = [];
+    globalThis.fetch = async (url, options) => {
+      const request = new Request(new URL(url, 'https://fantastic.test'), options);
+      assert.equal(request.redirect, 'follow');
+      const response = new Response(data, { headers: { 'content-length': String(data.length) } });
+      Object.defineProperties(response, {
+        redirected: { value: true },
+        url: { value: 'https://isure.stream.qqmusic.qq.com/audio.m4a' },
+      });
+      return response;
+    };
+    const track = await openQqJocTrack(`/qq/song/WET/download?quality=${quality}`, undefined, (value) => progress.push(value));
+    assert.equal(track.codec, codec);
+    assert.ok(track.duration > 0);
+    assert.equal(progress.at(-1).downloaded, data.length);
+    assert.equal(progress.at(-1).percent, 100);
+    const decoded = samplesFromFragment(new Uint8Array(await track.load(track.segments[0])));
+    assert.equal(decoded.length, samples.length);
+    samples.forEach((expected, i) => assert.deepEqual(decoded[i], expected));
+  }
 });
 
 test('QQ JOC opener reports streamed byte progress with and without Content-Length', async () => {
@@ -205,13 +291,31 @@ test('AmPlayer.tryMode feeds the selected QQ download through JocLiveEngine and 
 test('QQ PCM entry rejects download and native classifications before opening input or creating JocLiveEngine', async () => {
   const player = Object.create(AmPlayer.prototype);
   player.teardown = () => assert.fail('unsupported input must be rejected before teardown or engine creation');
-  for (const quality of ['DA', 'DA448', 'DA1500', 'HQ']) {
+  for (const quality of ['HQ', 'NAC', 'DTS', 'DTSX']) {
     const item = qq.qualityItem(qq.toTrack({ id: 'WET' }), quality);
     for (const mode of ['joc2', 'jocbin', 'ec3']) {
       await assert.rejects(player.tryMode(mode, item, 0, 1), /requires playback=joc/);
       assert.equal(player.pcm, undefined);
     }
   }
+});
+
+test('AmPlayer.tryMode feeds QQ AC-4 downloads into JocLiveEngine with codec=ac-4', async () => {
+  await withJocStubs(async () => {}, async (player, calls) => {
+    Object.assign(player, { playToken: 9, current: {}, spatial: {}, audio: { volume: 0.4 }, clock: {},
+      teardown() {}, emitSpatial() {}, renderProgress() {}, renderToggle() {} });
+    const ac4Mp4 = mp4({ codec: 'ac-4', sampleList: [ac4FrameBytes(1, 13, 12).payload], sampleDuration: 2048 });
+    globalThis.fetch = async (url) => { calls.push(url); return { ok: true, arrayBuffer: async () => ac4Mp4.buffer }; };
+    for (const quality of ['DA', 'DA448', 'DA1500']) {
+      const item = qq.qualityItem(qq.toTrack({ id: 'WET' }), quality);
+      await player.tryMode('joc2', item, 0, 9, true);
+      assert.ok(player.pcm instanceof JocLiveEngine);
+      assert.equal(player.pcm.codec, 'ac-4');
+      assert.equal(calls.at(-1), item.downloadUrl);
+      player.pcm.decoder.broken = true;
+      player.pcm.destroy();
+    }
+  });
 });
 
 test('preparing a QQ PCM voice uses the download opener and releases it on failure', async () => {

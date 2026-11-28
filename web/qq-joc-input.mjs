@@ -1,8 +1,14 @@
-// Adapt unencrypted QQ EC-3 files to the same fMP4 input used by Apple's JOC
+// Adapt unencrypted QQ EC-3 / AC-4 files to the same fMP4 input used by Apple's JOC
 // Worker. This module only reads containers; decoding and rendering stay there.
 const RATE = 48000;
 const MAX_SAMPLES = 1_000_000;
-const DOWNLOAD = /^\/qq\/song\/[0-9A-Za-z]{1,32}\/download\?quality=DAEAC3$/;
+const DOWNLOAD = /^\/qq\/song\/[0-9A-Za-z]{1,32}\/download\?quality=(?:DAEAC3|DA|DA448|DA1500)$/;
+const AC4_FRAME_LENGTHS = [1920, 1920, 2048, 1536, 1536, 960, 960, 1024, 768, 768, 512, 384, 384, 2048];
+const AC4_FRAME_RATES = [
+  [24000, 1001], [24, 1], [25, 1], [30000, 1001], [30, 1],
+  [48000, 1001], [48, 1], [50, 1], [60000, 1001], [60, 1],
+  [100, 1], [120000, 1001], [120, 1], [48000, 2048],
+];
 const fail = (message) => { throw new Error(`QQ JOC: ${message}`); };
 const aborted = (signal) => { if (signal?.aborted) throw signal.reason || new DOMException('Aborted', 'AbortError'); };
 
@@ -63,6 +69,67 @@ function rawSamples(bytes) {
   return samples;
 }
 
+function ac4FrameDuration(payload) {
+  let bitPos = 0;
+  const read = (n) => {
+    if (bitPos + n > payload.length * 8) return -1;
+    let val = 0;
+    for (let i = 0; i < n; i++) {
+      val = (val << 1) | ((payload[bitPos >> 3] >> (7 - (bitPos & 7))) & 1);
+      bitPos++;
+    }
+    return val;
+  };
+  const version = read(2);
+  if (version < 0) return 2048 / RATE;
+  if (version === 3) {
+    for (;;) {
+      if (read(2) < 0) return 2048 / RATE;
+      const cont = read(1);
+      if (cont < 0) return 2048 / RATE;
+      if (!cont) break;
+    }
+  }
+  if (read(10) < 0) return 2048 / RATE;
+  const waitFlag = read(1);
+  if (waitFlag < 0) return 2048 / RATE;
+  if (waitFlag) {
+    const waitFrames = read(3);
+    if (waitFrames < 0) return 2048 / RATE;
+    if (waitFrames > 0 && read(2) < 0) return 2048 / RATE;
+  }
+  const fsIndex = read(1);
+  const frameRateIndex = read(4);
+  if (fsIndex < 0 || frameRateIndex < 0 || frameRateIndex >= AC4_FRAME_LENGTHS.length) return 2048 / RATE;
+  if (fsIndex === 0) return AC4_FRAME_LENGTHS[frameRateIndex] / 44100;
+  const [num, den] = AC4_FRAME_RATES[frameRateIndex];
+  return den / num;
+}
+
+function ac4RawSamples(bytes) {
+  const samples = [];
+  for (let pos = 0; pos < bytes.length;) {
+    if (pos + 4 > bytes.length || bytes[pos] !== 0xac || (bytes[pos + 1] !== 0x40 && bytes[pos + 1] !== 0x41)) {
+      fail('invalid AC-4 syncframe');
+    }
+    const crc = bytes[pos + 1] === 0x41 ? 2 : 0;
+    let header = 4;
+    let size = (bytes[pos + 2] << 8) | bytes[pos + 3];
+    if (size === 0xffff) {
+      if (pos + 7 > bytes.length) fail('truncated AC-4 syncframe');
+      size = (bytes[pos + 4] << 16) | (bytes[pos + 5] << 8) | bytes[pos + 6];
+      header = 7;
+    }
+    const total = header + size + crc;
+    if (!size || pos + total > bytes.length || samples.length >= MAX_SAMPLES) fail('truncated AC-4 syncframe');
+    const payload = bytes.subarray(pos + header, pos + header + size);
+    samples.push({ parts: [bytes.subarray(pos, pos + total)], duration: ac4FrameDuration(payload) });
+    pos += total;
+  }
+  if (!samples.length) fail('empty AC-4 stream');
+  return samples;
+}
+
 function mp4Samples(bytes) {
   const r = reader(bytes), top = r.boxes();
   const moov = top.find((box) => box.type === 'moov') || fail('missing moov');
@@ -71,21 +138,27 @@ function mp4Samples(bytes) {
   for (const trak of r.children(moov).filter((box) => box.type === 'trak')) {
     const mdia = r.child(trak, 'mdia'), stbl = r.child(r.child(mdia, 'minf'), 'stbl');
     const entries = r.children(r.child(stbl, 'stsd'), 8);
-    const description = entries.findIndex((box) => box.type === 'ec-3') + 1;
-    if (!description) continue;
-    if (track) fail('multiple E-AC-3 tracks');
+    const index = entries.findIndex((box) => box.type === 'ec-3' || box.type === 'ac-4');
+    if (index < 0) continue;
+    if (track) fail('multiple JOC audio tracks');
     const tkhd = r.child(trak, 'tkhd'), mdhd = r.child(mdia, 'mdhd');
     const id = r.u32(tkhd.body + (bytes[tkhd.body] === 1 ? 20 : 12));
     const scale = r.u32(mdhd.body + (bytes[mdhd.body] === 1 ? 20 : 12));
     if (!scale) fail('invalid MP4 timescale');
-    track = { id, scale, stbl, description };
+    track = { id, scale, stbl, description: index + 1, codec: entries[index].type };
   }
-  if (!track) fail('MP4 has no unencrypted ec-3 track');
+  if (!track) fail('MP4 has no unencrypted ec-3 or ac-4 track');
   const samples = [];
   const add = (offset, size, duration) => {
     if (!size || !mdats.some((mdat) => offset >= mdat.body && size <= mdat.end - offset)) fail('invalid MP4 sample range');
-    const data = bytes.subarray(offset, offset + size), frames = syncframes(data);
-    const seconds = duration ? duration / track.scale : frames.filter((f) => !f.dependent).reduce((n, f) => n + f.samples / RATE, 0);
+    const data = bytes.subarray(offset, offset + size);
+    let seconds;
+    if (track.codec === 'ec-3') {
+      const frames = syncframes(data);
+      seconds = duration ? duration / track.scale : frames.filter((f) => !f.dependent).reduce((n, f) => n + f.samples / RATE, 0);
+    } else {
+      seconds = duration ? duration / track.scale : ac4FrameDuration(data);
+    }
     if (!(seconds > 0) || samples.length >= MAX_SAMPLES) fail('invalid MP4 sample duration');
     samples.push({ parts: [data], duration: seconds });
   };
@@ -158,8 +231,8 @@ function mp4Samples(bytes) {
     }
     if (index !== count) fail('incomplete chunk samples');
   }
-  if (!samples.length) fail('empty E-AC-3 track');
-  return samples;
+  if (!samples.length) fail('empty audio track');
+  return { codec: track.codec, samples };
 }
 
 const concat = (parts) => {
@@ -177,16 +250,25 @@ function fragment(samples) {
   return concat([makeMoof(moof.length + 8), box('mdat', ...packets)]).buffer;
 }
 
-/** Parse a downloaded MP4 or raw E-AC-3 file without touching the decoder. */
+/** Parse a downloaded MP4 or raw E-AC-3 / AC-4 file without touching the decoder. */
 export function qqJocTrack(input) {
   const bytes = input instanceof Uint8Array ? input : new Uint8Array(input);
-  const samples = bytes[0] === 0x0b && bytes[1] === 0x77 ? rawSamples(bytes) : mp4Samples(bytes);
+  let codec, samples;
+  if (bytes[0] === 0x0b && bytes[1] === 0x77) {
+    codec = 'ec-3';
+    samples = rawSamples(bytes);
+  } else if (bytes[0] === 0xac && (bytes[1] === 0x40 || bytes[1] === 0x41)) {
+    codec = 'ac-4';
+    samples = ac4RawSamples(bytes);
+  } else {
+    ({ codec, samples } = mp4Samples(bytes));
+  }
   const segments = [];
   let duration = 0, start = 0, group = [];
   const flush = () => { if (group.length) { segments.push({ time: start, duration: duration - start, samples: group }); group = []; start = duration; } };
   for (const sample of samples) { group.push(sample); duration += sample.duration; if (duration - start >= 12) flush(); }
   flush();
-  return { duration, segments, async load(segment, signal) {
+  return { codec, duration, segments, async load(segment, signal) {
     aborted(signal);
     if (!segments.includes(segment)) fail('invalid segment');
     // A new buffer every time: Worker transfer and seek must preserve the source.
@@ -194,11 +276,11 @@ export function qqJocTrack(input) {
   } };
 }
 
-/** Only the backend may follow QQ's CDN URL or choose the regional egress. */
+/** 浏览器跟随本地 302，直接读取支持 CORS 的 QQ CDN 音频，服务端不转发媒体字节。 */
 export async function openQqJocTrack(url, signal, onProgress) {
   if (typeof url !== 'string' || !DOWNLOAD.test(url)) fail('expected local QQ download URL');
   aborted(signal);
-  const response = await fetch(url, { signal, credentials: 'same-origin', redirect: 'error' });
+  const response = await fetch(url, { signal, credentials: 'same-origin' });
   if (!response.ok) fail(`download HTTP ${response.status}`);
   const lengthHeader = response.headers?.get?.('content-length') ?? response.headers?.['content-length'];
   const total = Number.isSafeInteger(Number(lengthHeader)) && Number(lengthHeader) > 0 ? Number(lengthHeader) : null;

@@ -1,0 +1,9 @@
+[package]
+name = "ac4-core"
+version = "0.1.0"
+edition = "2021"
+license = "AGPL-3.0-only"
+description = "Pure-Rust Dolby AC-4 (TS 103 190-1/2) and A-JOC decoder ported from SoundWeaver"
+
+[dependencies]
+joc-core = { path = "../joc-core" }

@@ -74,7 +74,7 @@ test('QQ variants retain available native/JOC formats and actual payload metadat
   const list = variants();
   assert.deepEqual(list.map((v) => v.quality), ['HQ', 'SQ', 'Q360V1', 'DA', 'DAEAC3']);
   assert.ok(list.every((v) => v.group_id === v.quality && v.source === 'qq'));
-  assert.deepEqual(list.map((v) => v.playback), ['native', 'native', 'native', 'native', 'joc']);
+  assert.deepEqual(list.map((v) => v.playback), ['native', 'native', 'native', 'joc', 'joc']);
   assert.equal(list[1].format, 'FLAC 16-bit / 44.1 kHz');
   assert.equal(list[2].codec, 'vorbis');
   assert.equal(list[2].contentType, 'audio/ogg');

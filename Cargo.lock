@@ -3,6 +3,13 @@
 version = 4
 
 [[package]]
+name = "ac4-core"
+version = "0.1.0"
+dependencies = [
+ "joc-core",
+]
+
+[[package]]
 name = "adler2"
 version = "2.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1173,6 +1180,7 @@ dependencies = [
 name = "joc-wasm"
 version = "0.1.0"
 dependencies = [
+ "ac4-core",
  "joc-core",
 ]
 

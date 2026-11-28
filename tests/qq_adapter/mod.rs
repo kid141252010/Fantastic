@@ -1217,7 +1217,7 @@ async fn proxy_is_not_exposed_in_capabilities_or_host_config() {
             let ac4 = qualities.iter().find(|row| row["quality"] == "DA").unwrap();
             assert_eq!(ac4["defaultCodec"], "ac-4");
             assert_eq!(ac4["contentType"], "audio/mp4; codecs=\"ac-4\"");
-            assert_eq!(ac4["playbackClass"], "ac-4-probe");
+            assert_eq!(ac4["playbackClass"], "joc");
             assert_eq!(ac4["sizeField"], "size_dolby");
             let joc = qualities.iter().find(|row| row["quality"] == "DAEAC3").unwrap();
             assert_eq!(joc["defaultCodec"], "ec-3");
@@ -1593,9 +1593,9 @@ fn dolby_tiers_follow_verified_wet_sample_entries() {
     let file = json!({"size_dolby":5112212,"size_new":[8936764,29870162]});
     #[rustfmt::skip]
     let cases = [
-        (Quality::Da, 5112212, Codec::Ac4, Playback::Native, "AC-4 Dolby Atmos"),
-        (Quality::Da448, 8936764, Codec::Ac4, Playback::Native, "AC-4 A-JOC 448 kbps"),
-        (Quality::Da1500, 29870162, Codec::Ac4, Playback::Native, "AC-4 A-JOC 1500 kbps"),
+        (Quality::Da, 5112212, Codec::Ac4, Playback::Joc, "AC-4 Dolby Atmos"),
+        (Quality::Da448, 8936764, Codec::Ac4, Playback::Joc, "AC-4 A-JOC 448 kbps"),
+        (Quality::Da1500, 29870162, Codec::Ac4, Playback::Joc, "AC-4 A-JOC 1500 kbps"),
         (Quality::Daeac3, 8915833, Codec::Ec3, Playback::Joc, "E-AC-3 JOC"),
     ];
     for (quality, size, codec, playback, format) in cases {
@@ -1640,7 +1640,7 @@ fn spatial_flac_is_native_and_undecodable_tiers_remain_download_only() {
         for (extension, expected) in [
             ("flac", Playback::Native),
             ("opus", Playback::Native),
-            ("ac4", Playback::Native),
+            ("ac4", Playback::Joc),
             ("dts", Playback::Download),
             ("mp4", Playback::Download),
         ] {
@@ -1820,8 +1820,8 @@ fn audio_response_requires_a_public_qq_url_and_treats_missing_sizes_as_unavailab
 fn explicit_codec_metadata_precedes_container_and_size_and_stays_allowlisted() {
     for key in ["codec", "codecs", "audio_codec"] {
         for (name, codec, playback) in [
-            ("ac4", "ac-4", Playback::Native),
-            ("ac-4", "ac-4", Playback::Native),
+            ("ac4", "ac-4", Playback::Joc),
+            ("ac-4", "ac-4", Playback::Joc),
             ("eac3", "ec-3", Playback::Joc),
             ("flac", "flac", Playback::Native),
         ] {
@@ -1956,10 +1956,10 @@ async fn qualities_endpoint_returns_all_tiers_and_uses_shared_cached_probes() {
         ("RA360", false, None, "360 Reality Audio", "download", "unknown", "application/octet-stream"),
         ("DTS", false, None, "DTS", "download", "dts", "audio/vnd.dts"),
         ("DTSX", false, None, "DTS:X", "download", "dtsx", "audio/vnd.dts.hd; codecs=\"dtsx\""),
-        ("DA", true, Some(5112212), "AC-4 Dolby Atmos", "native", "ac-4", "audio/mp4; codecs=\"ac-4\""),
+        ("DA", true, Some(5112212), "AC-4 Dolby Atmos", "joc", "ac-4", "audio/mp4; codecs=\"ac-4\""),
         ("DAEAC3", true, Some(8915833), "E-AC-3 JOC", "joc", "ec-3", "audio/mp4; codecs=\"ec-3\""),
-        ("DA448", true, Some(8936764), "AC-4 A-JOC 448 kbps", "native", "ac-4", "audio/mp4; codecs=\"ac-4\""),
-        ("DA1500", true, Some(29870162), "AC-4 A-JOC 1500 kbps", "native", "ac-4", "audio/mp4; codecs=\"ac-4\""),
+        ("DA448", true, Some(8936764), "AC-4 A-JOC 448 kbps", "joc", "ac-4", "audio/mp4; codecs=\"ac-4\""),
+        ("DA1500", true, Some(29870162), "AC-4 A-JOC 1500 kbps", "joc", "ac-4", "audio/mp4; codecs=\"ac-4\""),
     ];
     for (quality, available, size, format, playback, codec, content_type) in cases {
         let row = rows.iter().find(|row| row["quality"] == quality).unwrap();
@@ -2469,7 +2469,7 @@ async fn cached_payload_overrides_verified_default_without_cross_tier_leakage() 
     let row = |quality: &str| rows.iter().find(|row| row["quality"] == quality).unwrap();
     assert_eq!(row("WEB")["sizeBytes"], 1280);
     assert_eq!(row("WEB")["codec"], "mp3");
-    assert_eq!(row("DA")["playback"], "native");
+    assert_eq!(row("DA")["playback"], "joc");
     assert_eq!(row("DA")["format"], "AC-4 Dolby Atmos");
     assert_eq!(row("DAEAC3")["playback"], "joc");
     assert_eq!(row("DAEAC3")["sizeBytes"], Value::Null);

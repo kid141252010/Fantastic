@@ -1,12 +1,12 @@
 /*
- * E-AC-3 JOC（Dolby Atmos）解码与渲染 Worker（module Worker，由 player.js 的 JocDecoder 使用）。
- * 同一个线程里完成全部计算：fantastic 的 EC-3 解码器（ec3.wasm）输出 5.1/7.1 核心 PCM，
- * JOC 渲染器（joc.wasm，crates/joc-wasm）从同一批 syncframe 的 EMDF 中解析 JOC / OAMD 元数据，
- * 重建 15 个对象与 LFE，再渲染为 Speaker 2.0 或双耳立体声。
+ * E-AC-3 JOC / AC-4（Dolby Atmos）解码与渲染 Worker（module Worker，由 player.js 的 JocDecoder 使用）。
+ * 同一个线程里完成全部计算：E-AC-3 经 fantastic 的 EC-3 解码器（ec3.wasm）输出 5.1/7.1 核心 PCM，
+ * 再由 JOC 渲染器（joc.wasm）从 EMDF 重建对象；AC-4 / A-JOC 直接在 joc.wasm 中完成解码与渲染，
+ * 两者统一渲染为 Speaker 2.0 或双耳立体声。
  *
  * 主线程每次发一个已解密的 fMP4 分段，收到交错的立体声 Float32Array 与本段的峰值。
  * Seek 是 reset + 预滚（前 skipFrames 帧不输出），与参考实现的流式 API 相同。
- * Worker 在曲目之间复用：open 关闭旧的流并重启 EC-3 解码器，两个 wasm 与 HRTF 不必重新加载。
+ * Worker 在曲目之间复用：open 关闭旧的流，按需重启 EC-3 解码器，两个 wasm 与 HRTF 不必重新加载。
  *
  * 低延迟模式（open 带 port，AudioWorklet 可用时）：分段只拆出 syncframe 排队，按 joc/output-worklet.js 报回的播放进度
  * 逐帧渲染，只比播放位置提前约 0.1 秒，头部朝向、站位、独奏等交互控制（controls）立刻听得到。渲染好的立体声经 port
@@ -56,6 +56,7 @@ let ctx = 0;
 let jocPromise = null;
 let joc = null;
 let handle = 0;
+let codec = 'ec-3';
 /** 输出前要丢掉的帧数（Seek 的预滚） */
 let pendingSkip = 0;
 /** 常驻缓冲：核心 PCM（交错）、渲染输出、送入的 syncframe */
@@ -86,8 +87,15 @@ function yieldToMessages() {
   return new Promise((resolve) => { yieldQueue.push(resolve); yielder.port2.postMessage(0); });
 }
 
-/** E-AC-3 syncframe 头部的样本数（numblkscod：1/2/3/6 个 256 样本的块；fscod = 3 时固定 6 块） */
+/** E-AC-3 syncframe 或 AC-4 帧在 48 kHz 下的样本数 */
 function frameSamples(packet) {
+  if (codec === 'ac-4') {
+    if (!joc) return 2048;
+    const at = scratch(packet.length);
+    new Uint8Array(joc.memory.buffer, at, packet.length).set(packet);
+    const n = joc.ac4_frame_samples(at, packet.length);
+    return n > 0 ? n : 2048;
+  }
   if (packet.length < 5 || packet[0] !== 0x0b || packet[1] !== 0x77) return 1536;
   const fscod = packet[4] >> 6;
   const numblkscod = fscod === 3 ? 3 : (packet[4] >> 4) & 3;
@@ -255,7 +263,7 @@ async function hrtfBytes(dataset) {
 }
 
 /**
- * options: { mode: 'speaker' | 'binaural', gainDb, dataset, controls, port, live }。
+ * options: { mode: 'speaker' | 'binaural', codec: 'ec-3' | 'ac-4', gainDb, dataset, controls, port, live }。
  * port（MessagePort，接 joc/output-worklet.js）进入低延迟模式；之后重新打开（换模式或 HRTF）带 live: true 沿用它
  */
 async function open(options) {
@@ -264,31 +272,42 @@ async function open(options) {
   else if (!options.live) detachLive();
   if (options.controls) setControls(options.controls);
   const mine = epoch;
-  await Promise.all([loadEc3(), loadJoc()]);
+  const nextCodec = options.codec === 'ac-4' ? 'ac-4' : 'ec-3';
+  if (nextCodec === 'ac-4') {
+    await loadJoc();
+  } else {
+    await Promise.all([loadEc3(), loadJoc()]);
+  }
   const binaural = options.mode === 'binaural';
   const dataset = Object.hasOwn(HRTF_URLS, options.dataset) ? options.dataset : 'D2';
   let field = null;
   if (binaural) field = await hrtfBytes(dataset);
   // 加载期间又来了 open / close / abort（换曲或连续切换模式）：这次打开已经没用了。之后到返回都是同步的，不会再交错
   if (mine !== epoch) throw new DOMException('JOC stream was replaced while opening', 'AbortError');
+  codec = nextCodec;
   let fieldPtr = 0;
   if (field) {
     fieldPtr = alloc(field.length);
     new Uint8Array(joc.memory.buffer, fieldPtr, field.length).set(field);
   }
-  // profile 1 = mid（参考实现的默认），对象延迟 1473 样本，结束时最多保留 5 秒房间尾音
-  handle = joc.joc_open(binaural ? 1 : 0, Number(options.gainDb) || 0, 1, 1473, 5.0, fieldPtr, field ? field.length : 0);
+  if (codec === 'ac-4') {
+    // profile 1 = mid（参考实现的默认），结束时最多保留 5 秒房间尾音
+    handle = joc.ac4_open(binaural ? 1 : 0, Number(options.gainDb) || 0, 1, 5.0, fieldPtr, field ? field.length : 0);
+  } else {
+    // profile 1 = mid（参考实现的默认），对象延迟 1473 样本，结束时最多保留 5 秒房间尾音
+    handle = joc.joc_open(binaural ? 1 : 0, Number(options.gainDb) || 0, 1, 1473, 5.0, fieldPtr, field ? field.length : 0);
+  }
   if (fieldPtr) joc.joc_free(fieldPtr, field.length);
   if (!handle) {
     const message = jocError();
     if (binaural) hrtfCache = null; // 不缓存无效的 HRTF
     throw new Error(binaural ? `Binaural HRTF ${dataset} unavailable: ${message}` : message);
   }
-  restartEc3();
+  if (codec === 'ec-3') restartEc3();
   pendingSkip = 0;
   applyControls();
   if (live) restartLive();
-  return { mode: binaural ? 'binaural' : 'speaker', dataset, live: Boolean(live) };
+  return { mode: binaural ? 'binaural' : 'speaker', dataset, codec, live: Boolean(live) };
 }
 
 /** 合并主线程发来的控制项（只带变了的字段也可以）并交给渲染器 */
@@ -304,7 +323,8 @@ function applyControls() {
   if (!handle) return;
   new Float32Array(joc.memory.buffer, gainsPtr, 16).set(controls.gains);
   const c = controls;
-  check(joc.joc_set_controls(handle, c.yaw, c.pitch, c.roll, c.x, c.y, c.z, c.focus, c.height, gainsPtr));
+  const fn = codec === 'ac-4' ? joc.ac4_set_controls : joc.joc_set_controls;
+  check(fn(handle, c.yaw, c.pitch, c.roll, c.x, c.y, c.z, c.focus, c.height, gainsPtr));
 }
 
 function attachLive(port) {
@@ -376,7 +396,7 @@ async function pumpLive() {
       } else if (state.inputEnded && !state.ended) {
         // 输入结束：取出渲染器留着的帧（双耳内核的 961 个样本与房间尾音），播放端放完就停，不算断粮
         state.ended = true;
-        check(joc.joc_flush(handle));
+        check(codec === 'ac-4' ? joc.ac4_flush(handle) : joc.joc_flush(handle));
         pendingSkip = 0;
         const chunks = [];
         const stats = { peak: 0, over: 0 };
@@ -414,7 +434,7 @@ function sendLive(state, chunks, stats) {
     state.peakAt = state.out;
     self.postMessage({ event: 'peak', peak: stats.peak });
   }
-  if (state.scene && check(joc.joc_scene(handle, scenePtr))) {
+  if (state.scene && check(codec === 'ac-4' ? joc.ac4_scene(handle, scenePtr) : joc.joc_scene(handle, scenePtr))) {
     const data = new Float32Array(joc.memory.buffer, scenePtr, SCENE_FLOATS).slice();
     self.postMessage({ event: 'scene', epoch, at: state.out, lead: state.sent - state.played, data }, [data.buffer]);
   }
@@ -422,15 +442,19 @@ function sendLive(state, chunks, stats) {
 
 function close() {
   epoch++;
-  if (handle) joc.joc_close(handle);
+  if (handle) {
+    if (codec === 'ac-4') joc.ac4_close(handle);
+    else joc.joc_close(handle);
+  }
   handle = 0;
   pendingSkip = 0;
 }
 
 /** 取出渲染器里已经算好的立体声，按 pendingSkip 丢掉预滚部分，并统计峰值与超过满刻度的样本数 */
 function drain(chunks, stats) {
+  const pullFn = codec === 'ac-4' ? joc.ac4_pull : joc.joc_pull;
   for (;;) {
-    const produced = check(joc.joc_pull(handle, outPtr, PULL_FRAMES));
+    const produced = check(pullFn(handle, outPtr, PULL_FRAMES));
     if (!produced) return;
     const skip = Math.min(pendingSkip, produced);
     pendingSkip -= skip;
@@ -491,6 +515,13 @@ async function decodeFragment(buffer, onPart) {
 }
 
 function decodePacket(packet, chunks, stats) {
+  if (codec === 'ac-4') {
+    const at = scratch(packet.length);
+    new Uint8Array(joc.memory.buffer, at, packet.length).set(packet);
+    check(joc.ac4_push_frame(handle, at, packet.length));
+    drain(chunks, stats);
+    return;
+  }
   const ptr = ec3.packet(ctx, packet.length);
   if (!ptr) throw new Error('EC-3 packet allocation failed');
   ec3.module.HEAPU8.set(packet, ptr);
@@ -523,7 +554,7 @@ function decodePacket(packet, chunks, stats) {
 /** 输入结束：取出渲染器还留着的帧（双耳内核延迟的 961 个样本，以及房间尾音） */
 function finish() {
   if (!handle) return { rate: RATE, samples: 0, frames: new Float32Array(0), peak: 0, over: 0 };
-  check(joc.joc_flush(handle));
+  check(codec === 'ac-4' ? joc.ac4_flush(handle) : joc.joc_flush(handle));
   const chunks = [];
   const stats = { peak: 0, over: 0 };
   pendingSkip = 0;
@@ -557,13 +588,17 @@ self.onmessage = async ({ data }) => {
       case 'reset':
         if (!handle) throw new Error('JOC stream is not open');
         epoch++;
-        check(joc.joc_reset(handle));
-        restartEc3();
+        if (codec === 'ac-4') {
+          check(joc.ac4_reset(handle));
+        } else {
+          check(joc.joc_reset(handle));
+          restartEc3();
+        }
         pendingSkip = Math.max(0, Math.round(Number(data.skipFrames)) || 0);
         if (live) restartLive();
         break;
       case 'gain':
-        if (handle) check(joc.joc_set_gain(handle, Number(data.gainDb) || 0));
+        if (handle) check((codec === 'ac-4' ? joc.ac4_set_gain : joc.joc_set_gain)(handle, Number(data.gainDb) || 0));
         break;
       case 'controls':
         setControls(data.controls || {});

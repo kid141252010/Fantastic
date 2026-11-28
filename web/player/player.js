@@ -91,12 +91,14 @@
   function jocSettings() { return jocStore ? jocStore.get() : JOC_OFF; }
 
   function isEc3(codecs) { return /^(ec-3|ec3)$/i.test(String(codecs)); }
+  function isAc4(codecs) { return /^(ac-4|ac4)$/i.test(String(codecs)); }
+  function isJocCodec(codecs) { return isEc3(codecs) || isAc4(codecs); }
   /**
-   * 空间音频曲目：E-AC-3（全景声）与它的双耳、立体声缩混 AAC。三者都由全景声混音而来，响度相近，
+   * 空间音频曲目：E-AC-3 / AC-4（全景声）与它的双耳、立体声缩混 AAC。它们都由全景声混音而来，响度相近，
    * 通常比立体声母带小 8–9 dB；「非空间音频音量」（stereoGain）只衰减其余曲目
    */
   function isSpatialItem(item) {
-    if (isEc3(item.codecs)) return true;
+    if (isJocCodec(item.codecs)) return true;
     const group = (item.variant && item.variant.group_id) || item.id || '';
     return /binaural|downmix/i.test(group);
   }
@@ -133,7 +135,10 @@
   /** QQ files are unencrypted: JOC only needs the renderer, native files use HTMLAudio capabilities. */
   function detectQqModes(item, audio) {
     if (item.playback === 'download') return [];
-    const mime = item.contentType || (item.playback === 'joc' ? 'audio/mp4; codecs="ec-3"' : 'audio/mpeg');
+    const fallbackMime = item.playback === 'joc'
+      ? (isAc4(item.codec || item.codecs) ? 'audio/mp4; codecs="ac-4"' : 'audio/mp4; codecs="ec-3"')
+      : 'audio/mpeg';
+    const mime = item.contentType || fallbackMime;
     // Uncached probe; qq.mjs's cached supportsMime must not be reused here because
     // mode planning has to reflect the browser's current answer. The JOC branch
     // follows the AM ec-3 MediaSource policy and avoids canPlayType's "maybe"
@@ -303,11 +308,12 @@
     return [g.includes('binaural') && t('q.binaural'), g.includes('downmix') && t('q.downmix')].filter(Boolean);
   }
 
-  /** CODECS 的通用名称：alac → ALAC，ec-3 → E-AC-3，mp4a.40.2 → AAC-LC 等 */
+  /** CODECS 的通用名称：alac → ALAC，ec-3 → E-AC-3，ac-4 → AC-4，mp4a.40.2 → AAC-LC 等 */
   function codecName(codecs) {
     const c = String(codecs || '').toLowerCase();
     if (c === 'alac') return 'ALAC';
     if (c === 'ec-3' || c === 'ec3') return 'E-AC-3';
+    if (c === 'ac-4' || c === 'ac4') return 'AC-4';
     if (c === 'ac-3') return 'AC-3';
     if (c === 'mp4a.40.2') return 'AAC-LC';
     if (c === 'mp4a.40.5') return 'HE-AAC';
@@ -1034,10 +1040,11 @@
    *   - 输出模式、HRTF 与衰减可以在播放中修改（reconfigure / setGain）。
    */
   class JocEngine extends PcmEngine {
-    /** options: { mode: 'speaker' | 'binaural', gainDb, dataset, onClip(peak) } */
+    /** options: { mode: 'speaker' | 'binaural', codec: 'ec-3' | 'ac-4', gainDb, dataset, onClip(peak) } */
     constructor(onUpdate, onError, onEnded, options) {
       super(onUpdate, onError, onEnded);
       this.mode = options.mode === 'binaural' ? 'binaural' : 'speaker';
+      this.codec = options.codec === 'ac-4' ? 'ac-4' : 'ec-3';
       this.gainDb = Number(options.gainDb) || 0;
       this.dataset = options.dataset;
       this.controls = options.controls || null;
@@ -1061,6 +1068,7 @@
       this.controller = new AbortController();
       this.playlist = await openTrack(url, this.controller.signal);
       if (gen !== this.generation) throw new DOMException('stale', 'AbortError');
+      if (this.playlist && this.playlist.codec) this.codec = this.playlist.codec;
       this.duration = this.playlist.duration;
       this.decoder = new JocDecoder();
       await this.openDecoder();
@@ -1072,7 +1080,7 @@
 
     /** 打开（或换模式后重新打开）Worker 里的渲染器 */
     openDecoder() {
-      return this.decoder.open({ mode: this.mode, gainDb: this.gainDb, dataset: this.dataset, controls: this.controls });
+      return this.decoder.open({ mode: this.mode, codec: this.codec, gainDb: this.gainDb, dataset: this.dataset, controls: this.controls });
     }
 
     setGain(gainDb) {
@@ -1271,7 +1279,7 @@
     get live() { return Boolean(this.node); }
 
     async openDecoder() {
-      const options = { mode: this.mode, gainDb: this.gainDb, dataset: this.dataset, controls: this.controls };
+      const options = { mode: this.mode, codec: this.codec, gainDb: this.gainDb, dataset: this.dataset, controls: this.controls };
       const transfer = [];
       if (!this.liveTried) {
         this.liveTried = true;
@@ -2564,7 +2572,7 @@
         el(doc, 'div', 'quality-panel-head', qualityIcon(qq ? qualityBadge(v) : c.badge, doc), el(doc, 'span', 'quality-panel-label', c.label || codecName(c.codecs))),
         el(doc, 'dl', 'quality-panel-specs', ...rows.flatMap(([key, value]) => [el(doc, 'dt', '', key), el(doc, 'dd', '', value)])),
         el(doc, 'p', 'quality-panel-note', note),
-        ...(isEc3(c.codecs) && jocStore ? this.jocSwitch(doc) : []),
+        ...(isJocCodec(c.codecs) && jocStore ? this.jocSwitch(doc) : []),
         el(doc, 'h3', 'quality-panel-heading', t('player.qualities')),
         list);
       const state = this.variantsOf(c);
@@ -2687,7 +2695,7 @@
       this.jocMode = joc.mode;
       this.applyVolume();
       if (!c) return;
-      if (isEc3(c.codecs)) {
+      if (isJocCodec(c.codecs)) {
         const pcm = this.pcm instanceof JocEngine ? this.pcm : null;
         const mode = joc.mode === 'binaural' ? 'binaural' : 'speaker';
         const reconfigure = pcm && (mode !== pcm.mode || (mode === 'binaural' && joc.dataset !== pcm.dataset));
@@ -3923,6 +3931,7 @@
           : { ...this.spatial, track: item.track, gains: new Array(16).fill(1), solo: [], mute: [] };
         engine = new JocLiveEngine(onUpdate, onError, onEnded, {
           mode: mode === 'jocbin' ? 'binaural' : 'speaker',
+          codec: isAc4(item?.codecs || item?.codec) ? 'ac-4' : 'ec-3',
           gainDb: joc.gain,
           dataset: joc.dataset,
           controls,
@@ -4083,7 +4092,7 @@
       this.pendingTrack = null;
       this.jocMode = jocSettings().mode;
       this.jocStale = false;
-      this.jocFallback = isEc3(item.codecs) && jocSettings().mode === 'binaural' && mode !== 'jocbin';
+      this.jocFallback = isJocCodec(item.codecs) && jocSettings().mode === 'binaural' && mode !== 'jocbin';
       this.current = { ...item, mode, duration: voice.duration };
       this.applyVolume();
       this.showError('');

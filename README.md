@@ -45,7 +45,7 @@ QQ page URLs use the site origin followed by the original link, for example `/ht
 - **Search** across songs, albums, artists, playlists and MVs, with live suggestions; switch sources on the search page.
 - **20 quality tiers**, grouped with file sizes, each playable or downloadable:
   - Lossless: Hi-Res, FLAC; spatial: Master (臻品母带), 360 Spatial (V1 / V2), 360 Reality Audio
-  - Dolby Atmos: AC-4 (DA / AJOC 448 / AJOC 1500, played natively where the browser supports it) and Dolby EAC3 (rendered in the browser through the JOC pipeline)
+  - Dolby Atmos: AC-4 (DA / AJOC 448 / AJOC 1500) and Dolby EAC3 — decoded and rendered in the browser via WebAssembly (Speaker 2.0 / Binaural HRTF) or played natively where supported
   - DTS 5.1 / DTS:X, plus AAC, OGG and MP3 320 / 128
   - Automatic fallback when the preferred quality is unavailable
 - **Lyrics** from the AMLL lyrics database → TTML → QRC → LRC; word-by-word QRC with translation and romanization, and raw QRC / translation / romanization downloads.
