@@ -14,8 +14,8 @@ pub struct Config {
     pub wrapper_url: String,
     pub amll_api: String,
     pub qq_api: Option<String>,
-    /// QQ 音频直链的目标 CDN 域名；None 表示保留上游给的域名
-    pub qq_cdn: Option<String>,
+    /// QQ 音频直链的地域 CDN 策略
+    pub qq_cdn: crate::qq::CdnMode,
     /// amp-api 连接空闲时的保活周期，0 表示不发送保活请求
     pub amp_keepalive: Duration,
     /// amp-api 响应缓存容量（MB），0 表示不缓存
@@ -65,7 +65,7 @@ impl AppState {
             wrapper_url: wrapper_url.trim_end_matches('/').to_string(),
             amll_api: "https://api.amll.dev".into(),
             qq_api: None,
-            qq_cdn: Some(crate::qq::QQ_CDN_DEFAULT.to_owned()),
+            qq_cdn: crate::qq::CdnMode::Auto,
             amp_keepalive: Duration::from_secs(30),
             amp_cache_mb: 32,
             wrapper_rate: 24,
@@ -119,7 +119,7 @@ impl AppState {
         let client_limit = crate::limit::ClientLimit::new(config.client_rate, config.client_concurrency, config.client_ip_header.as_deref());
         let qq = config.qq_api.as_deref()
             .map(|base| {
-                crate::qq::Qq::new(base, &config.amll_api, qq_proxy, config.qq_cdn.as_deref())
+                crate::qq::Qq::new(base, &config.amll_api, qq_proxy, config.qq_cdn.clone())
             })
             .transpose()?;
         let ncm = crate::ncm::Ncm::new(ncm_cookie, &config.amll_api)?;
