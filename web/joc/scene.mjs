@@ -138,6 +138,7 @@ class SpatialScene {
     this.gesture = null;
     this.hover = -1;
     this.keys = new Set();
+    this.interactiveSources = new Set();
     /** 每个对象显示用的位置（平滑过）、电平与轨迹 */
     this.objects = Array.from({ length: OBJECTS }, () => ({ pos: null, target: null, level: 0, trail: [] }));
     this.lfe = 0;
@@ -149,12 +150,20 @@ class SpatialScene {
     this.unsubscribe = player.onSpatial((state) => { this.state = state; this.renderMixer(); this.renderReadout(); });
     // 键盘只在声场里处理（焦点在对话框内），处理过的键不再传给播放器的快捷键；空格等照常播放 / 暂停
     this.root.addEventListener('keydown', (e) => this.keyDown(e));
-    this.root.addEventListener('keyup', (e) => this.keys.delete(e.code));
-    this.root.addEventListener('focusout', () => { if (!this.root.contains(document.activeElement)) this.keys.clear(); });
+    this.root.addEventListener('keyup', (e) => {
+      if (this.keys.delete(e.code) && !this.keys.size) this.setInteractiveSource('keys', false);
+    });
+    this.root.addEventListener('focusout', () => {
+      if (!this.root.contains(document.activeElement) && this.keys.size) {
+        this.keys.clear();
+        this.setInteractiveSource('keys', false);
+      }
+    });
     this.onLockChange = () => {
       const locked = document.pointerLockElement === this.canvas;
       if (locked === this.locked) return;
       this.locked = locked;
+      this.setInteractiveSource('look', locked);
       if (locked) {
         this.lockedAt = performance.now();
       } else {
@@ -469,7 +478,9 @@ class SpatialScene {
       point.y = e.clientY;
       const g = this.gesture;
       if (!g) return;
-      if (!g.moved && Math.hypot(e.clientX - g.x, e.clientY - g.y) > 4) g.moved = true;
+      if (!g.moved && Math.hypot(e.clientX - g.x, e.clientY - g.y) > 4) {
+        g.moved = true;
+      }
       if (!g.moved) return;
       if (this.pointers.size > 1) {
         // 双指：平均位移转视角，张合缩放
@@ -480,9 +491,11 @@ class SpatialScene {
       } else if (g.camera) {
         this.orbit(dx, dy);
       } else if (this.walk) {
+        this.setInteractiveSource('drag', true);
         this.drag(dx, dy);
       } else {
         // 向右拖头向右转（yaw 减小），向上拖抬头
+        this.setInteractiveSource('drag', true);
         this.pose({
           yaw: (this.state.yaw || 0) - dx * 0.008,
           pitch: clamp((this.state.pitch || 0) - dy * 0.006, -PITCH_LIMIT, PITCH_LIMIT),
@@ -493,7 +506,10 @@ class SpatialScene {
       this.hand.held = false;
       const g = this.gesture;
       this.pointers.delete(e.pointerId);
-      if (this.pointers.size === 0) this.gesture = null;
+      if (this.pointers.size === 0) {
+        this.gesture = null;
+        this.setInteractiveSource('drag', false);
+      }
       if (!g || g.moved || e.type === 'pointercancel' || g.camera) return;
       const index = this.pick(e.clientX, e.clientY);
       if (index >= 0) this.toggle(g.alt || e.altKey ? 'mute' : 'solo', index + 1);
@@ -544,6 +560,7 @@ class SpatialScene {
 
   orbit(dx, dy) {
     if (this.view === 'first') {
+      this.setInteractiveSource('drag', true);
       this.pose({ yaw: (this.state.yaw || 0) - dx * 0.006, pitch: clamp((this.state.pitch || 0) - dy * 0.005, -PITCH_LIMIT, PITCH_LIMIT) });
       return;
     }
@@ -573,6 +590,14 @@ class SpatialScene {
     });
   }
 
+  /** 键盘、听者拖动与锁定视角共用交互档，最后一个来源结束后才进入播放器的回切宽限期 */
+  setInteractiveSource(source, active) {
+    const wasActive = this.interactiveSources.size > 0;
+    if (active) this.interactiveSources.add(source); else this.interactiveSources.delete(source);
+    const isActive = this.interactiveSources.size > 0;
+    if (isActive !== wasActive) this.player.setSpatialInteractive(isActive);
+  }
+
   keyDown(e) {
     if (e.key === 'Escape') {
       e.preventDefault();
@@ -593,7 +618,11 @@ class SpatialScene {
       case 'r': case 'R': this.resetPose(); break;
       case 'v': case 'V': this.setView(this.view === 'first' ? 'orbit' : 'first'); break;
       default:
-        if (['KeyW', 'KeyA', 'KeyS', 'KeyD'].includes(e.code)) { this.keys.add(e.code); break; }
+        if (['KeyW', 'KeyA', 'KeyS', 'KeyD'].includes(e.code)) {
+          this.keys.add(e.code);
+          this.setInteractiveSource('keys', true);
+          break;
+        }
         return;
     }
     e.preventDefault();
@@ -602,6 +631,7 @@ class SpatialScene {
 
   close() {
     cancelAnimationFrame(this.frame);
+    for (const source of this.interactiveSources) this.setInteractiveSource(source, false);
     if (this.gyro) window.removeEventListener('deviceorientation', this.gyro.listener);
     this.unlock();
     document.removeEventListener('pointerlockchange', this.onLockChange);

@@ -247,8 +247,7 @@ impl BinauralRuntime {
                 position[2] = (position[2] * height).clamp(-1.0, 1.0);
             }
         }
-        // The reference sets every source on every block and relies on the
-        // per-object crossfade, so `fade` is on.
+        // 每块同步对象参数；真正变化时交叉淡化，静态路径由渲染器的 memo 直接保留。
         let fade = true;
         self.renderer.set_source(
             0,

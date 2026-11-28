@@ -86,6 +86,7 @@
    * app.mjs 用 useJocSettings 接上 prefs.mjs 的 'joc' 分组（{ get, set }）；没有接上时（如 Node 测试）按关闭处理
    */
   const JOC_OFF = { mode: 'off', gain: 0, dataset: 'D2' };
+  const JOC_START_LEAD = 24000;
   let jocStore = null;
   function useJocSettings(store) { jocStore = store; }
   function jocSettings() { return jocStore ? jocStore.get() : JOC_OFF; }
@@ -1048,6 +1049,7 @@
       this.gainDb = Number(options.gainDb) || 0;
       this.dataset = options.dataset;
       this.controls = options.controls || null;
+      this.interactive = false;
       this.onClip = options.onClip || null;
       this.envelope = this.context.createGain();
       this.envelope.connect(this.mix);
@@ -1097,6 +1099,13 @@
       if (this.decoder) this.decoder.post('controls', { controls });
     }
 
+    /** 声场拖动时缩短 Worker 提前量；输入在播放器侧留出短暂宽限，避免快速来回切档 */
+    setInteractive(value) {
+      this.interactive = Boolean(value);
+      if (this.decoder) this.decoder.post('interactive', { value: this.interactive });
+      if (this.interactive && this.primedWaiter) this.primedWaiter.interactive();
+    }
+
     /** 对象场景只有低延迟模式提供 */
     sceneAt() { return null; }
     watchScene() {}
@@ -1142,7 +1151,8 @@
           await this.openDecoder();
           this.reopen = false;
         }
-        await this.decoder.reset(skip);
+        const reset = await this.decoder.reset(skip);
+        if (reset && Number.isInteger(reset.epoch)) this.epoch = reset.epoch;
       };
     }
 
@@ -1246,9 +1256,8 @@
   }
 
   /**
-   * JOC 的低延迟播放：双耳的交互控制（转头、走动、独奏 / 静音、聚焦、高度，见 joc/scene.mjs）要立刻听到，
-   * 不能像 JocEngine 那样提前约 20 秒渲染排好。Worker 只把分段拆成 syncframe 排队，按 AudioWorklet
-   * （joc/output-worklet.js）报回的播放进度逐帧渲染，提前约 0.1 秒；音频经 MessagePort 直接从 Worker 送到 AudioWorklet。
+   * JOC 的实时播放：Worker 只把分段拆成 syncframe 排队，按 AudioWorklet（joc/output-worklet.js）报回的播放进度按需渲染；
+   * 平时提前 2.5 秒稳健补满，空间声场拖动期间缩到约 0.1 秒，音频经 MessagePort 直接从 Worker 送到 AudioWorklet。
    *   - 时钟仍按上下文时间：一轮（打开或 Seek）的第一批音频渲染好（primed）后，告诉 AudioWorklet 从 anchorContextTime 开始；
    *     断粮时 AudioWorklet 报回缺的帧数，时钟整体顺延；
    *   - 输入结束时 Worker 送出渲染器留着的帧，播放在时长处结束（PcmEngine 的计时器）；
@@ -1267,6 +1276,13 @@
       this.scenes = [];
       this.sceneBase = 0;
       this.sceneWanted = false;
+      this.visibilityDocument = global.document || null;
+      this.onVisibilityChange = () => {
+        if (this.decoder) this.decoder.post('visibility', { hidden: Boolean(this.visibilityDocument.hidden) });
+      };
+      if (this.visibilityDocument && this.visibilityDocument.addEventListener) {
+        this.visibilityDocument.addEventListener('visibilitychange', this.onVisibilityChange);
+      }
     }
 
     /**
@@ -1278,8 +1294,24 @@
     /** 是否走低延迟（AudioWorklet）；load 之后才确定 */
     get live() { return Boolean(this.node); }
 
+    /** 进入空间交互时清除已排队的旧控制音频，并从当前播放位置按新控制重渲染 */
+    setInteractive(value) {
+      const interactive = Boolean(value);
+      const entering = interactive && !this.interactive;
+      if (!entering || !this.node || !this.playlist || !this.decoder || this.epoch < 0) {
+        super.setInteractive(interactive);
+        return;
+      }
+      this.interactive = true;
+      this.decoder.post('interactive', { value: true });
+      const pending = this.seek(this.currentTime);
+      if (pending) pending.catch(() => {});
+    }
+
     async openDecoder() {
-      const options = { mode: this.mode, codec: this.codec, gainDb: this.gainDb, dataset: this.dataset, controls: this.controls };
+      const options = { mode: this.mode, codec: this.codec, gainDb: this.gainDb, dataset: this.dataset,
+        controls: this.controls, interactive: this.interactive };
+      this.onVisibilityChange();
       const transfer = [];
       if (!this.liveTried) {
         this.liveTried = true;
@@ -1290,6 +1322,7 @@
         options.live = this.live;
       }
       const result = await this.decoder.open(options, transfer);
+      if (Number.isInteger(result.epoch)) this.epoch = result.epoch;
       if (this.sceneWanted) this.decoder.post('scene', { on: true });
       return result;
     }
@@ -1316,11 +1349,12 @@
     event(data) {
       const waiter = this.primedWaiter;
       if (data.event === 'primed') {
-        this.primedWaiter = null;
-        if (waiter) waiter.primed(data.epoch);
+        if (waiter) waiter.primed(data.epoch, data.lead || 0, Boolean(data.ended), Boolean(data.interactive));
+      } else if (data.event === 'lead') {
+        this.lead = data.lead;
+        if (waiter) waiter.lead(data.epoch, data.lead || 0, Boolean(data.ended), Boolean(data.interactive));
       } else if (data.event === 'error' && waiter) {
         // 第一批之前出错：交给等着的 load / Seek（换下一种播放方式或报错）
-        this.primedWaiter = null;
         waiter.fail(new Error(data.error));
       } else if (data.event === 'scene') {
         if (data.epoch !== this.epoch) return;
@@ -1397,15 +1431,41 @@
       let decoding = false;
       const started = first ? new Promise((resolve, reject) => { ready = { resolve, reject }; }) : null;
       if (first) {
+        const gateStarted = Date.now();
         // 上一轮还没等到就又 Seek 了：让它结束（它的 Seek 已过时）
         if (this.primedWaiter) this.primedWaiter.primed(null);
-        this.primedWaiter = {
-          primed: (epoch) => {
+        const waiter = {
+          epoch: this.epoch,
+          primedSeen: false,
+          timer: null,
+          finish: (epoch) => {
+            if (this.primedWaiter !== waiter) return;
+            clearTimeout(waiter.timer);
+            this.primedWaiter = null;
             if (epoch !== null && gen === this.generation) this.start(epoch);
             if (ready) { ready.resolve(); ready = null; }
           },
-          fail: (error) => { if (ready) { ready.reject(error); ready = null; } },
+          primed: (epoch, lead = 0, ended = false, interactive = false) => {
+            if (epoch === null) { waiter.finish(null); return; }
+            waiter.epoch = epoch;
+            waiter.primedSeen = true;
+            if (interactive || lead >= JOC_START_LEAD || ended) { waiter.finish(epoch); return; }
+            // 第一批音频已到但准备量不足时最多等 1.5 秒；超时也起播，避免等待卡住。
+            const remaining = Math.max(0, 1500 - (Date.now() - gateStarted));
+            if (!remaining) { waiter.finish(epoch); return; }
+            waiter.timer = setTimeout(() => waiter.finish(waiter.epoch), remaining);
+          },
+          lead: (epoch, lead, ended, interactive = false) => {
+            if (epoch === waiter.epoch && (interactive || lead >= JOC_START_LEAD || ended)) waiter.finish(epoch);
+          },
+          interactive: () => { if (waiter.primedSeen) waiter.finish(waiter.epoch); },
+          fail: (error) => {
+            clearTimeout(waiter.timer);
+            if (this.primedWaiter === waiter) this.primedWaiter = null;
+            if (ready) { ready.reject(error); ready = null; }
+          },
         };
+        this.primedWaiter = waiter;
       }
       const run = (async () => {
         const { segments } = this.playlist;
@@ -1429,7 +1489,16 @@
         }
       })().catch((error) => {
         // 第一批之前出错交给调用方（换下一种播放方式或报错），之后的错误在这里报告
-        if (ready && gen === this.generation) { ready.reject(error); ready = null; return; }
+        if (ready && gen === this.generation) {
+          const pending = ready;
+          ready = null;
+          if (this.primedWaiter) {
+            clearTimeout(this.primedWaiter.timer);
+            this.primedWaiter = null;
+          }
+          pending.reject(error);
+          return;
+        }
         if (error.name !== 'AbortError' && gen === this.generation) this.failLoading(error, decoding);
       }).finally(() => {
         this.busy = false;
@@ -1440,6 +1509,10 @@
     }
 
     destroy() {
+      if (this.visibilityDocument && this.visibilityDocument.removeEventListener) {
+        this.visibilityDocument.removeEventListener('visibilitychange', this.onVisibilityChange);
+      }
+      if (this.primedWaiter) this.primedWaiter.primed(null);
       if (this.node) {
         this.node.port.postMessage({ close: true });
         this.node.disconnect();
@@ -2423,6 +2496,8 @@
        */
       this.spatial = { yaw: 0, pitch: 0, roll: 0, x: 0, y: 0, z: 0, focus: 0, height: 1, gains: new Array(16).fill(1), solo: [], mute: [] };
       this.spatialListeners = new Set();
+      this.spatialInteractive = false;
+      this.spatialInteractionTimer = null;
       /** 声场界面是否打开（铺满视口，盖住歌词界面；歌词界面据此停掉自己的动画，见 lyrics/panel.mjs） */
       this.sceneOpen = false;
       this.sceneListeners = new Set();
@@ -2658,6 +2733,26 @@
 
     /** 声场界面用：正在用 JOC 播放时的引擎（JocLiveEngine，live 为 true 时低延迟）；否则为 null */
     spatialEngine() { return this.pcm instanceof JocEngine ? this.pcm : null; }
+
+    /** 声场拖动结束后等 5 秒再回稳健档；新的拖动会取消这次回切 */
+    setSpatialInteractive(on) {
+      if (this.spatialInteractionTimer !== null) clearTimeout(this.spatialInteractionTimer);
+      this.spatialInteractionTimer = null;
+      if (on) {
+        const changed = !this.spatialInteractive;
+        this.spatialInteractive = true;
+        const engine = this.spatialEngine();
+        if (changed && engine) engine.setInteractive(true);
+        return;
+      }
+      if (!this.spatialInteractive) return;
+      this.spatialInteractionTimer = setTimeout(() => {
+        this.spatialInteractionTimer = null;
+        this.spatialInteractive = false;
+        const engine = this.spatialEngine();
+        if (engine) engine.setInteractive(false);
+      }, 5000);
+    }
 
     /** 修改双耳的交互控制（只带变了的字段），立即交给引擎，并通知声场界面 */
     setSpatial(patch) {
@@ -3937,6 +4032,7 @@
           controls,
           onClip: current(() => this.showError(() => t('player.jocClip'))),
         });
+        engine.setInteractive(this.spatialInteractive);
       }
       engine.onRecover = current(() => this.showError(''));
       engine.onRetry = current(() => this.renderError());

@@ -975,6 +975,11 @@ impl BinauralRenderer {
                 && state.memo_position == *position
                 && state.memo_effective == effective
         };
+        // 参数未变时保留路径与淡化进度；显式 fade=false 仍可立即结束尚未完成的淡化。
+        let state = &self.sources[source];
+        if memo_hit && (fade || (state.fade_total == 0 && state.late_fade_total == 0)) {
+            return Ok(());
+        }
         let mut late_send = 0.0;
         let (direction, radius) = normalize_adm(position);
         let distance = MINIMUM_DISTANCE.max(radius * DISTANCE_M[profile as usize]);
@@ -1623,6 +1628,117 @@ mod hrtf_regression {
         let up = rotate(&head_rotation(0.0, std::f64::consts::FRAC_PI_2, 0.0), &[0.0, 1.0, 0.0]);
         assert!((up[2] + 1.0).abs() < 1e-12, "looking up puts the front below: {up:?}");
         assert_eq!(head_rotation(0.0, 0.0, 0.0), IDENTITY);
+    }
+
+    #[test]
+    fn static_sources_do_not_restart_crossfades_or_change_samples() {
+        std::thread::Builder::new()
+            .stack_size(64 * 1024 * 1024)
+            .spawn(|| {
+                let field = load_jochrtf(D2).expect("D2");
+                let position = [0.0, 1.0, 0.0];
+                let mut optimized = Box::new(BinauralRenderer::new());
+                let mut reference = Box::new(BinauralRenderer::new());
+                for renderer in [optimized.as_mut(), reference.as_mut()] {
+                    renderer
+                        .configure_kernels(&builtin_kernels())
+                        .expect("kernels");
+                    renderer.configure_field(&field).expect("field");
+                    renderer
+                        .configure_room(&RoomConstants::default())
+                        .expect("room");
+                    renderer
+                        .set_source(0, &position, 1, 0.5, true, true, false)
+                        .expect("LFE source");
+                    renderer
+                        .set_source(1, &position, 1, 1.0, true, false, false)
+                        .expect("source");
+                }
+
+                let mut input = vec![0.0; 512 * CHANNELS];
+                let mut optimized_output = vec![0.0; 512 * 2];
+                let mut reference_output = vec![0.0; 512 * 2];
+                let mut output_energy = 0.0;
+                for block in 0..12 {
+                    for sample in 0..512 {
+                        input[sample * CHANNELS] = ((block * 512 + sample) as f64 * 0.007).cos();
+                        input[sample * CHANNELS + 1] =
+                            ((block * 512 + sample) as f64 * 0.013).sin();
+                    }
+                    for source in 0..2 {
+                        let special_lfe = source == 0;
+                        let gain = if special_lfe { 0.5 } else { 1.0 };
+                        optimized
+                            .set_source(source, &position, 1, gain, true, special_lfe, true)
+                            .expect("static source");
+                        let paths = optimized.sources[source].current.as_ptr();
+                        optimized
+                            .set_source(source, &position, 1, gain, true, special_lfe, false)
+                            .expect("static source without fade");
+                        assert_eq!(optimized.sources[source].current.as_ptr(), paths);
+                        // 强制走原来的克隆与淡化分支，作为修复前逐块重复 set_source 的对照。
+                        reference.sources[source].memo_valid = false;
+                        reference
+                            .set_source(source, &position, 1, gain, true, special_lfe, true)
+                            .expect("reference source");
+                        assert_eq!(optimized.sources[source].fade_total, 0);
+                        assert_eq!(optimized.sources[source].late_fade_total, 0);
+                        assert_eq!(
+                            reference.sources[source].fade_total,
+                            if block == 0 {
+                                0
+                            } else {
+                                TRANSITION_SLOTS as i32
+                            }
+                        );
+                    }
+
+                    let optimized_count = optimized
+                        .process(&input, 512, 1.0, &mut optimized_output)
+                        .expect("optimized process");
+                    let reference_count = reference
+                        .process(&input, 512, 1.0, &mut reference_output)
+                        .expect("reference process");
+                    assert_eq!(optimized_count, reference_count);
+                    for (actual, expected) in optimized_output[..optimized_count * 2]
+                        .iter()
+                        .zip(&reference_output[..reference_count * 2])
+                    {
+                        output_energy += actual * actual;
+                        assert!(
+                            (actual - expected).abs() <= 1.0e-12,
+                            "{actual} != {expected}"
+                        );
+                    }
+                }
+                assert!(output_energy > 0.0);
+
+                let moved = [1.0, 0.0, 0.0];
+                for renderer in [optimized.as_mut(), reference.as_mut()] {
+                    renderer
+                        .set_source(1, &moved, 2, 0.75, true, false, true)
+                        .expect("changed source");
+                    assert_eq!(renderer.sources[1].fade_total, TRANSITION_SLOTS as i32);
+                    renderer
+                        .process(&input, HOP, 1.0, &mut optimized_output)
+                        .expect("fade step");
+                    assert_eq!(renderer.sources[1].fade_position, 1);
+                    assert_eq!(renderer.sources[1].late_fade_position, HOP as i64);
+                    renderer
+                        .set_source(1, &moved, 2, 0.75, true, false, true)
+                        .expect("same target");
+                    assert_eq!(renderer.sources[1].fade_position, 1);
+                    assert_eq!(renderer.sources[1].late_fade_position, HOP as i64);
+                    renderer
+                        .process(&input, 7 * HOP, 1.0, &mut optimized_output)
+                        .expect("finish fade");
+                    assert_eq!(renderer.sources[1].fade_total, 0);
+                    assert_eq!(renderer.sources[1].late_fade_total, 0);
+                }
+            })
+            .expect("spawn")
+            .join()
+            .expect("static source crossfade test");
     }
 
     #[test]
