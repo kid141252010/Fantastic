@@ -104,11 +104,11 @@ function liveTarget(interactive, hidden, adaptiveTarget) {
   return interactive || !hidden ? target : Math.max(HIDDEN_TARGET, target);
 }
 
-/** 播放端断粮后提高当前档位的自适应目标 */
-function stalledTarget(interactive, adaptiveTarget) {
+/** 播放端断粮后，以当前实际生效的提前量为基数提高自适应目标 */
+function stalledTarget(interactive, target) {
   return interactive
-    ? Math.min(LIVE_MAX_TARGET, adaptiveTarget + 1536)
-    : Math.min(ROBUST_MAX_TARGET, Math.ceil(adaptiveTarget * 1.5));
+    ? Math.min(LIVE_MAX_TARGET, target + 1536)
+    : Math.min(ROBUST_MAX_TARGET, Math.ceil(target * 1.5));
 }
 
 /** E-AC-3 syncframe 或 AC-4 帧在 48 kHz 下的样本数 */
@@ -367,7 +367,7 @@ function attachLive(port, interactive = false) {
     if (live !== state || data.epoch !== epoch) return;
     state.played = data.played;
     if (data.starved) {
-      state.adaptiveTarget = stalledTarget(state.interactive, state.adaptiveTarget);
+      state.adaptiveTarget = stalledTarget(state.interactive, state.target);
       state.target = liveTarget(state.interactive, state.hidden, state.adaptiveTarget);
     }
     pumpLive();

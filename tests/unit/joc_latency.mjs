@@ -8,7 +8,7 @@ const require = createRequire(import.meta.url);
 const { AmPlayer, JocLiveEngine } = require('../../web/player/player.js');
 const workerSource = readFileSync(new URL('../../web/joc/decode-worker.js', import.meta.url), 'utf8')
   .replace(/^import createEc3 from '\/assets\/ec3\/runtime\.mjs';\r?\n/m, '')
-  + '\nmodule.exports = { liveTarget, stalledTarget };';
+  + '\nmodule.exports = { liveTarget, stalledTarget, attachLive, detachLive, setVisibility, getLive: () => live };';
 const workerModule = { exports: {} };
 class MessageChannelStub {
   constructor() { this.port1 = {}; this.port2 = { postMessage() {} }; }
@@ -32,6 +32,33 @@ test('JOC Worker keeps the interactive lead tiers and raises hidden robust lead 
   assert.equal(liveTarget(true, true, 6 * 1536), 6 * 1536);
   assert.equal(liveTarget(false, true, 120000), 192000);
   assert.equal(liveTarget(false, true, 240000), 240000);
+});
+
+test('JOC Worker grows the effective hidden lead from 4 to 5 seconds on the first stall', () => {
+  const hiddenTarget = liveTarget(false, true, 120000);
+  assert.equal(hiddenTarget, 192000);
+  const afterFirstStall = stalledTarget(false, hiddenTarget);
+  assert.equal(afterFirstStall, 240000);
+  assert.equal(liveTarget(false, true, afterFirstStall), 240000);
+  assert.equal(stalledTarget(false, afterFirstStall), 240000);
+
+  const { attachLive, detachLive, setVisibility, getLive } = workerModule.exports;
+  const port = { postMessage() {}, close() {} };
+  setVisibility(true);
+  attachLive(port);
+  try {
+    assert.equal(getLive().target, 192000);
+    port.onmessage({ data: { epoch: 0, played: 0, starved: true } });
+    assert.equal(getLive().target, 240000);
+    assert.equal(getLive().adaptiveTarget, 240000);
+    setVisibility(false);
+    assert.equal(getLive().target, 240000);
+    port.onmessage({ data: { epoch: 0, played: 0, starved: true } });
+    assert.equal(getLive().target, 240000);
+  } finally {
+    detachLive();
+    setVisibility(false);
+  }
 });
 
 test('entering JOC live interaction seeks from the current position to rerender queued audio', () => {
