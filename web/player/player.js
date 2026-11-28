@@ -1294,6 +1294,20 @@
     /** 是否走低延迟（AudioWorklet）；load 之后才确定 */
     get live() { return Boolean(this.node); }
 
+    /** 进入空间交互时清除已排队的旧控制音频，并从当前播放位置按新控制重渲染 */
+    setInteractive(value) {
+      const interactive = Boolean(value);
+      const entering = interactive && !this.interactive;
+      if (!entering || !this.node || !this.playlist || !this.decoder || this.epoch < 0) {
+        super.setInteractive(interactive);
+        return;
+      }
+      this.interactive = true;
+      this.decoder.post('interactive', { value: true });
+      const pending = this.seek(this.currentTime);
+      if (pending) pending.catch(() => {});
+    }
+
     async openDecoder() {
       const options = { mode: this.mode, codec: this.codec, gainDb: this.gainDb, dataset: this.dataset,
         controls: this.controls, interactive: this.interactive };
