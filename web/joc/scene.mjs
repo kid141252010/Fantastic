@@ -123,6 +123,7 @@ class SpatialScene {
     /** 鼠标视角（开关）与当前是否锁定了鼠标 */
     this.look = false;
     this.locked = false;
+    this.pointerLockDragging = false;
     this.lockedAt = 0;
     this.unlockedAt = 0;
     this.stickOn = false;
@@ -136,6 +137,7 @@ class SpatialScene {
     this.frameDt = 0;
     this.pointers = new Map();
     this.gesture = null;
+    this.pointerDragging = false;
     this.hover = -1;
     this.keys = new Set();
     /** 每个对象显示用的位置（平滑过）、电平与轨迹 */
@@ -149,8 +151,15 @@ class SpatialScene {
     this.unsubscribe = player.onSpatial((state) => { this.state = state; this.renderMixer(); this.renderReadout(); });
     // 键盘只在声场里处理（焦点在对话框内），处理过的键不再传给播放器的快捷键；空格等照常播放 / 暂停
     this.root.addEventListener('keydown', (e) => this.keyDown(e));
-    this.root.addEventListener('keyup', (e) => this.keys.delete(e.code));
-    this.root.addEventListener('focusout', () => { if (!this.root.contains(document.activeElement)) this.keys.clear(); });
+    this.root.addEventListener('keyup', (e) => {
+      if (this.keys.delete(e.code) && !this.keys.size) this.player.setSpatialInteractive(false);
+    });
+    this.root.addEventListener('focusout', () => {
+      if (!this.root.contains(document.activeElement) && this.keys.size) {
+        this.keys.clear();
+        this.player.setSpatialInteractive(false);
+      }
+    });
     this.onLockChange = () => {
       const locked = document.pointerLockElement === this.canvas;
       if (locked === this.locked) return;
@@ -161,6 +170,10 @@ class SpatialScene {
         this.unlockedAt = performance.now();
         this.hand.held = false;
         this.hover = -1;
+        if (this.pointerLockDragging) {
+          this.pointerLockDragging = false;
+          this.player.setSpatialInteractive(false);
+        }
       }
       this.root.classList.toggle('is-locked', locked);
     };
@@ -454,6 +467,10 @@ class SpatialScene {
     canvas.addEventListener('pointermove', (e) => {
       if (this.locked) {
         // 锁定时光标不动，只有相对位移：向右移头向右转，向上移抬头
+        if (!this.pointerLockDragging && (e.movementX || e.movementY)) {
+          this.pointerLockDragging = true;
+          this.player.setSpatialInteractive(true);
+        }
         const speed = LOOK_SPEED * this.camera.fov;
         this.pose({
           yaw: (this.state.yaw || 0) - e.movementX * speed,
@@ -469,7 +486,11 @@ class SpatialScene {
       point.y = e.clientY;
       const g = this.gesture;
       if (!g) return;
-      if (!g.moved && Math.hypot(e.clientX - g.x, e.clientY - g.y) > 4) g.moved = true;
+      if (!g.moved && Math.hypot(e.clientX - g.x, e.clientY - g.y) > 4) {
+        g.moved = true;
+        this.pointerDragging = true;
+        this.player.setSpatialInteractive(true);
+      }
       if (!g.moved) return;
       if (this.pointers.size > 1) {
         // 双指：平均位移转视角，张合缩放
@@ -494,6 +515,10 @@ class SpatialScene {
       const g = this.gesture;
       this.pointers.delete(e.pointerId);
       if (this.pointers.size === 0) this.gesture = null;
+      if (this.pointers.size === 0 && this.pointerDragging) {
+        this.pointerDragging = false;
+        this.player.setSpatialInteractive(false);
+      }
       if (!g || g.moved || e.type === 'pointercancel' || g.camera) return;
       const index = this.pick(e.clientX, e.clientY);
       if (index >= 0) this.toggle(g.alt || e.altKey ? 'mute' : 'solo', index + 1);
@@ -593,7 +618,12 @@ class SpatialScene {
       case 'r': case 'R': this.resetPose(); break;
       case 'v': case 'V': this.setView(this.view === 'first' ? 'orbit' : 'first'); break;
       default:
-        if (['KeyW', 'KeyA', 'KeyS', 'KeyD'].includes(e.code)) { this.keys.add(e.code); break; }
+        if (['KeyW', 'KeyA', 'KeyS', 'KeyD'].includes(e.code)) {
+          const wasIdle = this.keys.size === 0;
+          this.keys.add(e.code);
+          if (wasIdle) this.player.setSpatialInteractive(true);
+          break;
+        }
         return;
     }
     e.preventDefault();
@@ -602,6 +632,7 @@ class SpatialScene {
 
   close() {
     cancelAnimationFrame(this.frame);
+    if (this.pointerDragging || this.pointerLockDragging || this.keys.size) this.player.setSpatialInteractive(false);
     if (this.gyro) window.removeEventListener('deviceorientation', this.gyro.listener);
     this.unlock();
     document.removeEventListener('pointerlockchange', this.onLockChange);

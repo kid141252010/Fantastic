@@ -8,9 +8,9 @@
  * Seek 是 reset + 预滚（前 skipFrames 帧不输出），与参考实现的流式 API 相同。
  * Worker 在曲目之间复用：open 关闭旧的流，按需重启 EC-3 解码器，两个 wasm 与 HRTF 不必重新加载。
  *
- * 低延迟模式（open 带 port，AudioWorklet 可用时）：分段只拆出 syncframe 排队，按 joc/output-worklet.js 报回的播放进度
- * 逐帧渲染，只比播放位置提前约 0.1 秒，头部朝向、站位、独奏等交互控制（controls）立刻听得到。渲染好的立体声经 port
- * 直接交给 AudioWorklet（不经主线程），主线程只收 primed / scene / peak / error 事件。
+ * 实时模式（open 带 port，AudioWorklet 可用时）：分段只拆出 syncframe 排队，按 joc/output-worklet.js 报回的播放进度
+ * 按需渲染；默认稳健提前量 2.5 秒，空间交互期间缩到约 0.1 秒。渲染好的立体声经 port 直接交给 AudioWorklet（不经主线程），
+ * 主线程只收 primed / lead / scene / peak / error 事件。
  */
 import createEc3 from '/assets/ec3/runtime.mjs';
 
@@ -47,6 +47,13 @@ const BATCH_PACKETS = 24;
 /** 低延迟模式比播放位置提前渲染的帧数：起始约 96 ms，播放端断粮时每次加一个 syncframe，最多约 0.4 秒 */
 const LIVE_TARGET = 3 * 1536;
 const LIVE_MAX_TARGET = 12 * 1536;
+/** 稳健模式比播放位置提前 2.5 秒，断粮时按 1.5 倍增长，最多 5 秒 */
+const ROBUST_TARGET = 120000;
+const ROBUST_MAX_TARGET = 240000;
+/** 页面隐藏时的稳健缓冲下限（4 秒） */
+const HIDDEN_TARGET = 4 * RATE;
+/** 稳健模式起播至少准备 0.5 秒音频 */
+const START_LEAD = RATE / 2;
 /** joc_scene 写出的 float 数（crates/joc-wasm 的 SCENE_FLOATS）：15 个对象的位置、16 路电平与听者站位 */
 const SCENE_FLOATS = 64;
 
@@ -74,6 +81,8 @@ let epoch = 0;
  * inputEnded, ended, primed, running, scene（主线程要不要场景）, peakAt }；普通模式为 null
  */
 let live = null;
+/** 主线程同步的页面可见性；Worker 本身没有 document */
+let pageHidden = false;
 /** 交互控制（双耳）：头部朝向（弧度）、站位（米）、聚焦、高度倍率与 16 路增益；新打开的流照此设置 */
 const controls = { yaw: 0, pitch: 0, roll: 0, x: 0, y: 0, z: 0, focus: 0, height: 1, gains: new Float32Array(16).fill(1) };
 let gainsPtr = 0;
@@ -85,6 +94,21 @@ const yieldQueue = [];
 yielder.port1.onmessage = () => yieldQueue.shift()();
 function yieldToMessages() {
   return new Promise((resolve) => { yieldQueue.push(resolve); yielder.port2.postMessage(0); });
+}
+
+/** 按渲染模式、页面可见性与当前自适应目标计算提前量 */
+function liveTarget(interactive, hidden, adaptiveTarget) {
+  const base = interactive ? LIVE_TARGET : ROBUST_TARGET;
+  const maximum = interactive ? LIVE_MAX_TARGET : ROBUST_MAX_TARGET;
+  const target = Math.min(maximum, Math.max(base, Number.isFinite(adaptiveTarget) ? adaptiveTarget : base));
+  return interactive || !hidden ? target : Math.max(HIDDEN_TARGET, target);
+}
+
+/** 播放端断粮后提高当前档位的自适应目标 */
+function stalledTarget(interactive, adaptiveTarget) {
+  return interactive
+    ? Math.min(LIVE_MAX_TARGET, adaptiveTarget + 1536)
+    : Math.min(ROBUST_MAX_TARGET, Math.ceil(adaptiveTarget * 1.5));
 }
 
 /** E-AC-3 syncframe 或 AC-4 帧在 48 kHz 下的样本数 */
@@ -268,8 +292,9 @@ async function hrtfBytes(dataset) {
  */
 async function open(options) {
   close();
-  if (options.port) attachLive(options.port);
+  if (options.port) attachLive(options.port, options.interactive);
   else if (!options.live) detachLive();
+  else if (live) setInteractive(options.interactive);
   if (options.controls) setControls(options.controls);
   const mine = epoch;
   const nextCodec = options.codec === 'ac-4' ? 'ac-4' : 'ec-3';
@@ -307,7 +332,7 @@ async function open(options) {
   pendingSkip = 0;
   applyControls();
   if (live) restartLive();
-  return { mode: binaural ? 'binaural' : 'speaker', dataset, codec, live: Boolean(live) };
+  return { mode: binaural ? 'binaural' : 'speaker', dataset, codec, live: Boolean(live), epoch };
 }
 
 /** 合并主线程发来的控制项（只带变了的字段也可以）并交给渲染器 */
@@ -327,10 +352,13 @@ function applyControls() {
   check(fn(handle, c.yaw, c.pitch, c.roll, c.x, c.y, c.z, c.focus, c.height, gainsPtr));
 }
 
-function attachLive(port) {
+function attachLive(port, interactive = false) {
   detachLive();
+  const active = Boolean(interactive);
+  const adaptiveTarget = active ? LIVE_TARGET : ROBUST_TARGET;
   live = {
-    port, queue: [], sent: 0, played: 0, target: LIVE_TARGET, out: 0,
+    port, queue: [], sent: 0, played: 0, target: liveTarget(active, pageHidden, adaptiveTarget),
+    adaptiveTarget, interactive: active, hidden: pageHidden, leadReady: false, out: 0,
     inputEnded: false, ended: false, primed: false, running: false, scene: false, peakAt: -Infinity,
   };
   const state = live;
@@ -338,9 +366,34 @@ function attachLive(port) {
   port.onmessage = ({ data }) => {
     if (live !== state || data.epoch !== epoch) return;
     state.played = data.played;
-    if (data.starved && state.target < LIVE_MAX_TARGET) state.target += 1536;
+    if (data.starved) {
+      state.adaptiveTarget = stalledTarget(state.interactive, state.adaptiveTarget);
+      state.target = liveTarget(state.interactive, state.hidden, state.adaptiveTarget);
+    }
     pumpLive();
   };
+}
+
+function setInteractive(value) {
+  if (!live) return;
+  const interactive = Boolean(value);
+  if (live.interactive === interactive) return;
+  live.interactive = interactive;
+  live.adaptiveTarget = interactive ? LIVE_TARGET : ROBUST_TARGET;
+  live.target = liveTarget(interactive, live.hidden, live.adaptiveTarget);
+  if (live.primed) {
+    self.postMessage({ event: 'lead', epoch, lead: live.sent - live.played, interactive });
+  }
+  pumpLive();
+}
+
+function setVisibility(hidden) {
+  pageHidden = Boolean(hidden);
+  if (!live) return;
+  live.hidden = pageHidden;
+  live.target = liveTarget(live.interactive, live.hidden, live.adaptiveTarget);
+  // 隐藏后提高稳健档下限，立即补满新的提前量。
+  if (live.hidden && !live.interactive) pumpLive();
 }
 
 function detachLive() {
@@ -352,7 +405,7 @@ function detachLive() {
 
 /** 新的一轮（打开或 Seek）：清空队列与计数，播放端丢掉旧的音频并等主线程的 start */
 function restartLive() {
-  Object.assign(live, { queue: [], sent: 0, played: 0, out: 0, inputEnded: false, ended: false, primed: false, peakAt: -Infinity });
+  Object.assign(live, { queue: [], sent: 0, played: 0, out: 0, inputEnded: false, ended: false, primed: false, leadReady: false, peakAt: -Infinity });
   live.port.postMessage({ epoch, flush: true });
 }
 
@@ -366,7 +419,7 @@ function queueFragment(buffer) {
 }
 
 /**
- * 按需渲染：预滚阶段全速（每 8 帧让出一次），之后只渲染到比播放位置提前 target 帧，每帧之间让出线程，
+ * 按需渲染：预滚与稳健档每 8 帧让出一次，交互档每帧让出；只渲染到比播放位置提前 target 帧，
  * 控制项与进度消息随时插进来。Seek（reset）在让出期间清空队列，循环接着处理新的一轮
  */
 async function pumpLive() {
@@ -389,7 +442,7 @@ async function pumpLive() {
         const stats = { peak: 0, over: 0 };
         decodePacket(packet, chunks, stats);
         sendLive(state, chunks, stats);
-        if (++since >= (prerolling ? 8 : 1)) {
+        if (++since >= (prerolling || !state.interactive ? 8 : 1)) {
           since = 0;
           await yieldToMessages();
         }
@@ -403,9 +456,10 @@ async function pumpLive() {
         drain(chunks, stats);
         sendLive(state, chunks, stats);
         state.port.postMessage({ epoch, end: true });
+        self.postMessage({ event: 'lead', epoch, lead: state.sent - state.played, ended: true, interactive: state.interactive });
         if (!state.primed) {
           state.primed = true;
-          self.postMessage({ event: 'primed', epoch });
+          self.postMessage({ event: 'primed', epoch, lead: state.sent - state.played, ended: true, interactive: state.interactive });
         }
       } else {
         break;
@@ -426,9 +480,14 @@ function sendLive(state, chunks, stats) {
   state.port.postMessage({ epoch, frames }, [frames.buffer]);
   state.sent += samples;
   state.out += samples;
+  const lead = state.sent - state.played;
   if (!state.primed) {
     state.primed = true;
-    self.postMessage({ event: 'primed', epoch });
+    self.postMessage({ event: 'primed', epoch, lead, interactive: state.interactive });
+  }
+  if (!state.leadReady && lead >= START_LEAD) {
+    state.leadReady = true;
+    self.postMessage({ event: 'lead', epoch, lead, interactive: state.interactive });
   }
   if (stats.peak > 1 && state.out - state.peakAt >= RATE) {
     state.peakAt = state.out;
@@ -595,7 +654,10 @@ self.onmessage = async ({ data }) => {
           restartEc3();
         }
         pendingSkip = Math.max(0, Math.round(Number(data.skipFrames)) || 0);
-        if (live) restartLive();
+        if (live) {
+          restartLive();
+          result = { epoch };
+        }
         break;
       case 'gain':
         if (handle) check((codec === 'ac-4' ? joc.ac4_set_gain : joc.joc_set_gain)(handle, Number(data.gainDb) || 0));
@@ -606,6 +668,12 @@ self.onmessage = async ({ data }) => {
       case 'scene':
         // 声场界面打开时才每帧发场景
         if (live) live.scene = Boolean(data.on);
+        break;
+      case 'interactive':
+        setInteractive(data.value);
+        break;
+      case 'visibility':
+        setVisibility(data.hidden);
         break;
       case 'finish':
         if (live) {
